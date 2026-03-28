@@ -40,8 +40,13 @@ void main() async {
         cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
       );
     }
+    debugPrint('✅ Firebase inicializado correctamente');
   } catch (e) {
-    debugPrint('Error inicializando Firebase: $e');
+    debugPrint('❌ Error inicializando Firebase: $e');
+    debugPrint('Verifica que:');
+    debugPrint('1. Las credenciales en firebase_options.dart sean correctas');
+    debugPrint('2. Firebase Auth esté habilitado en Firebase Console');
+    debugPrint('3. Tengas conexión a internet');
   }
 
   runApp(const MyApp());

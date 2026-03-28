@@ -15,16 +15,22 @@ class DefaultFirebaseOptions {
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
   );
 
-  // Web/iOS/Windows: mismo proyecto; si falla en alguna plataforma, copia
-  // el config de esa app desde Firebase Console → Configuración del proyecto.
+  // Configuración de Firebase para Web/Windows.
+  // IMPORTANTE: Para producción, obtén el config real desde Firebase Console:
+  // 1. Ve a Firebase Console → Project Settings → General
+  // 2. Baja hasta "Your apps" y selecciona la app Web
+  // 3. Copia el firebaseConfig y reemplaza los valores abajo
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyAmgUtQ8T7VuIlJFO5RKC3cgdSCaQzPaDA',
     appId: '1:118597085547:web:fluter_apk',
     messagingSenderId: '118597085547',
     projectId: 'sistema-integrado-sindicato',
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
+    authDomain: 'sistema-integrado-sindicato.firebaseapp.com',
   );
 
+  // iOS usa la misma configuración que Android (mismo proyecto Firebase)
+  // Para producción, registra la app iOS en Firebase Console y usa GoogleService-Info.plist
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAmgUtQ8T7VuIlJFO5RKC3cgdSCaQzPaDA',
     appId: '1:118597085547:ios:fluter_apk',
@@ -33,12 +39,15 @@ class DefaultFirebaseOptions {
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
   );
 
+  // Windows usa la configuración de Web (Firebase trata Windows como Web)
+  // Asegúrate de tener habilitada la autenticación en Firebase Console
   static const FirebaseOptions windows = FirebaseOptions(
     apiKey: 'AIzaSyAmgUtQ8T7VuIlJFO5RKC3cgdSCaQzPaDA',
     appId: '1:118597085547:web:fluter_apk_windows',
     messagingSenderId: '118597085547',
     projectId: 'sistema-integrado-sindicato',
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
+    authDomain: 'sistema-integrado-sindicato.firebaseapp.com',
   );
 
   static FirebaseOptions get currentPlatform {
