@@ -85,3 +85,18 @@ O para que pregunte cada vez por el dispositivo:
 flutter run
 ```
 y elige **[2] Chrome**.
+
+---
+
+## 🆘 ¿Sigues teniendo problemas?
+
+**Consulta la guía completa de solución de problemas:**
+
+📄 [SOLUCION_PROBLEMAS_WINDOWS.md](SOLUCION_PROBLEMAS_WINDOWS.md)
+
+Esta guía incluye:
+- ✅ Lista completa de requisitos previos
+- ✅ Errores comunes y sus soluciones
+- ✅ Diagnóstico paso a paso
+- ✅ Optimizaciones y modo release
+- ✅ Lista de verificación pre-build
