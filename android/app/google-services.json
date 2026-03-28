@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "118597085547",
+    "project_id": "sistema-integrado-sindicato",
+    "storage_bucket": "sistema-integrado-sindicato.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:118597085547:android:5f4119dd6934a00329c42e",
+        "android_client_info": {
+          "package_name": "com.skyrunner.sindicato"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "118597085547-p5dh4q92rqp86568v5fivtaqs271rgbt.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.skyrunner.sindicato",
+            "certificate_hash": "8d33b0f11e12052829b64708e49b0a9405e8c93c"
+          }
+        },
+        {
+          "client_id": "118597085547-nauhhea0lvcjfgtq4am77l9j1lm7mub7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAmgUtQ8T7VuIlJFO5RKC3cgdSCaQzPaDA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "118597085547-nauhhea0lvcjfgtq4am77l9j1lm7mub7.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "118597085547-9sj43sm2nnnusih3v95hbihi2qsmtbn2.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.sindicato.votos.fluterApk"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

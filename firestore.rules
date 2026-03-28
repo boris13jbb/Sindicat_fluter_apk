@@ -1,0 +1,61 @@
+rules_version = '2';
+// Reglas para el Sistema de Voto Sindicato (Flutter).
+// Despliega con: firebase deploy --only firestore
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    match /users/{userId} {
+      allow read, update: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if isAuthenticated() && request.auth.uid == userId && request.resource.data.role == 'VOTER';
+    }
+
+    match /elections/{electionId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+
+      match /candidates/{candidateId} {
+        allow read: if isAuthenticated() && candidateId != "";
+        allow create, update, delete: if isAuthenticated();
+      }
+
+      match /votes/{voteId} {
+        allow read: if isAuthenticated()
+          && (resource == null || resource.data.userId == request.auth.uid);
+        allow create: if isAuthenticated()
+                && request.resource.data.userId == request.auth.uid
+                && voteId != "";
+        allow update, delete: if false;
+      }
+    }
+
+    match /events/{eventId} {
+      allow read, create: if isAuthenticated() && eventId != "";
+      allow update, delete: if false;
+    }
+
+    match /eventos/{eventoId} {
+      allow read, write: if isAuthenticated() && eventoId != "";
+
+      match /asistencias/{asistenciaId} {
+        allow read, write: if isAuthenticated() && asistenciaId != "";
+      }
+    }
+
+    match /personas/{personaId} {
+      allow read, write: if isAuthenticated() && personaId != "";
+    }
+
+    match /asistencias/{asistenciaId} {
+      allow read, write: if isAuthenticated() && asistenciaId != "";
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
