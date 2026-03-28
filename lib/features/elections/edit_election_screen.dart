@@ -199,9 +199,17 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                 StreamBuilder<List<EventoAsistencia>>(
                   stream: AsistenciaService().getAllEventos(),
                   builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const CircularProgressIndicator();
+                    }
                     final eventos = snap.data ?? [];
+                    // Validate that _eventoAsistenciaId exists in the events list
+                    final isValidValue =
+                        _eventoAsistenciaId == null ||
+                        eventos.any((e) => e.id == _eventoAsistenciaId);
+                    
                     return DropdownButtonFormField<String?>(
-                      initialValue: _eventoAsistenciaId,
+                      value: isValidValue ? _eventoAsistenciaId : null,
                       decoration: const InputDecoration(
                         labelText: 'Evento de asistencia',
                         border: OutlineInputBorder(),

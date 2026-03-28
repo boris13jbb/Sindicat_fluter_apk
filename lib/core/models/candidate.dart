@@ -20,9 +20,11 @@ class Candidate {
 
   factory Candidate.fromMap(Map<String, dynamic> map, [String? id]) {
     final docId = id ?? map['id'] as String? ?? '';
+    // Debug: Ensure electionId is properly extracted
+    final electionId = map['electionId'] as String? ?? '';
     return Candidate(
       id: docId,
-      electionId: map['electionId'] as String? ?? '',
+      electionId: electionId,
       name: map['name'] as String? ?? '',
       description: map['description'] as String?,
       imageUrl: map['imageUrl'] as String?,

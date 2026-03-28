@@ -58,14 +58,57 @@ class ElectionService {
         .collection('elections')
         .doc(electionId)
         .collection('candidates')
-        .orderBy('order')
+        .orderBy('order', descending: false)
         .snapshots()
-        .map((snap) => snap.docs.map((d) => Candidate.fromMap({...d.data(), 'electionId': electionId}, d.id)).toList());
+        .map((snap) {
+          // Debug logging
+          debugPrint(
+            'getCandidates: Retrieved ${snap.docs.length} candidates for election $electionId',
+          );
+          for (var doc in snap.docs) {
+            debugPrint('  - Candidate: ${doc.id}, data: ${doc.data()}');
+          }
+          final candidates = snap.docs
+              .map(
+                (d) => Candidate.fromMap({
+                  ...d.data(),
+                  'electionId': electionId,
+                }, d.id),
+              )
+              .toList();
+          debugPrint(
+            'getCandidates: Deserialized ${candidates.length} candidates: ${candidates.map((c) => c.name).join(', ')}',
+          );
+          return candidates;
+        });
   }
 
   Future<void> addCandidate(Candidate candidate) async {
-    final ref = _firestore.collection('elections').doc(candidate.electionId).collection('candidates').doc();
-    await ref.set(candidate.toMap()..['id'] = ref.id);
+    try {
+      debugPrint(
+        'addCandidate: Starting to add candidate "${candidate.name}" to election ${candidate.electionId}',
+      );
+      final ref = _firestore
+          .collection('elections')
+          .doc(candidate.electionId)
+          .collection('candidates')
+          .doc();
+      final data = candidate.toMap()..['id'] = ref.id;
+      // Ensure required fields are present
+      data['electionId'] = candidate.electionId;
+      // Ensure order field exists (default to 0 if not set)
+      if (!data.containsKey('order')) {
+        data['order'] = candidate.order;
+      }
+      debugPrint('addCandidate: Data to be saved: $data');
+      await ref.set(data);
+      debugPrint(
+        'addCandidate: Successfully added candidate with ID: ${ref.id}',
+      );
+    } catch (e) {
+      debugPrint('addCandidate: ERROR - $e');
+      rethrow;
+    }
   }
 
   Future<void> updateCandidate(Candidate candidate) async {

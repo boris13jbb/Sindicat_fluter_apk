@@ -83,6 +83,14 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
               else
                 FilledButton(
                   onPressed: () async {
+                    if (widget.electionId.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Error: ID de elección no válido'),
+                        ),
+                      );
+                      return;
+                    }
                     if (_formKey.currentState?.validate() != true) return;
                     setState(() => _loading = true);
                     try {
@@ -100,14 +108,20 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
                       ));
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Candidato agregado')),
+                          const SnackBar(
+                            content: Text('Candidato agregado exitosamente'),
+                            backgroundColor: Colors.green,
+                          ),
                         );
                         Navigator.pop(context);
                       }
                     } catch (e) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $e')),
+                          SnackBar(
+                            content: Text('Error al agregar: $e'),
+                            backgroundColor: Colors.red,
+                          ),
                         );
                       }
                     } finally {
