@@ -242,7 +242,50 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
               StreamBuilder<List<Candidate>>(
                 stream: _electionService.getCandidates(widget.electionId),
                 builder: (context, snap) {
+                  // Debug logging
+                  debugPrint(
+                    'EditElection StreamBuilder: ConnectionState = ${snap.connectionState}',
+                  );
+
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (snap.hasError) {
+                    debugPrint(
+                      'EditElection StreamBuilder: ERROR - ${snap.error}',
+                    );
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'Error al cargar candidatos: ${snap.error}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    );
+                  }
+                  
                   final candidates = snap.data ?? [];
+                  debugPrint(
+                    'EditElection StreamBuilder: ${candidates.length} candidatos cargados',
+                  );
+
+                  if (candidates.isEmpty) {
+                    return Column(
+                      children: [
+                        const Icon(
+                          Icons.info_outline,
+                          size: 48,
+                          color: Colors.grey,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text('No hay candidatos registrados'),
+                        const SizedBox(height: 16),
+                      ],
+                    );
+                  }
+                  
                   return Column(
                     children: [
                       ...candidates.map(

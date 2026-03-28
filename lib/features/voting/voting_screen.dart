@@ -139,11 +139,23 @@ class _VotingContentState extends State<_VotingContent> {
   Candidate? _selected;
   bool _loading = false;
   late Stream<List<Candidate>> _candidatesStream;
+  final ElectionService _electionService = ElectionService();
 
   @override
   void initState() {
     super.initState();
-    _candidatesStream = ElectionService().getCandidates(widget.electionId);
+    // Crear el stream una sola vez en initState
+    _candidatesStream = _electionService.getCandidates(widget.electionId);
+    debugPrint(
+      '_VotingContentState: Stream de candidatos inicializado para election ${widget.electionId}',
+    );
+  }
+
+  @override
+  void dispose() {
+    // El stream se cierra automáticamente cuando el StreamBuilder se desuscribe
+    debugPrint('_VotingContentState: Dispose - limpiando stream de candidatos');
+    super.dispose();
   }
 
   @override
@@ -151,10 +163,75 @@ class _VotingContentState extends State<_VotingContent> {
     return StreamBuilder<List<Candidate>>(
       stream: _candidatesStream,
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-        if (!snap.hasData || snap.data!.isEmpty) return const Center(child: Text('No hay candidatos disponibles.'));
+        // Debug logging del estado de conexión
+        debugPrint(
+          'StreamBuilder: ConnectionState = ${snap.connectionState}, hasData = ${snap.hasData}',
+        );
+
+        if (snap.connectionState == ConnectionState.waiting) {
+          debugPrint('StreamBuilder: Estado = waiting, mostrando loading');
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snap.hasError) {
+          debugPrint('StreamBuilder: ERROR - ${snap.error}');
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: Colors.orange,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Error al cargar candidatos: ${snap.error}',
+                    style: const TextStyle(color: Colors.red),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () {
+                      // Forzar rebuild del widget
+                      setState(() {});
+                    },
+                    child: const Text('Reintentar'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        if (!snap.hasData || snap.data!.isEmpty) {
+          debugPrint(
+            'StreamBuilder: Sin datos o lista vacía - hasData: ${snap.hasData}, count: ${snap.data?.length ?? 0}',
+          );
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.info_outline, size: 48, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text(
+                  'No hay candidatos disponibles.',
+                  style: TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Estado: ${snap.connectionState}',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+              ],
+            ),
+          );
+        }
         
         final candidates = snap.data!;
+        debugPrint('StreamBuilder: Mostrando ${candidates.length} candidatos');
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),

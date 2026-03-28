@@ -54,33 +54,56 @@ class ElectionService {
   }
 
   Stream<List<Candidate>> getCandidates(String electionId) {
-    return _firestore
-        .collection('elections')
-        .doc(electionId)
-        .collection('candidates')
-        .orderBy('order', descending: false)
-        .snapshots()
-        .map((snap) {
-          // Debug logging
-          debugPrint(
-            'getCandidates: Retrieved ${snap.docs.length} candidates for election $electionId',
-          );
-          for (var doc in snap.docs) {
-            debugPrint('  - Candidate: ${doc.id}, data: ${doc.data()}');
-          }
-          final candidates = snap.docs
-              .map(
-                (d) => Candidate.fromMap({
-                  ...d.data(),
-                  'electionId': electionId,
-                }, d.id),
-              )
-              .toList();
-          debugPrint(
-            'getCandidates: Deserialized ${candidates.length} candidates: ${candidates.map((c) => c.name).join(', ')}',
-          );
-          return candidates;
-        });
+    try {
+      debugPrint('getCandidates: Starting stream for election $electionId');
+      
+      return _firestore
+          .collection('elections')
+          .doc(electionId)
+          .collection('candidates')
+          .orderBy('order', descending: false)
+          .snapshots()
+          .map((snap) {
+            // Debug logging mejorado
+            debugPrint(
+              'getCandidates: Snapshot received - ${snap.docs.length} documents',
+            );
+            debugPrint(
+              'getCandidates: Has pending writes: ${snap.metadata.hasPendingWrites}',
+            );
+            debugPrint(
+              'getCandidates: Is from cache: ${snap.metadata.isFromCache}',
+            );
+            
+            for (var doc in snap.docs) {
+              debugPrint('  - Candidate: ${doc.id}, data: ${doc.data()}');
+            }
+            
+            final candidates = snap.docs
+                .map(
+                  (d) => Candidate.fromMap({
+                    ...d.data(),
+                    'electionId': electionId,
+                  }, d.id),
+                )
+                .toList();
+            
+            debugPrint(
+              'getCandidates: Deserialized ${candidates.length} candidates: ${candidates.map((c) => c.name).join(', ')}',
+            );
+            return candidates;
+          })
+          .handleError((error, stackTrace) {
+            // Manejo de errores del stream
+            debugPrint('getCandidates: ERROR en el stream - $error');
+            debugPrint('getCandidates: Stack trace - $stackTrace');
+            // Retornar lista vacía explícitamente en caso de error
+            return <Candidate>[];
+          });
+    } catch (e) {
+      debugPrint('getCandidates: EXCEPTION al crear el stream - $e');
+      rethrow;
+    }
   }
 
   Future<void> addCandidate(Candidate candidate) async {
