@@ -2,6 +2,44 @@
 
 El build de Flutter para Windows usa MSBuild/Visual Studio, que a veces no ve el PATH donde está Git. Prueba estas opciones **en este orden**.
 
+## 📋 Requisitos Previos IMPORTANTES
+
+Antes de intentar cualquier solución, asegúrate de tener:
+
+1. ✅ **Visual Studio 2022** con "Desarrollo para el escritorio de Windows con C++"
+2. ✅ **Git para Windows** instalado correctamente
+3. ✅ **Flutter SDK** actualizado
+
+**¿No estás seguro?** Ejecuta:
+```bash
+flutter doctor -v
+```
+Y revisa que todo tenga ✓ verde.
+
+---
+
+## 🚀 Forma Más Fácil de Ejecutar
+
+**Usa los scripts automáticos:**
+
+Desde PowerShell:
+```powershell
+.\run_windows.ps1
+```
+
+Desde CMD:
+```bat
+run_windows.bat
+```
+
+Estos scripts automáticamente:
+- Verifican Git
+- Limpian builds anteriores
+- Obtienen dependencias
+- Compilan y ejecutan con mensajes claros
+
+---
+
 ## Opción 1: Añadir Git al PATH del sistema (recomendado)
 
 1. Pulsa **Win + R**, escribe `sysdm.cpl` y Enter.
