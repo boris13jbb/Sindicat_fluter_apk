@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
@@ -24,21 +25,42 @@ import 'features/asistencia/asistencias_list_screen.dart';
 import 'features/asistencia/exportar_screen.dart';
 import 'features/asistencia/scanner_screen.dart';
 import 'core/models/asistencia/evento.dart';
-import 'package:flutter/foundation.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    // Initialize Firebase with timeout to prevent hanging
+    debugPrint('🔄 Inicializando Firebase...');
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    ).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () {
+        debugPrint('⚠️ Timeout inicializando Firebase (10s)');
+        throw Exception(
+          'Firebase initialization timeout - check network and Firebase config',
+        );
+      },
+    );
     
     // Configuración de Firestore: solo activamos persistencia fuera de la Web 
     // o de forma controlada para evitar el timeout del arranque.
     if (!kIsWeb) {
-      FirebaseFirestore.instance.settings = const Settings(
-        persistenceEnabled: true,
-        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-      );
+      try {
+        FirebaseFirestore.instance.settings = const Settings(
+          persistenceEnabled: true,
+          cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+        );
+        debugPrint('✅ Firestore persistencia habilitada');
+      } catch (firestoreError) {
+        debugPrint('⚠️ Error configurando Firestore: $firestoreError');
+        debugPrint('Continuando sin persistencia...');
+        // Fallback a configuración básica sin persistencia
+        FirebaseFirestore.instance.settings = const Settings(
+          persistenceEnabled: false,
+        );
+      }
     }
     debugPrint('✅ Firebase inicializado correctamente');
   } catch (e) {
@@ -47,6 +69,12 @@ void main() async {
     debugPrint('1. Las credenciales en firebase_options.dart sean correctas');
     debugPrint('2. Firebase Auth esté habilitado en Firebase Console');
     debugPrint('3. Tengas conexión a internet');
+    debugPrint(
+      '4. El appId para Windows sea correcto (debe ser el mismo que Web)',
+    );
+    debugPrint(
+      '\nLa aplicación continuará pero Firebase no estará disponible.',
+    );
   }
 
   runApp(const MyApp());

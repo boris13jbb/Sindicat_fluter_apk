@@ -46,13 +46,22 @@ if %errorlevel% neq 0 (
 )
 echo [OK] Dependencias obtenidas
 
-REM Ejecutar en Windows
+REM Ejecutar en Windows con logging detallado
 echo [4/4] Ejecutando en Windows Desktop...
 echo.
 echo IMPORTANTE: La primera vez puede tardar varios minutos
 echo mientras se descarga el compilador de C++ y las herramientas.
 echo.
-flutter run -d windows
+echo ========================================
+echo INICIANDO APLICACION CON LOGGING DETALLADO
+echo ========================================
+echo.
+
+REM Habilitar logging de Flutter para debugging
+set FLUTTER_ENABLE_LOGGING=1
+
+REM Ejecutar con verbose mode para ver errores detallados
+flutter run -d windows --verbose
 
 if %errorlevel% neq 0 (
     echo.

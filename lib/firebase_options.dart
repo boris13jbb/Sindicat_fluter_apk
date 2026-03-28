@@ -43,7 +43,7 @@ class DefaultFirebaseOptions {
   // Asegúrate de tener habilitada la autenticación en Firebase Console
   static const FirebaseOptions windows = FirebaseOptions(
     apiKey: 'AIzaSyAmgUtQ8T7VuIlJFO5RKC3cgdSCaQzPaDA',
-    appId: '1:118597085547:web:fluter_apk_windows',
+    appId: '1:118597085547:web:fluter_apk',
     messagingSenderId: '118597085547',
     projectId: 'sistema-integrado-sindicato',
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
