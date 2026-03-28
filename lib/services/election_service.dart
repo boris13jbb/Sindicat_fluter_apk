@@ -10,6 +10,9 @@ class ElectionService {
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
+  
+  // Cache de streams activos para prevenir que se cierren prematuramente
+  final Map<String, Stream<List<Candidate>>> _candidatesStreamCache = {};
 
   Stream<List<Election>> getAllElections() {
     return _firestore
@@ -54,10 +57,18 @@ class ElectionService {
   }
 
   Stream<List<Candidate>> getCandidates(String electionId) {
+    // Verificar si ya tenemos un stream activo para esta elección
+    if (_candidatesStreamCache.containsKey(electionId)) {
+      debugPrint(
+        'getCandidates: Reutilizando stream cacheado para election $electionId',
+      );
+      return _candidatesStreamCache[electionId]!;
+    }
+    
     try {
       debugPrint('getCandidates: Starting stream for election $electionId');
       
-      return _firestore
+      final stream = _firestore
           .collection('elections')
           .doc(electionId)
           .collection('candidates')
@@ -100,6 +111,12 @@ class ElectionService {
             // Retornar lista vacía explícitamente en caso de error
             return <Candidate>[];
           });
+      
+      // Cachear el stream para reutilización
+      _candidatesStreamCache[electionId] = stream;
+      debugPrint('getCandidates: Stream cacheado exitosamente');
+
+      return stream;
     } catch (e) {
       debugPrint('getCandidates: EXCEPTION al crear el stream - $e');
       rethrow;
