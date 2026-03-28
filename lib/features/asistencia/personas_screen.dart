@@ -38,8 +38,13 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
             child: StreamBuilder<List<PersonaAsistencia>>(
               stream: _service.getAllPersonas(),
               builder: (context, snap) {
-                if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-                var list = snap.data!;
+                if (snap.hasError) {
+                  return Center(child: Text('Error: ${snap.error}'));
+                }
+                if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                var list = snap.data ?? [];
                 if (_busqueda.trim().isNotEmpty) {
                   final q = _busqueda.trim().toLowerCase();
                   list = list.where((p) {

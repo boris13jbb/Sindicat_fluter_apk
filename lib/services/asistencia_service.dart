@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -23,7 +25,7 @@ class AsistenciaService {
     return _firestore
         .collection(_eventos)
         .orderBy('fecha', descending: true)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map(
           (snap) => snap.docs
               .map((d) => EventoAsistencia.fromMap(d.data(), d.id))
@@ -70,7 +72,7 @@ class AsistenciaService {
   Stream<List<PersonaAsistencia>> getAllPersonas() {
     return _firestore
         .collection(_personas)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map(
           (snap) => snap.docs
               .map((d) => PersonaAsistencia.fromMap(d.data(), d.id))
@@ -139,7 +141,7 @@ class AsistenciaService {
     return _firestore
         .collection(_asistencias)
         .where('eventoId', isEqualTo: eventoId)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .asyncExpand(
           (snap) => Stream.fromFuture(_buildAsistenciasConDatos(snap.docs)),
         );
@@ -148,6 +150,14 @@ class AsistenciaService {
   Future<List<AsistenciaConDatos>> getAllAsistenciasConDatos() async {
     final snap = await _firestore.collection(_asistencias).get();
     return await _buildAsistenciasConDatos(snap.docs);
+  }
+
+  /// Lista global de asistencias con datos relacionados, actualizada en tiempo real.
+  Stream<List<AsistenciaConDatos>> watchAllAsistenciasConDatos() {
+    return _firestore
+        .collection(_asistencias)
+        .snapshots(includeMetadataChanges: true)
+        .asyncMap((snap) => _buildAsistenciasConDatos(snap.docs));
   }
 
   Future<List<AsistenciaConDatos>> _buildAsistenciasConDatos(
@@ -232,6 +242,20 @@ class AsistenciaService {
       }
     }
     return false;
+  }
+
+  /// Se emite de nuevo cuando cambian las asistencias del evento (p. ej. el usuario registra asistencia).
+  Stream<bool> watchUserRegisteredInEvent(
+    String eventoId,
+    String? userId,
+    String? userEmail,
+  ) {
+    if (eventoId.isEmpty) return Stream.value(false);
+    return _firestore
+        .collection(_asistencias)
+        .where('eventoId', isEqualTo: eventoId)
+        .snapshots(includeMetadataChanges: true)
+        .asyncMap((_) => isUserRegisteredInEvent(eventoId, userId, userEmail));
   }
 
   Future<String?> registrarAsistenciaDesdeEscaneo(

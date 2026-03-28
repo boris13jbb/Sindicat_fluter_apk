@@ -14,7 +14,7 @@ class EventService {
         .collection(_collection)
         .orderBy('timestamp', descending: true)
         .limit(limit)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map((snap) => snap.docs
             .map((d) => VotoEvent.fromMap(d.data(), d.id))
             .toList());

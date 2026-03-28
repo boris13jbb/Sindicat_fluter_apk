@@ -8,34 +8,39 @@ import '../../core/models/asistencia/asistencia.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
 
-class ExportarAsistenciaScreen extends StatelessWidget {
+String _formatFechaExport(int ms) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ms);
+  return '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+}
+
+String _toCsv(List<AsistenciaConDatos> list) {
+  final sb = StringBuffer();
+  sb.writeln('Evento,Fecha evento,Persona,Asistió,Fecha registro,Método');
+  for (final a in list) {
+    sb.writeln(
+      '"${a.evento.nombre}","${_formatFechaExport(a.evento.fecha)}","${a.persona.nombreCompleto}",${a.asistencia.asistio},"${_formatFechaExport(a.asistencia.fechaRegistro ?? 0)}",${a.asistencia.metodoRegistro.value}',
+    );
+  }
+  return sb.toString();
+}
+
+class ExportarAsistenciaScreen extends StatefulWidget {
   const ExportarAsistenciaScreen({super.key});
 
-  static String _formatFecha(int ms) {
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-  }
+  @override
+  State<ExportarAsistenciaScreen> createState() => _ExportarAsistenciaScreenState();
+}
 
-  String _toCsv(List<AsistenciaConDatos> list) {
-    final sb = StringBuffer();
-    sb.writeln('Evento,Fecha evento,Persona,Asistió,Fecha registro,Método');
-    for (final a in list) {
-      sb.writeln(
-        '"${a.evento.nombre}","${_formatFecha(a.evento.fecha)}","${a.persona.nombreCompleto}",${a.asistencia.asistio},"${_formatFecha(a.asistencia.fechaRegistro ?? 0)}",${a.asistencia.metodoRegistro.value}',
-      );
-    }
-    return sb.toString();
-  }
+class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
+  final AsistenciaService _service = AsistenciaService();
 
   Future<void> _exportarExcel(
     BuildContext context,
     List<AsistenciaConDatos> list,
   ) async {
     try {
-      final service = AsistenciaService();
-      final bytes = await service.generateExcelExport(list);
+      final bytes = await _service.generateExcelExport(list);
 
-      // Guardar archivo temporal
       final directory = await getTemporaryDirectory();
       final filePath = path.join(
         directory.path,
@@ -44,8 +49,7 @@ class ExportarAsistenciaScreen extends StatelessWidget {
       final file = File(filePath);
       await file.writeAsBytes(bytes);
 
-      // Compartir archivo
-      final result = await Share.shareXFiles([
+      await Share.shareXFiles([
         XFile(filePath),
       ], subject: 'Exportación de Asistencias');
 
@@ -55,9 +59,9 @@ class ExportarAsistenciaScreen extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al generar Excel: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al generar Excel: $e')),
+      );
     }
   }
 
@@ -66,10 +70,8 @@ class ExportarAsistenciaScreen extends StatelessWidget {
     List<AsistenciaConDatos> list,
   ) async {
     try {
-      final service = AsistenciaService();
-      final bytes = await service.generatePDFExport(list);
+      final bytes = await _service.generatePDFExport(list);
 
-      // Guardar archivo temporal
       final directory = await getTemporaryDirectory();
       final filePath = path.join(
         directory.path,
@@ -78,8 +80,7 @@ class ExportarAsistenciaScreen extends StatelessWidget {
       final file = File(filePath);
       await file.writeAsBytes(bytes);
 
-      // Compartir archivo
-      final result = await Share.shareXFiles([
+      await Share.shareXFiles([
         XFile(filePath),
       ], subject: 'Reporte de Asistencias');
 
@@ -89,27 +90,34 @@ class ExportarAsistenciaScreen extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error al generar PDF: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al generar PDF: $e')),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final service = AsistenciaService();
     return Scaffold(
       appBar: ProfessionalAppBar(
         title: 'Exportar Asistencias',
         onNavigateBack: () => Navigator.pop(context),
       ),
-      body: FutureBuilder<List<AsistenciaConDatos>>(
-        future: service.getAllAsistenciasConDatos(),
+      body: StreamBuilder<List<AsistenciaConDatos>>(
+        stream: _service.watchAllAsistenciasConDatos(),
         builder: (context, snap) {
-          if (!snap.hasData) {
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('Error: ${snap.error}', textAlign: TextAlign.center),
+              ),
+            );
+          }
+          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final list = snap.data!;
+          final list = snap.data ?? [];
           if (list.isEmpty) {
             return Center(
               child: Column(
@@ -163,7 +171,7 @@ class ExportarAsistenciaScreen extends StatelessWidget {
                       child: ListTile(
                         title: Text(a.persona.nombreCompleto),
                         subtitle: Text(
-                          '${a.evento.nombre} • ${_formatFecha(a.asistencia.fechaRegistro ?? 0)}',
+                          '${a.evento.nombre} • ${_formatFechaExport(a.asistencia.fechaRegistro ?? 0)}',
                         ),
                       ),
                     );

@@ -7,14 +7,23 @@ import '../../services/election_service.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import 'election_card.dart';
 
-class ElectionsScreen extends StatelessWidget {
+class ElectionsScreen extends StatefulWidget {
   const ElectionsScreen({super.key});
+
+  @override
+  State<ElectionsScreen> createState() => _ElectionsScreenState();
+}
+
+class _ElectionsScreenState extends State<ElectionsScreen> {
+  final ElectionService _electionService = ElectionService();
+  int _retryTick = 0;
+
+  void _retry() => setState(() => _retryTick++);
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final isAdmin = auth.user?.role == UserRole.admin;
-    final electionService = ElectionService();
 
     return Scaffold(
       appBar: ProfessionalAppBar(
@@ -33,42 +42,47 @@ class ElectionsScreen extends StatelessWidget {
               await auth.signOut();
               if (context.mounted) {
                 Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
+                  context,
+                  '/login',
+                  (route) => false,
+                );
               }
             },
           ),
         ],
       ),
       body: StreamBuilder<List<Election>>(
+        key: ValueKey(_retryTick),
         stream: isAdmin
-            ? electionService.getAllElections()
-            : electionService.getActiveElections(),
+            ? _electionService.getAllElections()
+            : _electionService.getActiveElections(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
           if (snapshot.hasError) {
             return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Error: ${snapshot.error}'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {},
-                    child: const Text('Reintentar'),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('Error: ${snapshot.error}', textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _retry,
+                      child: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
               ),
             );
+          }
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
           }
           final elections = snapshot.data ?? [];
           if (elections.isEmpty) {
             return Center(
               child: Text(
-                isAdmin
-                    ? 'No hay elecciones registradas'
-                    : 'No hay elecciones activas',
+                isAdmin ? 'No hay elecciones registradas' : 'No hay elecciones activas',
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
             );
@@ -106,7 +120,7 @@ class ElectionsScreen extends StatelessWidget {
                   '/voto/results',
                   arguments: election.id,
                 ),
-                onDelete: () => _confirmDelete(context, election, electionService),
+                onDelete: () => _confirmDelete(context, election, _electionService),
               );
             },
           );

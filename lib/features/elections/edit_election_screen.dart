@@ -32,6 +32,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
   bool _loading = false;
   bool _fetching = true;
   Election? _election;
+  List<Candidate> _initialCandidates = [];
   final ElectionService _electionService = ElectionService();
 
   @override
@@ -41,26 +42,26 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
   }
 
   Future<void> _loadElection() async {
-    final service = ElectionService();
-    final election = await service.getElection(widget.electionId);
-    if (mounted) {
-      if (election != null) {
-        setState(() {
-          _election = election;
-          _titleController.text = election.title;
-          _descriptionController.text = election.description;
-          _startDate = DateTime.fromMillisecondsSinceEpoch(election.startDate);
-          _endDate = DateTime.fromMillisecondsSinceEpoch(election.endDate);
-          _isActive = election.isActive;
-          _isVisibleToVoters = election.isVisibleToVoters;
-          _showResultsAutomatically = election.showResultsAutomatically;
-          _requireAttendance = election.requireAttendance;
-          _eventoAsistenciaId = election.eventoAsistenciaId;
-          _fetching = false;
-        });
-      } else {
-        Navigator.pop(context);
-      }
+    final boot = await _electionService.loadResultsBootstrap(widget.electionId);
+    if (!mounted) return;
+    final election = boot.election;
+    if (election != null) {
+      setState(() {
+        _election = election;
+        _initialCandidates = boot.candidates;
+        _titleController.text = election.title;
+        _descriptionController.text = election.description;
+        _startDate = DateTime.fromMillisecondsSinceEpoch(election.startDate);
+        _endDate = DateTime.fromMillisecondsSinceEpoch(election.endDate);
+        _isActive = election.isActive;
+        _isVisibleToVoters = election.isVisibleToVoters;
+        _showResultsAutomatically = election.showResultsAutomatically;
+        _requireAttendance = election.requireAttendance;
+        _eventoAsistenciaId = election.eventoAsistenciaId;
+        _fetching = false;
+      });
+    } else {
+      Navigator.pop(context);
     }
   }
 
@@ -199,7 +200,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                 StreamBuilder<List<EventoAsistencia>>(
                   stream: AsistenciaService().getAllEventos(),
                   builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
+                    if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
                       return const CircularProgressIndicator();
                     }
                     final eventos = snap.data ?? [];
@@ -241,20 +242,13 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
               const SizedBox(height: 8),
               StreamBuilder<List<Candidate>>(
                 stream: _electionService.getCandidates(widget.electionId),
+                initialData: _initialCandidates,
                 builder: (context, snap) {
-                  // Debug logging
-                  debugPrint(
-                    'EditElection StreamBuilder: ConnectionState = ${snap.connectionState}',
-                  );
-
-                  if (snap.connectionState == ConnectionState.waiting) {
+                  if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
                   if (snap.hasError) {
-                    debugPrint(
-                      'EditElection StreamBuilder: ERROR - ${snap.error}',
-                    );
                     return Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
@@ -267,9 +261,6 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                   }
                   
                   final candidates = snap.data ?? [];
-                  debugPrint(
-                    'EditElection StreamBuilder: ${candidates.length} candidatos cargados',
-                  );
 
                   if (candidates.isEmpty) {
                     return Column(

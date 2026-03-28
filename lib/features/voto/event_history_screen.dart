@@ -32,8 +32,18 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
             ? _service.getAllEvents()
             : _service.getEventsByEntityType(_filter!),
         builder: (context, snap) {
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-          final events = snap.data!;
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('Error: ${snap.error}', textAlign: TextAlign.center),
+              ),
+            );
+          }
+          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final events = snap.data ?? [];
           if (events.isEmpty) {
             return Center(
               child: Column(

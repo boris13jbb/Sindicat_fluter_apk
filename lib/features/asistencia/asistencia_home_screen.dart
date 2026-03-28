@@ -3,8 +3,15 @@ import '../../core/models/asistencia/evento.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
 
-class AsistenciaHomeScreen extends StatelessWidget {
+class AsistenciaHomeScreen extends StatefulWidget {
   const AsistenciaHomeScreen({super.key});
+
+  @override
+  State<AsistenciaHomeScreen> createState() => _AsistenciaHomeScreenState();
+}
+
+class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
+  final AsistenciaService _service = AsistenciaService();
 
   static String _formatFecha(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -13,15 +20,25 @@ class AsistenciaHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final service = AsistenciaService();
     return Scaffold(
       appBar: ProfessionalAppBar(
         title: 'Control de Asistencia',
         onNavigateBack: () => Navigator.pop(context),
       ),
       body: StreamBuilder<List<EventoAsistencia>>(
-        stream: service.getAllEventos(),
+        stream: _service.getAllEventos(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('Error: ${snap.error}', textAlign: TextAlign.center),
+              ),
+            );
+          }
+          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
           final eventos = snap.data ?? [];
           return Column(
             children: [

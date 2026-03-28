@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -18,7 +20,33 @@ class ElectionResultsScreen extends StatefulWidget {
 }
 
 class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
-  final ElectionService _electionService = ElectionService();
+  late ElectionService _electionService;
+  late Future<ResultsBootstrap> _bootstrap;
+
+  static const Duration _bootstrapTimeout = Duration(seconds: 30);
+
+  @override
+  void initState() {
+    super.initState();
+    _electionService = ElectionService();
+    _bootstrap = _loadBootstrap();
+  }
+
+  Future<ResultsBootstrap> _loadBootstrap() {
+    return _electionService.loadResultsBootstrap(widget.electionId).timeout(
+          _bootstrapTimeout,
+          onTimeout: () => throw TimeoutException(
+            'La conexión es demasiado lenta. Comprueba datos móviles o Wi‑Fi.',
+          ),
+        );
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _electionService = ElectionService();
+      _bootstrap = _loadBootstrap();
+    });
+  }
 
   static String _toCsv(Election election, List<Candidate> sortedCandidates, int totalVotes) {
     final sb = StringBuffer();
@@ -56,55 +84,92 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
               ]
             : null,
       ),
-      body: FutureBuilder<Election?>(
-        future: _electionService.getElection(widget.electionId),
-        builder: (context, electionSnap) {
-          if (electionSnap.connectionState == ConnectionState.waiting) {
+      body: FutureBuilder<ResultsBootstrap>(
+        future: _bootstrap,
+        builder: (context, bootSnap) {
+          if (bootSnap.hasError) {
+            return _LoadError(
+              message: '${bootSnap.error}',
+              onRetry: _retryLoad,
+            );
+          }
+          if (bootSnap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          final election = electionSnap.data;
-          if (election == null) {
+          final boot = bootSnap.data!;
+          if (boot.election == null) {
             return const Center(child: Text('Elección no encontrada'));
           }
 
-          return StreamBuilder<List<Candidate>>(
-            stream: _electionService.getCandidates(widget.electionId),
-            builder: (context, candidatesSnap) {
-              if (candidatesSnap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+          return StreamBuilder<ElectionLiveState>(
+            stream: _electionService.watchElectionLive(widget.electionId),
+            initialData: ElectionLiveState(election: boot.election, isSyncing: true),
+            builder: (context, electionSnap) {
+              if (electionSnap.hasError) {
+                return _LoadError(
+                  message: '${electionSnap.error}',
+                  onRetry: _retryLoad,
+                );
               }
-              
-              final candidates = candidatesSnap.data ?? [];
-              final sortedCandidates = List<Candidate>.from(candidates)
-                ..sort((a, b) => b.voteCount.compareTo(a.voteCount));
-              
-              final totalVotes = sortedCandidates.fold<int>(0, (sum, c) => sum + c.voteCount);
+              final liveElection = electionSnap.data!;
+              final election = liveElection.election;
+              if (election == null) {
+                return const Center(child: Text('Elección no encontrada'));
+              }
 
-              return SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _HeaderCard(
-                      election: election, 
-                      totalVotes: totalVotes, 
-                      candidatesCount: sortedCandidates.length
-                    ),
-                    const SizedBox(height: 24),
-                    if (sortedCandidates.isEmpty)
-                      const _EmptyResultsCard()
-                    else
-                      ...sortedCandidates.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final candidate = entry.value;
-                        return _ResultTile(
-                          candidate: candidate,
-                          rank: index + 1,
-                          totalVotes: totalVotes,
-                        );
-                      }),
-                  ],
+              return StreamBuilder<CandidatesLiveState>(
+                stream: _electionService.watchCandidatesLive(widget.electionId),
+                initialData: CandidatesLiveState(
+                  candidates: boot.candidates,
+                  isSyncing: true,
                 ),
+                builder: (context, candidatesSnap) {
+                  if (candidatesSnap.hasError) {
+                    return _LoadError(
+                      message: '${candidatesSnap.error}',
+                      onRetry: _retryLoad,
+                    );
+                  }
+
+                  final candidatesState = candidatesSnap.data!;
+                  final candidates = candidatesState.candidates;
+                  final syncing = liveElection.isSyncing || candidatesState.isSyncing;
+
+                  final sortedCandidates = List<Candidate>.from(candidates)
+                    ..sort((a, b) => b.voteCount.compareTo(a.voteCount));
+
+                  final totalVotes =
+                      sortedCandidates.fold<int>(0, (sum, c) => sum + c.voteCount);
+
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (syncing) const _SyncRibbon(),
+                        if (syncing) const SizedBox(height: 12),
+                        _HeaderCard(
+                          election: election,
+                          totalVotes: totalVotes,
+                          candidatesCount: sortedCandidates.length,
+                        ),
+                        const SizedBox(height: 24),
+                        if (sortedCandidates.isEmpty)
+                          const _EmptyResultsCard()
+                        else
+                          ...sortedCandidates.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final candidate = entry.value;
+                            return _ResultTile(
+                              candidate: candidate,
+                              rank: index + 1,
+                              totalVotes: totalVotes,
+                            );
+                          }),
+                      ],
+                    ),
+                  );
+                },
               );
             },
           );
@@ -127,6 +192,40 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
         const SnackBar(content: Text('Resultados copiados en CSV al portapapeles')),
       );
     }
+  }
+}
+
+class _LoadError extends StatelessWidget {
+  const _LoadError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_off, size: 48, color: Theme.of(context).colorScheme.error),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -249,6 +348,44 @@ class _ResultTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
                 backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                 color: isWinner ? Colors.amber : Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Indicador ligero cuando Firestore aún sirve caché o confirma escrituras.
+class _SyncRibbon extends StatelessWidget {
+  const _SyncRibbon();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.secondaryContainer.withValues(alpha: 0.9),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: cs.onSecondaryContainer,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Sincronizando con el servidor…',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: cs.onSecondaryContainer,
+                    ),
               ),
             ),
           ],

@@ -5,20 +5,46 @@ import '../core/models/election.dart';
 import '../core/models/election_result.dart';
 import 'dart:async';
 
+/// Documento de elección + si Firestore aún confirma caché o escrituras locales.
+class ElectionLiveState {
+  const ElectionLiveState({required this.election, required this.isSyncing});
+
+  final Election? election;
+  /// `true` si el snapshot viene solo de caché local o hay escrituras pendientes de confirmar.
+  final bool isSyncing;
+}
+
+/// Lista de candidatos + estado de sincronización del snapshot de consulta.
+class CandidatesLiveState {
+  const CandidatesLiveState({required this.candidates, required this.isSyncing});
+
+  final List<Candidate> candidates;
+  final bool isSyncing;
+}
+
+/// Datos de una lectura puntual para pintar la pantalla antes del primer `.snapshots()`.
+class ResultsBootstrap {
+  const ResultsBootstrap({required this.election, required this.candidates});
+
+  final Election? election;
+  final List<Candidate> candidates;
+}
+
 class ElectionService {
   ElectionService({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
   
-  // Cache de streams activos para prevenir que se cierren prematuramente
-  final Map<String, Stream<List<Candidate>>> _candidatesStreamCache = {};
+  /// Un listener Firestore por elección; [getCandidates] reutiliza el mismo `.map()` por id.
+  final Map<String, Stream<CandidatesLiveState>> _candidatesLiveCache = {};
+  final Map<String, Stream<List<Candidate>>> _candidatesListCache = {};
 
   Stream<List<Election>> getAllElections() {
     return _firestore
         .collection('elections')
         .orderBy('createdAt', descending: true)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map((snap) => snap.docs.map((d) => Election.fromMap(d.data(), d.id)).toList());
   }
 
@@ -26,7 +52,7 @@ class ElectionService {
     return _firestore
         .collection('elections')
         .where('isVisibleToVoters', isEqualTo: true)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map((snap) {
       final now = DateTime.now().millisecondsSinceEpoch;
       return snap.docs
@@ -39,6 +65,50 @@ class ElectionService {
   Future<Election?> getElection(String electionId) async {
     final doc = await _firestore.collection('elections').doc(electionId).get();
     return doc.exists ? Election.fromMap(doc.data()!, doc.id) : null;
+  }
+
+  /// Lectura puntual (documento + candidatos). Suele completar desde caché local aunque el stream tarde en el servidor.
+  Future<ResultsBootstrap> loadResultsBootstrap(String electionId) async {
+    final electionDoc = await _firestore.collection('elections').doc(electionId).get();
+    final election =
+        electionDoc.exists ? Election.fromMap(electionDoc.data()!, electionDoc.id) : null;
+    if (election == null) {
+      return const ResultsBootstrap(election: null, candidates: []);
+    }
+    final candSnap = await _firestore
+        .collection('elections')
+        .doc(electionId)
+        .collection('candidates')
+        .orderBy('order', descending: false)
+        .get();
+    final candidates = candSnap.docs
+        .map(
+          (d) => Candidate.fromMap({
+            ...d.data(),
+            'electionId': electionId,
+          }, d.id),
+        )
+        .toList();
+    return ResultsBootstrap(election: election, candidates: candidates);
+  }
+
+  /// Snapshots del documento de elección con [SnapshotMetadata] para indicadores de sync.
+  Stream<ElectionLiveState> watchElectionLive(String electionId) {
+    return _firestore
+        .collection('elections')
+        .doc(electionId)
+        .snapshots(includeMetadataChanges: true)
+        .map((snap) {
+      final m = snap.metadata;
+      final syncing = m.isFromCache || m.hasPendingWrites;
+      if (!snap.exists) {
+        return const ElectionLiveState(election: null, isSyncing: false);
+      }
+      return ElectionLiveState(
+        election: Election.fromMap(snap.data()!, snap.id),
+        isSyncing: syncing,
+      );
+    });
   }
 
   Future<String> createElection(Election election) async {
@@ -56,40 +126,32 @@ class ElectionService {
     await _firestore.collection('elections').doc(electionId).delete();
   }
 
-  Stream<List<Candidate>> getCandidates(String electionId) {
-    // Verificar si ya tenemos un stream activo para esta elección
-    if (_candidatesStreamCache.containsKey(electionId)) {
-      debugPrint(
-        'getCandidates: Reutilizando stream cacheado para election $electionId',
-      );
-      return _candidatesStreamCache[electionId]!;
+  Stream<CandidatesLiveState> watchCandidatesLive(String electionId) {
+    if (_candidatesLiveCache.containsKey(electionId)) {
+      if (kDebugMode) {
+        debugPrint('watchCandidatesLive: reutilizando stream para $electionId');
+      }
+      return _candidatesLiveCache[electionId]!;
     }
-    
+
     try {
-      debugPrint('getCandidates: Starting stream for election $electionId');
-      
+      if (kDebugMode) {
+        debugPrint('watchCandidatesLive: nuevo stream para $electionId');
+      }
+
       final stream = _firestore
           .collection('elections')
           .doc(electionId)
           .collection('candidates')
           .orderBy('order', descending: false)
-          .snapshots()
+          .snapshots(includeMetadataChanges: true)
           .map((snap) {
-            // Debug logging mejorado
-            debugPrint(
-              'getCandidates: Snapshot received - ${snap.docs.length} documents',
-            );
-            debugPrint(
-              'getCandidates: Has pending writes: ${snap.metadata.hasPendingWrites}',
-            );
-            debugPrint(
-              'getCandidates: Is from cache: ${snap.metadata.isFromCache}',
-            );
-            
-            for (var doc in snap.docs) {
-              debugPrint('  - Candidate: ${doc.id}, data: ${doc.data()}');
+            if (kDebugMode) {
+              debugPrint(
+                'watchCandidatesLive: ${snap.docs.length} docs, cache=${snap.metadata.isFromCache}, pending=${snap.metadata.hasPendingWrites}',
+              );
             }
-            
+            final syncing = snap.metadata.isFromCache || snap.metadata.hasPendingWrites;
             final candidates = snap.docs
                 .map(
                   (d) => Candidate.fromMap({
@@ -98,29 +160,26 @@ class ElectionService {
                   }, d.id),
                 )
                 .toList();
-            
-            debugPrint(
-              'getCandidates: Deserialized ${candidates.length} candidates: ${candidates.map((c) => c.name).join(', ')}',
-            );
-            return candidates;
+            return CandidatesLiveState(candidates: candidates, isSyncing: syncing);
           })
           .handleError((error, stackTrace) {
-            // Manejo de errores del stream
-            debugPrint('getCandidates: ERROR en el stream - $error');
-            debugPrint('getCandidates: Stack trace - $stackTrace');
-            // Retornar lista vacía explícitamente en caso de error
-            return <Candidate>[];
+            debugPrint('watchCandidatesLive: ERROR - $error');
+            debugPrint('watchCandidatesLive: $stackTrace');
           });
-      
-      // Cachear el stream para reutilización
-      _candidatesStreamCache[electionId] = stream;
-      debugPrint('getCandidates: Stream cacheado exitosamente');
 
+      _candidatesLiveCache[electionId] = stream;
       return stream;
     } catch (e) {
-      debugPrint('getCandidates: EXCEPTION al crear el stream - $e');
+      debugPrint('watchCandidatesLive: EXCEPTION - $e');
       rethrow;
     }
+  }
+
+  Stream<List<Candidate>> getCandidates(String electionId) {
+    return _candidatesListCache.putIfAbsent(
+      electionId,
+      () => watchCandidatesLive(electionId).map((s) => s.candidates),
+    );
   }
 
   Future<void> addCandidate(Candidate candidate) async {

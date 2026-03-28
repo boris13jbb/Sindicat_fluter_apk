@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/models/candidate.dart';
 import '../../core/models/election.dart';
-import '../../services/election_service.dart';
 import '../../services/asistencia_service.dart';
+import '../../services/election_service.dart';
 import '../../core/widgets/professional_app_bar.dart';
 
 class VotingScreen extends StatefulWidget {
@@ -15,12 +18,15 @@ class VotingScreen extends StatefulWidget {
 }
 
 class _VotingScreenState extends State<VotingScreen> {
-  final ElectionService _electionService = ElectionService();
+  late ElectionService _electionService;
+  late Future<ResultsBootstrap> _bootstrap;
   final VoteService _voteService = VoteService();
-  
+  final AsistenciaService _asistenciaService = AsistenciaService();
+
+  static const Duration _bootstrapTimeout = Duration(seconds: 30);
+
   late Stream<bool> _votedStream;
-  late Future<Election?> _electionFuture;
-  
+
   bool _localVoteDone = false;
   String _userId = '';
   String? _userEmail;
@@ -30,10 +36,25 @@ class _VotingScreenState extends State<VotingScreen> {
     super.initState();
     _userId = FirebaseAuth.instance.currentUser?.uid ?? '';
     _userEmail = FirebaseAuth.instance.currentUser?.email;
-    
-    // Inicializamos los flujos una sola vez
+    _electionService = ElectionService();
+    _bootstrap = _loadBootstrap();
     _votedStream = _voteService.userVotedStream(widget.electionId, _userId);
-    _electionFuture = _electionService.getElection(widget.electionId);
+  }
+
+  Future<ResultsBootstrap> _loadBootstrap() {
+    return _electionService.loadResultsBootstrap(widget.electionId).timeout(
+          _bootstrapTimeout,
+          onTimeout: () => throw TimeoutException(
+            'La conexión es demasiado lenta. Comprueba datos móviles o Wi‑Fi.',
+          ),
+        );
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _electionService = ElectionService();
+      _bootstrap = _loadBootstrap();
+    });
   }
 
   @override
@@ -42,7 +63,6 @@ class _VotingScreenState extends State<VotingScreen> {
       return const Scaffold(body: Center(child: Text('Inicia sesión para votar')));
     }
 
-    // Bloqueo inmediato si ya votó (caché local o estado de esta sesión)
     if (_voteService.hasVotedLocally(widget.electionId, _userId) || _localVoteDone) {
       return Scaffold(
         appBar: ProfessionalAppBar(title: 'Votar', onNavigateBack: () => Navigator.pop(context)),
@@ -62,8 +82,11 @@ class _VotingScreenState extends State<VotingScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(20),
-                child: Text('Error de conexión: ${votedSnap.error}', 
-                  style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
+                child: Text(
+                  'Error de conexión: ${votedSnap.error}',
+                  style: const TextStyle(color: Colors.red),
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
@@ -72,32 +95,84 @@ class _VotingScreenState extends State<VotingScreen> {
             return _AlreadyVotedContent(electionId: widget.electionId);
           }
 
-          return FutureBuilder<Election?>(
-            future: _electionFuture,
-            builder: (context, electionSnap) {
-              if (electionSnap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              
-              final election = electionSnap.data;
-              if (election == null) return const Center(child: Text('La elección no existe.'));
-              
-              if (election.isNotStarted) return Center(child: Text('Elección programada para: ${DateTime.fromMillisecondsSinceEpoch(election.startDate)}'));
-              if (election.isEnded) return const Center(child: Text('Esta elección ya ha finalizado.'));
-
-              // Verificación de asistencia
-              if (election.requireAttendance && election.eventoAsistenciaId != null) {
-                return FutureBuilder<bool>(
-                  future: AsistenciaService().isUserRegisteredInEvent(election.eventoAsistenciaId!, _userId, _userEmail),
-                  builder: (context, attSnap) {
-                    if (attSnap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                    if (attSnap.data != true) return const Center(child: Text('Asistencia no detectada. Registra tu asistencia para habilitar el voto.'));
-                    return _buildVotingLayout(election, _userId);
-                  },
+          return FutureBuilder<ResultsBootstrap>(
+            future: _bootstrap,
+            builder: (context, bootSnap) {
+              if (bootSnap.hasError) {
+                return _VoteLoadError(
+                  message: '${bootSnap.error}',
+                  onRetry: _retryLoad,
                 );
               }
+              if (bootSnap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final boot = bootSnap.data!;
+              if (boot.election == null) {
+                return const Center(child: Text('La elección no existe.'));
+              }
 
-              return _buildVotingLayout(election, _userId);
+              return StreamBuilder<ElectionLiveState>(
+                stream: _electionService.watchElectionLive(widget.electionId),
+                initialData: ElectionLiveState(election: boot.election, isSyncing: true),
+                builder: (context, electionSnap) {
+                  if (electionSnap.hasError) {
+                    return _VoteLoadError(
+                      message: '${electionSnap.error}',
+                      onRetry: _retryLoad,
+                    );
+                  }
+                  final live = electionSnap.data!;
+                  final election = live.election;
+                  if (election == null) {
+                    return const Center(child: Text('La elección no existe.'));
+                  }
+
+                  if (election.isNotStarted) {
+                    return Center(
+                      child: Text(
+                        'Elección programada para: ${DateTime.fromMillisecondsSinceEpoch(election.startDate)}',
+                      ),
+                    );
+                  }
+                  if (election.isEnded) {
+                    return const Center(child: Text('Esta elección ya ha finalizado.'));
+                  }
+
+                  if (election.requireAttendance && election.eventoAsistenciaId != null) {
+                    final eventoId = election.eventoAsistenciaId!;
+                    return StreamBuilder<bool>(
+                      stream: _asistenciaService.watchUserRegisteredInEvent(
+                        eventoId,
+                        _userId,
+                        _userEmail,
+                      ),
+                      builder: (context, attSnap) {
+                        if (attSnap.hasError) {
+                          return _VoteLoadError(
+                            message: '${attSnap.error}',
+                            onRetry: _retryLoad,
+                          );
+                        }
+                        if (attSnap.connectionState == ConnectionState.waiting &&
+                            !attSnap.hasData) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        if (attSnap.data != true) {
+                          return const Center(
+                            child: Text(
+                              'Asistencia no detectada. Registra tu asistencia para habilitar el voto.',
+                            ),
+                          );
+                        }
+                        return _buildVotingLayout(election, boot.candidates);
+                      },
+                    );
+                  }
+
+                  return _buildVotingLayout(election, boot.candidates);
+                },
+              );
             },
           );
         },
@@ -105,13 +180,44 @@ class _VotingScreenState extends State<VotingScreen> {
     );
   }
 
-  Widget _buildVotingLayout(Election election, String userId) {
+  Widget _buildVotingLayout(Election election, List<Candidate> initialCandidates) {
     return _VotingContent(
       election: election,
       electionId: widget.electionId,
-      userId: userId,
+      userId: _userId,
       voteService: _voteService,
+      initialCandidates: initialCandidates,
       onVoteSuccess: () => setState(() => _localVoteDone = true),
+    );
+  }
+}
+
+class _VoteLoadError extends StatelessWidget {
+  const _VoteLoadError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.cloud_off, size: 48, color: Theme.of(context).colorScheme.error),
+            const SizedBox(height: 16),
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -122,6 +228,7 @@ class _VotingContent extends StatefulWidget {
     required this.electionId,
     required this.userId,
     required this.voteService,
+    required this.initialCandidates,
     required this.onVoteSuccess,
   });
 
@@ -129,6 +236,7 @@ class _VotingContent extends StatefulWidget {
   final String electionId;
   final String userId;
   final VoteService voteService;
+  final List<Candidate> initialCandidates;
   final VoidCallback onVoteSuccess;
 
   @override
@@ -144,48 +252,23 @@ class _VotingContentState extends State<_VotingContent> {
   @override
   void initState() {
     super.initState();
-    // Crear el stream una sola vez en initState
     _candidatesStream = _electionService.getCandidates(widget.electionId);
-    debugPrint(
-      '_VotingContentState: Stream de candidatos inicializado para election ${widget.electionId}',
-    );
-  }
-
-  @override
-  void dispose() {
-    // El stream se cierra automáticamente cuando el StreamBuilder se desuscribe
-    debugPrint('_VotingContentState: Dispose - limpiando stream de candidatos');
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Candidate>>(
       stream: _candidatesStream,
+      initialData: widget.initialCandidates,
       builder: (context, snap) {
-        // Debug logging del estado de conexión
-        debugPrint(
-          'StreamBuilder: ConnectionState = ${snap.connectionState}, hasData = ${snap.hasData}',
-        );
-
-        if (snap.connectionState == ConnectionState.waiting) {
-          debugPrint('StreamBuilder: Estado = waiting, mostrando loading');
-          return const Center(child: CircularProgressIndicator());
-        }
-
         if (snap.hasError) {
-          debugPrint('StreamBuilder: ERROR - ${snap.error}');
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.error_outline,
-                    size: 48,
-                    color: Colors.orange,
-                  ),
+                  const Icon(Icons.error_outline, size: 48, color: Colors.orange),
                   const SizedBox(height: 16),
                   Text(
                     'Error al cargar candidatos: ${snap.error}',
@@ -194,10 +277,7 @@ class _VotingContentState extends State<_VotingContent> {
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () {
-                      // Forzar rebuild del widget
-                      setState(() {});
-                    },
+                    onPressed: () => setState(() {}),
                     child: const Text('Reintentar'),
                   ),
                 ],
@@ -206,32 +286,27 @@ class _VotingContentState extends State<_VotingContent> {
           );
         }
 
-        if (!snap.hasData || snap.data!.isEmpty) {
-          debugPrint(
-            'StreamBuilder: Sin datos o lista vacía - hasData: ${snap.hasData}, count: ${snap.data?.length ?? 0}',
-          );
-          return Center(
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final candidates = snap.data ?? [];
+        if (candidates.isEmpty) {
+          return const Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.info_outline, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text(
-                  'No hay candidatos disponibles.',
-                  style: TextStyle(fontSize: 16),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Estado: ${snap.connectionState}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
+                Icon(Icons.info_outline, size: 48, color: Colors.grey),
+                SizedBox(height: 16),
+                Text('No hay candidatos disponibles.', style: TextStyle(fontSize: 16)),
               ],
             ),
           );
         }
-        
-        final candidates = snap.data!;
-        debugPrint('StreamBuilder: Mostrando ${candidates.length} candidatos');
+
+        if (kDebugMode) {
+          debugPrint('Voting: mostrando ${candidates.length} candidatos');
+        }
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -253,19 +328,29 @@ class _VotingContentState extends State<_VotingContent> {
               const SizedBox(height: 20),
               const Text('Selecciona tu candidato:', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
-              ...candidates.map((c) => Card(
-                color: _selected?.id == c.id ? Theme.of(context).colorScheme.primaryContainer : null,
-                child: RadioListTile<String>(
-                  title: Text(c.name),
-                  value: c.id,
-                  groupValue: _selected?.id,
-                  onChanged: (v) => setState(() => _selected = c),
+              ...candidates.map(
+                (c) => Card(
+                  color: _selected?.id == c.id ? Theme.of(context).colorScheme.primaryContainer : null,
+                  child: RadioListTile<String>(
+                    title: Text(c.name),
+                    value: c.id,
+                    groupValue: _selected?.id,
+                    onChanged: (v) => setState(() => _selected = c),
+                  ),
                 ),
-              )),
+              ),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: _loading || _selected == null ? null : _confirmar,
-                child: _loading ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Emitir Voto'),
+                onPressed: _loading || _selected == null
+                    ? null
+                    : _confirmar,
+                child: _loading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Text('Emitir Voto'),
               ),
             ],
           ),
@@ -305,10 +390,9 @@ class _VotingContentState extends State<_VotingContent> {
       }
       if (mounted) {
         setState(() => _loading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
       }
     }
   }

@@ -77,8 +77,13 @@ class EventoDetailScreen extends StatelessWidget {
             child: StreamBuilder<List<AsistenciaConDatos>>(
               stream: service.getAsistenciasPorEventoStream(evento.id),
               builder: (context, snap) {
-                if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-                final list = snap.data!;
+                if (snap.hasError) {
+                  return Center(child: Text('Error: ${snap.error}'));
+                }
+                if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final list = snap.data ?? [];
                 if (list.isEmpty) {
                   return Center(
                     child: Text(

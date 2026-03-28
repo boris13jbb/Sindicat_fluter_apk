@@ -3,8 +3,15 @@ import '../../core/models/asistencia/asistencia.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
 
-class AsistenciasListScreen extends StatelessWidget {
+class AsistenciasListScreen extends StatefulWidget {
   const AsistenciasListScreen({super.key});
+
+  @override
+  State<AsistenciasListScreen> createState() => _AsistenciasListScreenState();
+}
+
+class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
+  final AsistenciaService _service = AsistenciaService();
 
   static String _formatFecha(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -13,17 +20,26 @@ class AsistenciasListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final service = AsistenciaService();
     return Scaffold(
       appBar: ProfessionalAppBar(
         title: 'Asistencias',
         onNavigateBack: () => Navigator.pop(context),
       ),
-      body: FutureBuilder<List<AsistenciaConDatos>>(
-        future: service.getAllAsistenciasConDatos(),
+      body: StreamBuilder<List<AsistenciaConDatos>>(
+        stream: _service.watchAllAsistenciasConDatos(),
         builder: (context, snap) {
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
-          final list = snap.data!;
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('Error: ${snap.error}', textAlign: TextAlign.center),
+              ),
+            );
+          }
+          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final list = snap.data ?? [];
           if (list.isEmpty) {
             return Center(
               child: Column(
