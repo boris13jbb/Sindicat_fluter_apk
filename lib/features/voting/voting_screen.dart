@@ -304,10 +304,6 @@ class _VotingContentState extends State<_VotingContent> {
           );
         }
 
-        if (kDebugMode) {
-          debugPrint('Voting: mostrando ${candidates.length} candidatos');
-        }
-
         return SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(

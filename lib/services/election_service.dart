@@ -128,17 +128,10 @@ class ElectionService {
 
   Stream<CandidatesLiveState> watchCandidatesLive(String electionId) {
     if (_candidatesLiveCache.containsKey(electionId)) {
-      if (kDebugMode) {
-        debugPrint('watchCandidatesLive: reutilizando stream para $electionId');
-      }
       return _candidatesLiveCache[electionId]!;
     }
 
     try {
-      if (kDebugMode) {
-        debugPrint('watchCandidatesLive: nuevo stream para $electionId');
-      }
-
       final stream = _firestore
           .collection('elections')
           .doc(electionId)
@@ -146,11 +139,6 @@ class ElectionService {
           .orderBy('order', descending: false)
           .snapshots(includeMetadataChanges: true)
           .map((snap) {
-            if (kDebugMode) {
-              debugPrint(
-                'watchCandidatesLive: ${snap.docs.length} docs, cache=${snap.metadata.isFromCache}, pending=${snap.metadata.hasPendingWrites}',
-              );
-            }
             final syncing = snap.metadata.isFromCache || snap.metadata.hasPendingWrites;
             final candidates = snap.docs
                 .map(
@@ -163,14 +151,13 @@ class ElectionService {
             return CandidatesLiveState(candidates: candidates, isSyncing: syncing);
           })
           .handleError((error, stackTrace) {
-            debugPrint('watchCandidatesLive: ERROR - $error');
-            debugPrint('watchCandidatesLive: $stackTrace');
+            debugPrint('Candidate stream error: $error');
           });
 
       _candidatesLiveCache[electionId] = stream;
       return stream;
     } catch (e) {
-      debugPrint('watchCandidatesLive: EXCEPTION - $e');
+      debugPrint('Failed to create candidate stream: $e');
       rethrow;
     }
   }
@@ -184,9 +171,6 @@ class ElectionService {
 
   Future<void> addCandidate(Candidate candidate) async {
     try {
-      debugPrint(
-        'addCandidate: Starting to add candidate "${candidate.name}" to election ${candidate.electionId}',
-      );
       final ref = _firestore
           .collection('elections')
           .doc(candidate.electionId)
@@ -199,13 +183,9 @@ class ElectionService {
       if (!data.containsKey('order')) {
         data['order'] = candidate.order;
       }
-      debugPrint('addCandidate: Data to be saved: $data');
       await ref.set(data);
-      debugPrint(
-        'addCandidate: Successfully added candidate with ID: ${ref.id}',
-      );
     } catch (e) {
-      debugPrint('addCandidate: ERROR - $e');
+      debugPrint('Failed to add candidate: $e');
       rethrow;
     }
   }
@@ -295,7 +275,7 @@ class VoteService {
     try {
       await batch.commit();
     } catch (e) {
-      debugPrint('ERROR AL VOTAR: $e');
+      debugPrint('Vote casting error: $e');
       rethrow;
     }
   }
