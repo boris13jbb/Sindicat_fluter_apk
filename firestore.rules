@@ -19,7 +19,7 @@ service cloud.firestore {
       allow create, update, delete: if isAuthenticated();
 
       match /candidates/{candidateId} {
-        allow read: if isAuthenticated() && candidateId != "";
+        allow read: if isAuthenticated();
         allow create, update, delete: if isAuthenticated();
       }
 

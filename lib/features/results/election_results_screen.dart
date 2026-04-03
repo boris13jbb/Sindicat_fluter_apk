@@ -1,7 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/election.dart';
 import '../../core/models/candidate.dart';
@@ -76,10 +82,26 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
                   tooltip: 'Historial de eventos',
                   onPressed: () => Navigator.pushNamed(context, '/voto/event_history'),
                 ),
-                IconButton(
+                PopupMenuButton<String>(
                   icon: const Icon(Icons.file_download),
-                  tooltip: 'Copiar resultados en CSV',
-                  onPressed: () => _exportCsv(context),
+                  tooltip: 'Descargar resultados',
+                  onSelected: (value) => _handleExport(context, value),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'pdf',
+                      child: ListTile(
+                        leading: Icon(Icons.picture_as_pdf),
+                        title: Text('Descargar PDF'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'csv',
+                      child: ListTile(
+                        leading: Icon(Icons.table_chart),
+                        title: Text('Copiar CSV'),
+                      ),
+                    ),
+                  ],
                 ),
               ]
             : null,
@@ -178,14 +200,136 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
     );
   }
 
-  Future<void> _exportCsv(BuildContext context) async {
+  Future<void> _handleExport(BuildContext context, String type) async {
     final election = await _electionService.getElection(widget.electionId);
     if (election == null || !context.mounted) return;
+    
     final candidates = await _electionService.getCandidates(widget.electionId).first;
     if (!context.mounted) return;
+    
     final sorted = List<Candidate>.from(candidates)..sort((a, b) => b.voteCount.compareTo(a.voteCount));
     final total = sorted.fold<int>(0, (s, c) => s + c.voteCount);
-    final csv = _toCsv(election, sorted, total);
+
+    if (type == 'pdf') {
+      await _exportPdf(context, election, sorted, total);
+    } else if (type == 'csv') {
+      await _exportCsv(context, election, sorted, total);
+    }
+  }
+
+  Future<void> _exportPdf(
+    BuildContext context,
+    Election election,
+    List<Candidate> sortedCandidates,
+    int totalVotes,
+  ) async {
+    try {
+      final pdf = pw.Document();
+      
+      pdf.addPage(
+        pw.Page(
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'Resultados de la Elección',
+                  style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(height: 20),
+                pw.Text('Elección: ${election.title}', style: const pw.TextStyle(fontSize: 16)),
+                pw.Text('Descripción: ${election.description}', style: const pw.TextStyle(fontSize: 14)),
+                pw.Text('Total de votos: $totalVotes', style: const pw.TextStyle(fontSize: 14)),
+                pw.SizedBox(height: 20),
+                pw.Table(
+                  border: pw.TableBorder.all(),
+                  children: [
+                    pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('Posición', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('Candidato', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('Votos', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(8),
+                          child: pw.Text('Porcentaje', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                    ...sortedCandidates.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final candidate = entry.value;
+                      final percentage = totalVotes > 0 
+                          ? ((candidate.voteCount / totalVotes) * 100).toStringAsFixed(1)
+                          : '0';
+                      return pw.TableRow(
+                        children: [
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text('${index + 1}'),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text(candidate.name),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text('${candidate.voteCount}'),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(8),
+                            child: pw.Text('$percentage%'),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      );
+
+      final directory = await getTemporaryDirectory();
+      final filePath = '${directory.path}/resultados_${election.id}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final file = File(filePath);
+      await file.writeAsBytes(await pdf.save());
+
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        subject: 'Resultados - ${election.title}',
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('PDF generado y compartido exitosamente')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al generar PDF: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportCsv(
+    BuildContext context,
+    Election election,
+    List<Candidate> sortedCandidates,
+    int totalVotes,
+  ) async {
+    final csv = _toCsv(election, sortedCandidates, totalVotes);
     await Clipboard.setData(ClipboardData(text: csv));
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
