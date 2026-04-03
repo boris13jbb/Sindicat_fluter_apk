@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/models/candidate.dart';
 import '../../core/models/election.dart';
@@ -324,15 +323,31 @@ class _VotingContentState extends State<_VotingContent> {
               const SizedBox(height: 20),
               const Text('Selecciona tu candidato:', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
-              ...candidates.map(
-                (c) => Card(
-                  color: _selected?.id == c.id ? Theme.of(context).colorScheme.primaryContainer : null,
-                  child: RadioListTile<String>(
-                    title: Text(c.name),
-                    value: c.id,
-                    groupValue: _selected?.id,
-                    onChanged: (v) => setState(() => _selected = c),
-                  ),
+              RadioGroup<String>(
+                groupValue: _selected?.id,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _selected = candidates.firstWhere(
+                      (candidate) => candidate.id == value,
+                      orElse: () => _selected ?? candidates.first,
+                    );
+                  });
+                },
+                child: Column(
+                  children: [
+                    ...candidates.map(
+                      (c) => Card(
+                        color: _selected?.id == c.id
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : null,
+                        child: RadioListTile<String>(
+                          title: Text(c.name),
+                          value: c.id,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),

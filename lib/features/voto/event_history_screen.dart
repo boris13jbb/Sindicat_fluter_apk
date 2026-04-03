@@ -80,22 +80,24 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('Filtrar eventos'),
           content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                RadioListTile<VotoEntityType?>(
-                  title: const Text('Todos'),
-                  value: null,
-                  groupValue: selected,
-                  onChanged: (v) => setDialogState(() => selected = v),
-                ),
-                ...VotoEntityType.values.map((t) => RadioListTile<VotoEntityType?>(
-                  title: Text(_entityLabel(t)),
-                  value: t,
-                  groupValue: selected,
-                  onChanged: (v) => setDialogState(() => selected = v),
-                )),
-              ],
+            child: RadioGroup<VotoEntityType?>(
+              groupValue: selected,
+              onChanged: (v) => setDialogState(() => selected = v),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const RadioListTile<VotoEntityType?>(
+                    title: Text('Todos'),
+                    value: null,
+                  ),
+                  ...VotoEntityType.values.map(
+                    (t) => RadioListTile<VotoEntityType?>(
+                      title: Text(_entityLabel(t)),
+                      value: t,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           actions: [

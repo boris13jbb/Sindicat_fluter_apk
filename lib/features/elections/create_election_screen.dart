@@ -41,12 +41,13 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
       lastDate: DateTime.now().add(const Duration(days: 365)),
     );
     if (picked == null) return;
-    if (!context.mounted) return;
+    if (!mounted) return;
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial ?? DateTime.now()),
     );
     if (time == null) return;
+    if (!mounted) return;
     final dt = DateTime(
       picked.year,
       picked.month,

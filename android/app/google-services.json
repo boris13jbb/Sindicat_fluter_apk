@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "118597085547",
+    "firebase_url": "https://sistema-integrado-sindicato-default-rtdb.firebaseio.com",
     "project_id": "sistema-integrado-sindicato",
     "storage_bucket": "sistema-integrado-sindicato.firebasestorage.app"
   },

@@ -24,6 +24,7 @@ import 'features/asistencia/registro_manual_screen.dart';
 import 'features/asistencia/asistencias_list_screen.dart';
 import 'features/asistencia/exportar_screen.dart';
 import 'features/asistencia/scanner_screen.dart';
+import 'core/models/asistencia/evento.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
