@@ -26,19 +26,32 @@ enum VotoEventType {
 
   String get shortLabel {
     switch (this) {
-      case VotoEventType.voteCast: return 'Voto emitido';
-      case VotoEventType.voteAttempt: return 'Intento de voto';
-      case VotoEventType.electionCreated: return 'Elección creada';
-      case VotoEventType.electionUpdated: return 'Elección actualizada';
-      case VotoEventType.electionDeleted: return 'Elección eliminada';
-      case VotoEventType.candidateCreated: return 'Candidato creado';
-      case VotoEventType.candidateUpdated: return 'Candidato actualizado';
-      case VotoEventType.candidateDeleted: return 'Candidato eliminado';
-      case VotoEventType.userLogin: return 'Inicio de sesión';
-      case VotoEventType.userLogout: return 'Cierre de sesión';
-      case VotoEventType.exportExcel: return 'Exportación Excel';
-      case VotoEventType.exportPdf: return 'Exportación PDF';
-      case VotoEventType.permissionDenied: return 'Acceso denegado';
+      case VotoEventType.voteCast:
+        return 'Voto emitido';
+      case VotoEventType.voteAttempt:
+        return 'Intento de voto';
+      case VotoEventType.electionCreated:
+        return 'Elección creada';
+      case VotoEventType.electionUpdated:
+        return 'Elección actualizada';
+      case VotoEventType.electionDeleted:
+        return 'Elección eliminada';
+      case VotoEventType.candidateCreated:
+        return 'Candidato creado';
+      case VotoEventType.candidateUpdated:
+        return 'Candidato actualizado';
+      case VotoEventType.candidateDeleted:
+        return 'Candidato eliminado';
+      case VotoEventType.userLogin:
+        return 'Inicio de sesión';
+      case VotoEventType.userLogout:
+        return 'Cierre de sesión';
+      case VotoEventType.exportExcel:
+        return 'Exportación Excel';
+      case VotoEventType.exportPdf:
+        return 'Exportación PDF';
+      case VotoEventType.permissionDenied:
+        return 'Acceso denegado';
     }
   }
 }

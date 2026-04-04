@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-class ProfessionalAppBar extends StatelessWidget implements PreferredSizeWidget {
+class ProfessionalAppBar extends StatelessWidget
+    implements PreferredSizeWidget {
   const ProfessionalAppBar({
     super.key,
     required this.title,
@@ -20,9 +21,9 @@ class ProfessionalAppBar extends StatelessWidget implements PreferredSizeWidget 
     return AppBar(
       title: Text(
         title,
-        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

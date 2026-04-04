@@ -4,11 +4,9 @@ import '../core/models/user.dart' as app;
 import '../core/models/user_role.dart';
 
 class AuthService {
-  AuthService({
-    FirebaseAuth? auth,
-    FirebaseFirestore? firestore,
-  }) : _manualAuth = auth,
-       _manualFirestore = firestore;
+  AuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
+    : _manualAuth = auth,
+      _manualFirestore = firestore;
 
   final FirebaseAuth? _manualAuth;
   final FirebaseFirestore? _manualFirestore;
@@ -18,7 +16,9 @@ class AuthService {
     try {
       return _manualAuth ?? FirebaseAuth.instance;
     } catch (e) {
-      throw Exception('Firebase Auth no inicializado. Revisa la configuración Web.');
+      throw Exception(
+        'Firebase Auth no inicializado. Revisa la configuración Web.',
+      );
     }
   }
 
@@ -26,7 +26,9 @@ class AuthService {
     try {
       return _manualFirestore ?? FirebaseFirestore.instance;
     } catch (e) {
-      throw Exception('Firestore no inicializado. Revisa la configuración Web.');
+      throw Exception(
+        'Firestore no inicializado. Revisa la configuración Web.',
+      );
     }
   }
 
@@ -75,7 +77,10 @@ class AuthService {
 
   Future<void> signIn(String email, String password) async {
     try {
-      await _auth.signInWithEmailAndPassword(email: email.trim(), password: password);
+      await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
     } catch (e) {
@@ -106,7 +111,10 @@ class AuthService {
         employeeNumber: employeeNumber,
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
-      await _firestore.collection(_usersCollection).doc(user.id).set(user.toMap());
+      await _firestore
+          .collection(_usersCollection)
+          .doc(user.id)
+          .set(user.toMap());
       _currentUser = user;
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
@@ -130,10 +138,14 @@ class AuthService {
 
   String _firebaseErrorMessage(String code) {
     switch (code) {
-      case 'invalid-email': return 'Email no válido';
-      case 'user-not-found': return 'Usuario no encontrado';
-      case 'wrong-password': return 'Contraseña incorrecta';
-      default: return 'Error de autenticación: $code';
+      case 'invalid-email':
+        return 'Email no válido';
+      case 'user-not-found':
+        return 'Usuario no encontrado';
+      case 'wrong-password':
+        return 'Contraseña incorrecta';
+      default:
+        return 'Error de autenticación: $code';
     }
   }
 }

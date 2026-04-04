@@ -43,17 +43,17 @@ class ElectionCard extends StatelessWidget {
           children: [
             Text(
               election.title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             if (election.description.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
                 election.description,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -65,9 +65,14 @@ class ElectionCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Inicio', style: Theme.of(context).textTheme.labelMedium),
-                      Text(_formatDate(election.startDate),
-                          style: Theme.of(context).textTheme.bodyMedium),
+                      Text(
+                        'Inicio',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      Text(
+                        _formatDate(election.startDate),
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ],
                   ),
                 ),
@@ -75,9 +80,14 @@ class ElectionCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Fin', style: Theme.of(context).textTheme.labelMedium),
-                      Text(_formatDate(election.endDate),
-                          style: Theme.of(context).textTheme.bodyMedium),
+                      Text(
+                        'Fin',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      Text(
+                        _formatDate(election.endDate),
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
                     ],
                   ),
                 ),
@@ -133,8 +143,17 @@ class ElectionCard extends StatelessWidget {
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: onDelete,
-                      icon: Icon(Icons.delete, size: 18, color: Theme.of(context).colorScheme.error),
-                      label: Text('Eliminar', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      icon: Icon(
+                        Icons.delete,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      label: Text(
+                        'Eliminar',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
                     ),
                   ),
                 ],

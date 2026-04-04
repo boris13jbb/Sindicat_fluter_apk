@@ -34,7 +34,8 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
             IconButton(
               icon: const Icon(Icons.history),
               tooltip: 'Historial de eventos',
-              onPressed: () => Navigator.pushNamed(context, '/voto/event_history'),
+              onPressed: () =>
+                  Navigator.pushNamed(context, '/voto/event_history'),
             ),
           IconButton(
             icon: const Icon(Icons.logout),
@@ -64,7 +65,10 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text('Error: ${snapshot.error}', textAlign: TextAlign.center),
+                    Text(
+                      'Error: ${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
                     const SizedBox(height: 16),
                     FilledButton(
                       onPressed: _retry,
@@ -75,14 +79,17 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
               ),
             );
           }
-          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           final elections = snapshot.data ?? [];
           if (elections.isEmpty) {
             return Center(
               child: Text(
-                isAdmin ? 'No hay elecciones registradas' : 'No hay elecciones activas',
+                isAdmin
+                    ? 'No hay elecciones registradas'
+                    : 'No hay elecciones activas',
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
             );
@@ -120,7 +127,8 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                   '/voto/results',
                   arguments: election.id,
                 ),
-                onDelete: () => _confirmDelete(context, election, _electionService),
+                onDelete: () =>
+                    _confirmDelete(context, election, _electionService),
               );
             },
           );
@@ -128,7 +136,8 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
       ),
       floatingActionButton: isAdmin
           ? FloatingActionButton(
-              onPressed: () => Navigator.pushNamed(context, '/voto/create_election'),
+              onPressed: () =>
+                  Navigator.pushNamed(context, '/voto/create_election'),
               child: const Icon(Icons.add),
             )
           : null,
@@ -154,7 +163,10 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Eliminar', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+            child: Text(
+              'Eliminar',
+              style: TextStyle(color: Theme.of(ctx).colorScheme.error),
+            ),
           ),
         ],
       ),
@@ -162,9 +174,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
     if (ok == true && context.mounted) {
       await service.deleteElection(election.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Elección eliminada')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Elección eliminada')));
       }
     }
   }

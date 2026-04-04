@@ -34,7 +34,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
         if (auth.isSignedIn) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (context.mounted) {
-              Navigator.of(context).pushNamedAndRemoveUntil('/home', (r) => false);
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/home', (r) => false);
             }
           });
         }
@@ -63,8 +65,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 Text(
                   'Crea una nueva cuenta',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 TextFormField(
@@ -98,8 +100,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Ingresa tu email' : null,
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? 'Ingresa tu email'
+                      : null,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -140,8 +143,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     child: Text(
                       'La contraseña debe tener al menos 6 caracteres',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 Consumer<AuthProvider>(
@@ -152,8 +155,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         child: Text(
                           auth.errorMessage!,
                           style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                              fontSize: 12),
+                            color: Theme.of(context).colorScheme.error,
+                            fontSize: 12,
+                          ),
                         ),
                       );
                     }
@@ -165,11 +169,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   builder: (_, auth, __) {
                     final canSubmit =
                         _emailController.text.trim().isNotEmpty &&
-                            _employeeNumberController.text.trim().isNotEmpty &&
-                            _passwordController.text.isNotEmpty &&
-                            _passwordController.text ==
-                                _confirmPasswordController.text &&
-                            _passwordController.text.length >= 6;
+                        _employeeNumberController.text.trim().isNotEmpty &&
+                        _passwordController.text.isNotEmpty &&
+                        _passwordController.text ==
+                            _confirmPasswordController.text &&
+                        _passwordController.text.length >= 6;
                     return ElevatedButton(
                       onPressed: auth.isLoading || !canSubmit
                           ? null
@@ -179,11 +183,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 auth.signUpWithEmployeeNumber(
                                   email: _emailController.text.trim(),
                                   password: _passwordController.text,
-                                  employeeNumber:
-                                      _employeeNumberController.text.trim(),
-                                  displayName: _displayNameController.text
-                                      .trim()
-                                      .isEmpty
+                                  employeeNumber: _employeeNumberController.text
+                                      .trim(),
+                                  displayName:
+                                      _displayNameController.text.trim().isEmpty
                                       ? null
                                       : _displayNameController.text.trim(),
                                 );

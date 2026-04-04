@@ -38,7 +38,9 @@ class EventoAsistencia {
       id: docId,
       nombre: map['nombre'] as String? ?? '',
       fecha: (map['fecha'] as num?)?.toInt() ?? 0,
-      tipoReunion: TipoReunion.fromString((map['tipoReunion'] as String?) ?? 'ORDINARIA'),
+      tipoReunion: TipoReunion.fromString(
+        (map['tipoReunion'] as String?) ?? 'ORDINARIA',
+      ),
       descripcion: map['descripcion'] as String?,
       fechaCreacion: (map['fechaCreacion'] as num?)?.toInt(),
     );

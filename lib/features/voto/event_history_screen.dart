@@ -14,6 +14,33 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
   final EventService _service = EventService();
   VotoEntityType? _filter;
 
+  String _getFriendlyErrorMessage(dynamic error) {
+    final errorMsg = error.toString().toLowerCase();
+
+    if (errorMsg.contains('permission') || errorMsg.contains('unauthorized')) {
+      return 'No tienes permisos para ver los eventos.\nVerifica tu sesión e intenta nuevamente.';
+    }
+
+    if (errorMsg.contains('index') || errorMsg.contains('requires index')) {
+      return 'Se requiere un índice en Firestore para mostrar los eventos.\nContacta al administrador.';
+    }
+
+    if (errorMsg.contains('offline') ||
+        errorMsg.contains('network') ||
+        errorMsg.contains('connection')) {
+      return 'Sin conexión a internet.\nLos eventos se mostrarán cuando te conectes.';
+    }
+
+    return 'Error al cargar eventos:\n${error.toString()}';
+  }
+
+  bool _isOfflineError(dynamic error) {
+    final errorMsg = error.toString().toLowerCase();
+    return errorMsg.contains('offline') ||
+        errorMsg.contains('network') ||
+        errorMsg.contains('connection');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -33,14 +60,50 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
             : _service.getEventsByEntityType(_filter!),
         builder: (context, snap) {
           if (snap.hasError) {
+            debugPrint('❌ Error en historial de eventos: ${snap.error}');
+            debugPrint('StackTrace: ${StackTrace.current}');
+
+            final errorMessage = _getFriendlyErrorMessage(snap.error);
+            final isOffline = _isOfflineError(snap.error);
+
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Error: ${snap.error}', textAlign: TextAlign.center),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      errorMessage,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    if (isOffline) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Verifica tu conexión e intenta nuevamente',
+                        style: Theme.of(context).textTheme.bodySmall,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => setState(() {}), // Reintentar
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
+                    ),
+                  ],
+                ),
               ),
             );
           }
-          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           final events = snap.data ?? [];
@@ -49,10 +112,16 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.history, size: 64, color: Theme.of(context).colorScheme.outline),
+                  Icon(
+                    Icons.history,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                   const SizedBox(height: 16),
                   Text(
-                    _filter == null ? 'No hay eventos registrados' : 'No hay eventos de este tipo',
+                    _filter == null
+                        ? 'No hay eventos registrados'
+                        : 'No hay eventos de este tipo',
                     style: Theme.of(context).textTheme.bodyLarge,
                   ),
                 ],
@@ -115,11 +184,16 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
 
   String _entityLabel(VotoEntityType t) {
     switch (t) {
-      case VotoEntityType.user: return 'Usuarios';
-      case VotoEntityType.election: return 'Elecciones';
-      case VotoEntityType.candidate: return 'Candidatos';
-      case VotoEntityType.vote: return 'Votos';
-      case VotoEntityType.system: return 'Sistema';
+      case VotoEntityType.user:
+        return 'Usuarios';
+      case VotoEntityType.election:
+        return 'Elecciones';
+      case VotoEntityType.candidate:
+        return 'Candidatos';
+      case VotoEntityType.vote:
+        return 'Votos';
+      case VotoEntityType.system:
+        return 'Sistema';
     }
   }
 }
@@ -134,8 +208,8 @@ class _EventCard extends StatelessWidget {
     final resultColor = event.result == VotoEventResult.success
         ? Colors.green
         : event.result == VotoEventResult.failure
-            ? Colors.red
-            : Colors.orange;
+        ? Colors.red
+        : Colors.orange;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -161,9 +235,8 @@ class _EventCard extends StatelessWidget {
                     children: [
                       Text(
                         event.type.shortLabel,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -175,17 +248,24 @@ class _EventCard extends StatelessWidget {
                         children: [
                           Text(
                             event.formattedDate,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
                           ),
-                          if (event.userName != null && event.userName!.isNotEmpty) ...[
+                          if (event.userName != null &&
+                              event.userName!.isNotEmpty) ...[
                             const SizedBox(width: 12),
                             Text(
                               'Por: ${event.userName}',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
                             ),
                           ],
                         ],

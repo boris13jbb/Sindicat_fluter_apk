@@ -41,7 +41,9 @@ class _VotingScreenState extends State<VotingScreen> {
   }
 
   Future<ResultsBootstrap> _loadBootstrap() {
-    return _electionService.loadResultsBootstrap(widget.electionId).timeout(
+    return _electionService
+        .loadResultsBootstrap(widget.electionId)
+        .timeout(
           _bootstrapTimeout,
           onTimeout: () => throw TimeoutException(
             'La conexión es demasiado lenta. Comprueba datos móviles o Wi‑Fi.',
@@ -59,12 +61,18 @@ class _VotingScreenState extends State<VotingScreen> {
   @override
   Widget build(BuildContext context) {
     if (_userId.isEmpty) {
-      return const Scaffold(body: Center(child: Text('Inicia sesión para votar')));
+      return const Scaffold(
+        body: Center(child: Text('Inicia sesión para votar')),
+      );
     }
 
-    if (_voteService.hasVotedLocally(widget.electionId, _userId) || _localVoteDone) {
+    if (_voteService.hasVotedLocally(widget.electionId, _userId) ||
+        _localVoteDone) {
       return Scaffold(
-        appBar: ProfessionalAppBar(title: 'Votar', onNavigateBack: () => Navigator.pop(context)),
+        appBar: ProfessionalAppBar(
+          title: 'Votar',
+          onNavigateBack: () => Navigator.pop(context),
+        ),
         body: _AlreadyVotedContent(electionId: widget.electionId),
       );
     }
@@ -113,7 +121,10 @@ class _VotingScreenState extends State<VotingScreen> {
 
               return StreamBuilder<ElectionLiveState>(
                 stream: _electionService.watchElectionLive(widget.electionId),
-                initialData: ElectionLiveState(election: boot.election, isSyncing: true),
+                initialData: ElectionLiveState(
+                  election: boot.election,
+                  isSyncing: true,
+                ),
                 builder: (context, electionSnap) {
                   if (electionSnap.hasError) {
                     return _VoteLoadError(
@@ -135,10 +146,13 @@ class _VotingScreenState extends State<VotingScreen> {
                     );
                   }
                   if (election.isEnded) {
-                    return const Center(child: Text('Esta elección ya ha finalizado.'));
+                    return const Center(
+                      child: Text('Esta elección ya ha finalizado.'),
+                    );
                   }
 
-                  if (election.requireAttendance && election.eventoAsistenciaId != null) {
+                  if (election.requireAttendance &&
+                      election.eventoAsistenciaId != null) {
                     final eventoId = election.eventoAsistenciaId!;
                     return StreamBuilder<bool>(
                       stream: _asistenciaService.watchUserRegisteredInEvent(
@@ -153,9 +167,12 @@ class _VotingScreenState extends State<VotingScreen> {
                             onRetry: _retryLoad,
                           );
                         }
-                        if (attSnap.connectionState == ConnectionState.waiting &&
+                        if (attSnap.connectionState ==
+                                ConnectionState.waiting &&
                             !attSnap.hasData) {
-                          return const Center(child: CircularProgressIndicator());
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
                         }
                         if (attSnap.data != true) {
                           return const Center(
@@ -179,7 +196,10 @@ class _VotingScreenState extends State<VotingScreen> {
     );
   }
 
-  Widget _buildVotingLayout(Election election, List<Candidate> initialCandidates) {
+  Widget _buildVotingLayout(
+    Election election,
+    List<Candidate> initialCandidates,
+  ) {
     return _VotingContent(
       election: election,
       electionId: widget.electionId,
@@ -205,7 +225,11 @@ class _VoteLoadError extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.cloud_off, size: 48, color: Theme.of(context).colorScheme.error),
+            Icon(
+              Icons.cloud_off,
+              size: 48,
+              color: Theme.of(context).colorScheme.error,
+            ),
             const SizedBox(height: 16),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 24),
@@ -267,7 +291,11 @@ class _VotingContentState extends State<_VotingContent> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline, size: 48, color: Colors.orange),
+                  const Icon(
+                    Icons.error_outline,
+                    size: 48,
+                    color: Colors.orange,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     'Error al cargar candidatos: ${snap.error}',
@@ -297,7 +325,10 @@ class _VotingContentState extends State<_VotingContent> {
               children: [
                 Icon(Icons.info_outline, size: 48, color: Colors.grey),
                 SizedBox(height: 16),
-                Text('No hay candidatos disponibles.', style: TextStyle(fontSize: 16)),
+                Text(
+                  'No hay candidatos disponibles.',
+                  style: TextStyle(fontSize: 16),
+                ),
               ],
             ),
           );
@@ -314,14 +345,21 @@ class _VotingContentState extends State<_VotingContent> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(widget.election.title, style: Theme.of(context).textTheme.titleLarge),
-                      if (widget.election.description.isNotEmpty) Text(widget.election.description),
+                      Text(
+                        widget.election.title,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      if (widget.election.description.isNotEmpty)
+                        Text(widget.election.description),
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: 20),
-              const Text('Selecciona tu candidato:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                'Selecciona tu candidato:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 10),
               RadioGroup<String>(
                 groupValue: _selected?.id,
@@ -352,14 +390,15 @@ class _VotingContentState extends State<_VotingContent> {
               ),
               const SizedBox(height: 24),
               FilledButton(
-                onPressed: _loading || _selected == null
-                    ? null
-                    : _confirmar,
+                onPressed: _loading || _selected == null ? null : _confirmar,
                 child: _loading
                     ? const SizedBox(
                         height: 20,
                         width: 20,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
                       )
                     : const Text('Emitir Voto'),
               ),
@@ -377,8 +416,14 @@ class _VotingContentState extends State<_VotingContent> {
         title: const Text('Confirmar'),
         content: Text('¿Votar por ${_selected!.name}?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Votar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Votar'),
+          ),
         ],
       ),
     );
@@ -395,7 +440,9 @@ class _VotingContentState extends State<_VotingContent> {
       widget.onVoteSuccess();
     } catch (e) {
       final msg = e.toString().toLowerCase();
-      if (msg.contains('already-exists') || msg.contains('already_exists') || msg.contains('already exists')) {
+      if (msg.contains('already-exists') ||
+          msg.contains('already_exists') ||
+          msg.contains('already exists')) {
         widget.onVoteSuccess();
         return;
       }
@@ -421,11 +468,18 @@ class _AlreadyVotedContent extends StatelessWidget {
         children: [
           const Icon(Icons.check_circle, size: 80, color: Colors.green),
           const SizedBox(height: 16),
-          const Text('¡Voto Registrado!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          const Text(
+            '¡Voto Registrado!',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          ),
           const Text('Gracias por participar.'),
           const SizedBox(height: 32),
           FilledButton(
-            onPressed: () => Navigator.pushNamed(context, '/voto/results', arguments: electionId),
+            onPressed: () => Navigator.pushNamed(
+              context,
+              '/voto/results',
+              arguments: electionId,
+            ),
             child: const Text('Ver Resultados'),
           ),
         ],

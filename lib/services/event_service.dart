@@ -1,28 +1,47 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../core/models/voto_event.dart';
 
 /// Servicio de eventos de auditoría (colección Firestore "events").
 class EventService {
   EventService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
   static const String _collection = 'events';
 
   Stream<List<VotoEvent>> getAllEvents({int limit = 100}) {
-    return _firestore
-        .collection(_collection)
-        .orderBy('timestamp', descending: true)
-        .limit(limit)
-        .snapshots(includeMetadataChanges: true)
-        .map((snap) => snap.docs
-            .map((d) => VotoEvent.fromMap(d.data(), d.id))
-            .toList());
+    try {
+      return _firestore
+          .collection(_collection)
+          .orderBy('timestamp', descending: true)
+          .limit(limit)
+          .snapshots(includeMetadataChanges: true)
+          .map(
+            (snap) => snap.docs
+                .map((d) => VotoEvent.fromMap(d.data(), d.id))
+                .toList(),
+          )
+          .handleError((error, stackTrace) {
+            debugPrint('❌ Error en stream de eventos: $error');
+            debugPrint('StackTrace: $stackTrace');
+            // No relanzar el error aquí para evitar cerrar el stream
+            // El StreamBuilder manejará el error
+          });
+    } catch (e) {
+      debugPrint('❌ Error al obtener eventos: $e');
+      rethrow;
+    }
   }
 
-  Stream<List<VotoEvent>> getEventsByEntityType(VotoEntityType entityType, {int limit = 100}) {
-    return getAllEvents(limit: limit * 2).map((list) =>
-        list.where((e) => e.entityType == entityType).take(limit).toList());
+  Stream<List<VotoEvent>> getEventsByEntityType(
+    VotoEntityType entityType, {
+    int limit = 100,
+  }) {
+    return getAllEvents(limit: limit * 2).map(
+      (list) =>
+          list.where((e) => e.entityType == entityType).take(limit).toList(),
+    );
   }
 
   Future<void> logEvent({

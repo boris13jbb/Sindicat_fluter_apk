@@ -32,11 +32,15 @@ class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Error: ${snap.error}', textAlign: TextAlign.center),
+                child: Text(
+                  'Error: ${snap.error}',
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
-          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           final list = snap.data ?? [];
@@ -45,7 +49,11 @@ class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.assignment_turned_in, size: 64, color: Theme.of(context).colorScheme.outline),
+                  Icon(
+                    Icons.assignment_turned_in,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
                   const SizedBox(height: 16),
                   const Text('No hay registros de asistencia.'),
                 ],

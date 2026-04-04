@@ -7,7 +7,8 @@ class PersonasAsistenciaScreen extends StatefulWidget {
   const PersonasAsistenciaScreen({super.key});
 
   @override
-  State<PersonasAsistenciaScreen> createState() => _PersonasAsistenciaScreenState();
+  State<PersonasAsistenciaScreen> createState() =>
+      _PersonasAsistenciaScreenState();
 }
 
 class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
@@ -41,7 +42,8 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                 if (snap.hasError) {
                   return Center(child: Text('Error: ${snap.error}'));
                 }
-                if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+                if (snap.connectionState == ConnectionState.waiting &&
+                    !snap.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 var list = snap.data ?? [];
@@ -59,9 +61,15 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.people_outline, size: 64, color: Theme.of(context).colorScheme.outline),
+                        Icon(
+                          Icons.people_outline,
+                          size: 64,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
                         const SizedBox(height: 16),
-                        const Text('No hay personas. Agrega una con el botón +.'),
+                        const Text(
+                          'No hay personas. Agrega una con el botón +.',
+                        ),
                       ],
                     ),
                   );
@@ -83,21 +91,38 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   title: const Text('Eliminar persona'),
-                                  content: Text('¿Eliminar a ${p.nombreCompleto}?'),
+                                  content: Text(
+                                    '¿Eliminar a ${p.nombreCompleto}?',
+                                  ),
                                   actions: [
-                                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-                                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(ctx, false),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: const Text('Eliminar'),
+                                    ),
                                   ],
                                 ),
                               );
                               if (ok == true) {
                                 await _service.deletePersona(p.id);
-                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Persona eliminada')));
+                                if (context.mounted)
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Persona eliminada'),
+                                    ),
+                                  );
                               }
                             }
                           },
                           itemBuilder: (context) => [
-                            const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Eliminar'),
+                            ),
                           ],
                         ),
                       ),
@@ -128,17 +153,33 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(controller: nombres, decoration: const InputDecoration(labelText: 'Nombres *'), autofocus: true),
-              TextField(controller: apellidos, decoration: const InputDecoration(labelText: 'Apellidos *')),
-              TextField(controller: identificador, decoration: const InputDecoration(labelText: 'Identificador (opcional)')),
+              TextField(
+                controller: nombres,
+                decoration: const InputDecoration(labelText: 'Nombres *'),
+                autofocus: true,
+              ),
+              TextField(
+                controller: apellidos,
+                decoration: const InputDecoration(labelText: 'Apellidos *'),
+              ),
+              TextField(
+                controller: identificador,
+                decoration: const InputDecoration(
+                  labelText: 'Identificador (opcional)',
+                ),
+              ),
             ],
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
           FilledButton(
             onPressed: () {
-              if (nombres.text.trim().isEmpty || apellidos.text.trim().isEmpty) return;
+              if (nombres.text.trim().isEmpty || apellidos.text.trim().isEmpty)
+                return;
               Navigator.pop(ctx, true);
             },
             child: const Text('Guardar'),
@@ -152,12 +193,20 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
         id: '',
         nombres: nombres.text.trim(),
         apellidos: apellidos.text.trim(),
-        identificador: identificador.text.trim().isEmpty ? null : identificador.text.trim(),
+        identificador: identificador.text.trim().isEmpty
+            ? null
+            : identificador.text.trim(),
       );
       await _service.createPersona(p);
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Persona agregada')));
+      if (context.mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Persona agregada')));
     } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (context.mounted)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 }

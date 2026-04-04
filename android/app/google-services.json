@@ -15,11 +15,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "118597085547-p5dh4q92rqp86568v5fivtaqs271rgbt.apps.googleusercontent.com",
+          "client_id": "118597085547-49iebf5nnvr88p6vjeol4cir9uoq385e.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.skyrunner.sindicato",
-            "certificate_hash": "8d33b0f11e12052829b64708e49b0a9405e8c93c"
+            "certificate_hash": "1fa255837266ec089f5dfc6c5b862c986e537ced"
           }
         },
         {

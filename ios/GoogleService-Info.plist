@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>118597085547-9sj43sm2nnnusih3v95hbihi2qsmtbn2.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.118597085547-9sj43sm2nnnusih3v95hbihi2qsmtbn2</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>118597085547-49iebf5nnvr88p6vjeol4cir9uoq385e.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyCHIx1Eptaxn0oqoOnzMa3GlONfLtCCCDM</string>
+	<key>GCM_SENDER_ID</key>
+	<string>118597085547</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.sindicato.votos.fluterApk</string>
+	<key>PROJECT_ID</key>
+	<string>sistema-integrado-sindicato</string>
+	<key>STORAGE_BUCKET</key>
+	<string>sistema-integrado-sindicato.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:118597085547:ios:09c54b87dd6fe63c29c42e</string>
+	<key>DATABASE_URL</key>
+	<string>https://sistema-integrado-sindicato-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>

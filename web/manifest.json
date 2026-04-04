@@ -1,6 +1,6 @@
 {
-    "name": "fluter_apk",
-    "short_name": "fluter_apk",
+    "name": "VotaSind",
+    "short_name": "VotaSind",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

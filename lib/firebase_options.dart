@@ -2,7 +2,8 @@
 // Generada a partir de google-services.json (la CLI falló con "UnsupportedError" al escribir).
 
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 class DefaultFirebaseOptions {
   DefaultFirebaseOptions._();
@@ -12,7 +13,8 @@ class DefaultFirebaseOptions {
     appId: '1:118597085547:android:5f4119dd6934a00329c42e',
     messagingSenderId: '118597085547',
     projectId: 'sistema-integrado-sindicato',
-    databaseURL: 'https://sistema-integrado-sindicato-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://sistema-integrado-sindicato-default-rtdb.firebaseio.com',
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
   );
 
@@ -27,7 +29,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '118597085547',
     projectId: 'sistema-integrado-sindicato',
     authDomain: 'sistema-integrado-sindicato.firebaseapp.com',
-    databaseURL: 'https://sistema-integrado-sindicato-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://sistema-integrado-sindicato-default-rtdb.firebaseio.com',
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
     measurementId: 'G-7MB779713S',
   );
@@ -41,10 +44,13 @@ class DefaultFirebaseOptions {
     appId: '1:118597085547:ios:09c54b87dd6fe63c29c42e',
     messagingSenderId: '118597085547',
     projectId: 'sistema-integrado-sindicato',
-    databaseURL: 'https://sistema-integrado-sindicato-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://sistema-integrado-sindicato-default-rtdb.firebaseio.com',
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
-    androidClientId: '118597085547-p5dh4q92rqp86568v5fivtaqs271rgbt.apps.googleusercontent.com',
-    iosClientId: '118597085547-9sj43sm2nnnusih3v95hbihi2qsmtbn2.apps.googleusercontent.com',
+    androidClientId:
+        '118597085547-p5dh4q92rqp86568v5fivtaqs271rgbt.apps.googleusercontent.com',
+    iosClientId:
+        '118597085547-9sj43sm2nnnusih3v95hbihi2qsmtbn2.apps.googleusercontent.com',
     iosBundleId: 'com.sindicato.votos.fluterApk',
   );
 
@@ -58,7 +64,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '118597085547',
     projectId: 'sistema-integrado-sindicato',
     authDomain: 'sistema-integrado-sindicato.firebaseapp.com',
-    databaseURL: 'https://sistema-integrado-sindicato-default-rtdb.firebaseio.com',
+    databaseURL:
+        'https://sistema-integrado-sindicato-default-rtdb.firebaseio.com',
     storageBucket: 'sistema-integrado-sindicato.firebasestorage.app',
     measurementId: 'G-3GY04B28HJ',
   );

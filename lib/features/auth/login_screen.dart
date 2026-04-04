@@ -31,7 +31,9 @@ class _LoginScreenState extends State<LoginScreen> {
         if (auth.isSignedIn) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (context.mounted) {
-              Navigator.of(context).pushNamedAndRemoveUntil('/home', (r) => false);
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/home', (r) => false);
             }
           });
         }
@@ -61,8 +63,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   Text(
                     'Inicia sesión para continuar',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
@@ -74,10 +76,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Ingresa tu email' : null,
-                    onFieldSubmitted: (_) =>
-                        FocusScope.of(context).nextFocus(),
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Ingresa tu email'
+                        : null,
+                    onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
@@ -91,13 +93,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? Icons.visibility_off
                               : Icons.visibility,
                         ),
-                        onPressed: () =>
-                            setState(() => _obscurePassword = !_obscurePassword),
+                        onPressed: () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
                       ),
                     ),
                     obscureText: _obscurePassword,
-                    validator: (v) =>
-                        (v == null || v.isEmpty) ? 'Ingresa tu contraseña' : null,
+                    validator: (v) => (v == null || v.isEmpty)
+                        ? 'Ingresa tu contraseña'
+                        : null,
                   ),
                   const SizedBox(height: 8),
                   Align(
@@ -118,8 +122,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Text(
                             auth.errorMessage!,
                             style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                                fontSize: 12),
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 12,
+                            ),
                           ),
                         );
                       }
@@ -129,8 +134,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Text(
                             auth.successMessage!,
                             style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontSize: 12),
+                              color: Theme.of(context).colorScheme.primary,
+                              fontSize: 12,
+                            ),
                           ),
                         );
                       }
@@ -145,7 +151,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? null
                             : () {
                                 auth.clearMessages();
-                                if (_formKey.currentState?.validate() ?? false) {
+                                if (_formKey.currentState?.validate() ??
+                                    false) {
                                   auth.signIn(
                                     _emailController.text.trim(),
                                     _passwordController.text,
@@ -156,7 +163,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(
                                 height: 24,
                                 width: 24,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Text('Iniciar Sesión'),
                       );
@@ -199,7 +208,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       ? null
                       : () async {
                           await auth.sendPasswordResetEmail(
-                              _resetEmailController.text.trim());
+                            _resetEmailController.text.trim(),
+                          );
                           if (context.mounted) Navigator.pop(context);
                         },
                   child: const Text('Enviar'),

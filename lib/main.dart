@@ -28,7 +28,7 @@ import 'core/models/asistencia/evento.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   try {
     // Initialize Firebase with timeout to prevent hanging
     debugPrint('🔄 Inicializando Firebase...');
@@ -43,8 +43,8 @@ void main() async {
         );
       },
     );
-    
-    // Configuración de Firestore: solo activamos persistencia fuera de la Web 
+
+    // Configuración de Firestore: solo activamos persistencia fuera de la Web
     // o de forma controlada para evitar el timeout del arranque.
     if (!kIsWeb) {
       try {
@@ -94,7 +94,9 @@ class MyApp extends StatelessWidget {
         home: Consumer<AuthProvider>(
           builder: (context, auth, _) {
             if (auth.isLoading) {
-              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
             }
             return auth.isSignedIn ? const HomeScreen() : const LoginScreen();
           },
@@ -123,22 +125,26 @@ class MyApp extends StatelessWidget {
           },
           '/voto/event_history': (_) => const EventHistoryScreen(),
           '/asistencia': (_) => const AsistenciaHomeScreen(),
-          '/asistencia/crear_evento': (_) => const CrearEventoAsistenciaScreen(),
+          '/asistencia/crear_evento': (_) =>
+              const CrearEventoAsistenciaScreen(),
           '/asistencia/evento_detail': (ctx) {
-            final evento = ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
+            final evento =
+                ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
             if (evento == null) return const AsistenciaHomeScreen();
             return EventoDetailScreen(evento: evento);
           },
           '/asistencia/personas': (_) => const PersonasAsistenciaScreen(),
           '/asistencia/registro_manual': (ctx) {
-            final evento = ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
+            final evento =
+                ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
             if (evento == null) return const AsistenciaHomeScreen();
             return RegistroManualScreen(evento: evento);
           },
           '/asistencia/asistencias': (_) => const AsistenciasListScreen(),
           '/asistencia/exportar': (_) => const ExportarAsistenciaScreen(),
           '/asistencia/scanner': (ctx) {
-            final evento = ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
+            final evento =
+                ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
             return ScannerAsistenciaScreen(evento: evento);
           },
         },

@@ -1,12 +1,11 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'dart:typed_data';
 import '../core/models/asistencia/evento.dart';
 import '../core/models/asistencia/persona.dart';
 import '../core/models/asistencia/asistencia.dart';
+import '../core/reports/attendance_report_generator.dart';
 import 'auth_service.dart';
 
 /// Servicio de asistencia con Firestore (compatible con module-asistencia Android).
@@ -163,11 +162,48 @@ class AsistenciaService {
   Future<List<AsistenciaConDatos>> _buildAsistenciasConDatos(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) async {
+    if (docs.isEmpty) return [];
+
+    // Extraer IDs únicos
+    final eventoIds = docs
+        .map((d) {
+          final data = d.data();
+          return data['eventoId'] as String?;
+        })
+        .whereType<String>()
+        .toSet()
+        .toList();
+
+    final personaIds = docs
+        .map((d) {
+          final data = d.data();
+          return data['personaId'] as String?;
+        })
+        .whereType<String>()
+        .toSet()
+        .toList();
+
+    // Cargar todos los eventos y personas en paralelo
+    final eventosFutures = eventoIds.map((id) => getEventoById(id));
+    final personasFutures = personaIds.map((id) => getPersonaById(id));
+
+    final eventosList = await Future.wait(eventosFutures);
+    final personasList = await Future.wait(personasFutures);
+
+    // Crear mapas para búsqueda rápida
+    final eventosMap = {
+      for (var e in eventosList.whereType<EventoAsistencia>()) e.id: e,
+    };
+    final personasMap = {
+      for (var p in personasList.whereType<PersonaAsistencia>()) p.id: p,
+    };
+
+    // Construir lista de asistencias
     final list = <AsistenciaConDatos>[];
     for (final d in docs) {
       final a = AsistenciaRegistro.fromMap(d.data(), d.id);
-      final evento = await getEventoById(a.eventoId);
-      final persona = await getPersonaById(a.personaId);
+      final evento = eventosMap[a.eventoId];
+      final persona = personasMap[a.personaId];
       if (evento != null && persona != null) {
         list.add(
           AsistenciaConDatos(asistencia: a, persona: persona, evento: evento),
@@ -362,7 +398,7 @@ class AsistenciaService {
   // ---------- Exportación ----------
 
   /// Genera archivo Excel (CSV) con todas las asistencias
-  Future<Uint8List> generateExcelExport(
+  static Future<Uint8List> generateExcelExportStatic(
     List<AsistenciaConDatos> asistencias,
   ) async {
     final sb = StringBuffer();
@@ -389,97 +425,44 @@ class AsistenciaService {
     return Uint8List.fromList(sb.toString().codeUnits);
   }
 
-  /// Genera PDF con reporte de asistencias
-  Future<Uint8List> generatePDFExport(
+  /// Genera archivo Excel (CSV) con todas las asistencias
+  Future<Uint8List> generateExcelExport(
     List<AsistenciaConDatos> asistencias,
   ) async {
-    final pdf = pw.Document();
+    return await generateExcelExportStatic(asistencias);
+  }
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return [
-            pw.Header(
-              level: 0,
-              child: pw.Text(
-                'Reporte de Asistencias',
-                style: pw.TextStyle(fontSize: 20),
-              ),
-            ),
-            pw.SizedBox(height: 20),
-            pw.Table(
-              border: pw.TableBorder.all(),
-              children: [
-                // Encabezados de tabla
-                pw.TableRow(
-                  children: [
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(4),
-                      child: pw.Text(
-                        'Evento',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                      ),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(4),
-                      child: pw.Text(
-                        'Persona',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                      ),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(4),
-                      child: pw.Text(
-                        'Asistió',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                      ),
-                    ),
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.all(4),
-                      child: pw.Text(
-                        'Método',
-                        style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-                // Datos
-                ...asistencias.map(
-                  (a) => pw.TableRow(
-                    children: [
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
-                        child: pw.Text(a.evento.nombre),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
-                        child: pw.Text(a.persona.nombreCompleto),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
-                        child: pw.Text(a.asistencia.asistio ? 'Sí' : 'No'),
-                      ),
-                      pw.Padding(
-                        padding: const pw.EdgeInsets.all(4),
-                        child: pw.Text(a.asistencia.metodoRegistro.value),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            pw.SizedBox(height: 20),
-            pw.Text(
-              'Total de registros: ${asistencias.length}',
-              style: pw.TextStyle(fontSize: 12),
-            ),
-          ];
-        },
-      ),
+  /// Genera PDF con reporte profesional de asistencias (static para compute)
+  static Future<Uint8List> generatePDFExportStatic(
+    List<AsistenciaConDatos> asistencias,
+  ) async {
+    // Usar el generador profesional de reportes
+    final generator = AttendanceReportGenerator(
+      asistencias: asistencias,
+      evento: null,
     );
 
-    return pdf.save();
+    return await generator.generateReport();
+  }
+
+  /// Genera PDF con reporte profesional de asistencias
+  Future<Uint8List> generatePDFExport(
+    List<AsistenciaConDatos> asistencias,
+    String? eventoId,
+  ) async {
+    // Obtener información del evento si está disponible
+    EventoAsistencia? evento;
+    if (eventoId != null && eventoId.isNotEmpty) {
+      evento = await getEventoById(eventoId);
+    }
+
+    // Usar el generador profesional de reportes
+    final generator = AttendanceReportGenerator(
+      asistencias: asistencias,
+      evento: evento,
+    );
+
+    return await generator.generateReport();
   }
 }
 

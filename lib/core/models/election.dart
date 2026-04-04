@@ -48,7 +48,8 @@ class Election {
       endDate: (map['endDate'] as num?)?.toInt() ?? 0,
       isActive: map['isActive'] as bool? ?? false,
       isVisibleToVoters: map['isVisibleToVoters'] as bool? ?? true,
-      showResultsAutomatically: map['showResultsAutomatically'] as bool? ?? true,
+      showResultsAutomatically:
+          map['showResultsAutomatically'] as bool? ?? true,
       requireAttendance: map['requireAttendance'] as bool? ?? false,
       eventoAsistenciaId: map['eventoAsistenciaId'] as String?,
       createdAt: (map['createdAt'] as num?)?.toInt(),
@@ -102,7 +103,8 @@ class Election {
       endDate: endDate ?? this.endDate,
       isActive: isActive ?? this.isActive,
       isVisibleToVoters: isVisibleToVoters ?? this.isVisibleToVoters,
-      showResultsAutomatically: showResultsAutomatically ?? this.showResultsAutomatically,
+      showResultsAutomatically:
+          showResultsAutomatically ?? this.showResultsAutomatically,
       requireAttendance: requireAttendance ?? this.requireAttendance,
       eventoAsistenciaId: eventoAsistenciaId ?? this.eventoAsistenciaId,
       createdAt: createdAt ?? this.createdAt,

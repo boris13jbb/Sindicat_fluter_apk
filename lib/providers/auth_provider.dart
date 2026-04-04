@@ -3,7 +3,8 @@ import '../core/models/user.dart';
 import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  AuthProvider({AuthService? authService}) : _authService = authService ?? AuthService();
+  AuthProvider({AuthService? authService})
+    : _authService = authService ?? AuthService();
 
   final AuthService _authService;
 
@@ -99,7 +100,8 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await _authService.sendPasswordResetEmail(email);
-      _successMessage = 'Se ha enviado un correo para restablecer tu contraseña';
+      _successMessage =
+          'Se ha enviado un correo para restablecer tu contraseña';
     } catch (e) {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
     } finally {

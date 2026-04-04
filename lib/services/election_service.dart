@@ -10,13 +10,17 @@ class ElectionLiveState {
   const ElectionLiveState({required this.election, required this.isSyncing});
 
   final Election? election;
+
   /// `true` si el snapshot viene solo de caché local o hay escrituras pendientes de confirmar.
   final bool isSyncing;
 }
 
 /// Lista de candidatos + estado de sincronización del snapshot de consulta.
 class CandidatesLiveState {
-  const CandidatesLiveState({required this.candidates, required this.isSyncing});
+  const CandidatesLiveState({
+    required this.candidates,
+    required this.isSyncing,
+  });
 
   final List<Candidate> candidates;
   final bool isSyncing;
@@ -32,10 +36,10 @@ class ResultsBootstrap {
 
 class ElectionService {
   ElectionService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
-  
+
   /// Un listener Firestore por elección; [getCandidates] reutiliza el mismo `.map()` por id.
   final Map<String, Stream<CandidatesLiveState>> _candidatesLiveCache = {};
   final Map<String, Stream<List<Candidate>>> _candidatesListCache = {};
@@ -45,7 +49,10 @@ class ElectionService {
         .collection('elections')
         .orderBy('createdAt', descending: true)
         .snapshots(includeMetadataChanges: true)
-        .map((snap) => snap.docs.map((d) => Election.fromMap(d.data(), d.id)).toList());
+        .map(
+          (snap) =>
+              snap.docs.map((d) => Election.fromMap(d.data(), d.id)).toList(),
+        );
   }
 
   Stream<List<Election>> getActiveElections() {
@@ -54,12 +61,12 @@ class ElectionService {
         .where('isVisibleToVoters', isEqualTo: true)
         .snapshots(includeMetadataChanges: true)
         .map((snap) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      return snap.docs
-          .map((d) => Election.fromMap(d.data(), d.id))
-          .where((e) => e.startDate <= now && e.endDate >= now)
-          .toList();
-    });
+          final now = DateTime.now().millisecondsSinceEpoch;
+          return snap.docs
+              .map((d) => Election.fromMap(d.data(), d.id))
+              .where((e) => e.startDate <= now && e.endDate >= now)
+              .toList();
+        });
   }
 
   Future<Election?> getElection(String electionId) async {
@@ -69,9 +76,13 @@ class ElectionService {
 
   /// Lectura puntual (documento + candidatos). Suele completar desde caché local aunque el stream tarde en el servidor.
   Future<ResultsBootstrap> loadResultsBootstrap(String electionId) async {
-    final electionDoc = await _firestore.collection('elections').doc(electionId).get();
-    final election =
-        electionDoc.exists ? Election.fromMap(electionDoc.data()!, electionDoc.id) : null;
+    final electionDoc = await _firestore
+        .collection('elections')
+        .doc(electionId)
+        .get();
+    final election = electionDoc.exists
+        ? Election.fromMap(electionDoc.data()!, electionDoc.id)
+        : null;
     if (election == null) {
       return const ResultsBootstrap(election: null, candidates: []);
     }
@@ -83,10 +94,8 @@ class ElectionService {
         .get();
     final candidates = candSnap.docs
         .map(
-          (d) => Candidate.fromMap({
-            ...d.data(),
-            'electionId': electionId,
-          }, d.id),
+          (d) =>
+              Candidate.fromMap({...d.data(), 'electionId': electionId}, d.id),
         )
         .toList();
     return ResultsBootstrap(election: election, candidates: candidates);
@@ -99,16 +108,16 @@ class ElectionService {
         .doc(electionId)
         .snapshots(includeMetadataChanges: true)
         .map((snap) {
-      final m = snap.metadata;
-      final syncing = m.isFromCache || m.hasPendingWrites;
-      if (!snap.exists) {
-        return const ElectionLiveState(election: null, isSyncing: false);
-      }
-      return ElectionLiveState(
-        election: Election.fromMap(snap.data()!, snap.id),
-        isSyncing: syncing,
-      );
-    });
+          final m = snap.metadata;
+          final syncing = m.isFromCache || m.hasPendingWrites;
+          if (!snap.exists) {
+            return const ElectionLiveState(election: null, isSyncing: false);
+          }
+          return ElectionLiveState(
+            election: Election.fromMap(snap.data()!, snap.id),
+            isSyncing: syncing,
+          );
+        });
   }
 
   Future<String> createElection(Election election) async {
@@ -119,7 +128,10 @@ class ElectionService {
   }
 
   Future<void> updateElection(Election election) async {
-    await _firestore.collection('elections').doc(election.id).update(election.toMap());
+    await _firestore
+        .collection('elections')
+        .doc(election.id)
+        .update(election.toMap());
   }
 
   Future<void> deleteElection(String electionId) async {
@@ -139,7 +151,8 @@ class ElectionService {
           .orderBy('order', descending: false)
           .snapshots(includeMetadataChanges: true)
           .map((snap) {
-            final syncing = snap.metadata.isFromCache || snap.metadata.hasPendingWrites;
+            final syncing =
+                snap.metadata.isFromCache || snap.metadata.hasPendingWrites;
             final candidates = snap.docs
                 .map(
                   (d) => Candidate.fromMap({
@@ -148,7 +161,10 @@ class ElectionService {
                   }, d.id),
                 )
                 .toList();
-            return CandidatesLiveState(candidates: candidates, isSyncing: syncing);
+            return CandidatesLiveState(
+              candidates: candidates,
+              isSyncing: syncing,
+            );
           })
           .handleError((error, stackTrace) {
             debugPrint('Candidate stream error: $error');
@@ -200,18 +216,24 @@ class ElectionService {
   }
 
   Future<void> deleteCandidate(String electionId, String candidateId) async {
-    await _firestore.collection('elections').doc(electionId).collection('candidates').doc(candidateId).delete();
+    await _firestore
+        .collection('elections')
+        .doc(electionId)
+        .collection('candidates')
+        .doc(candidateId)
+        .delete();
   }
 }
 
 class VoteService {
   VoteService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
   /// Caché local: usuario ya votó en esta elección (bloquea al volver a entrar en la misma sesión).
-  static final Map<String, Set<String>> _votedElectionsByUser = <String, Set<String>>{};
+  static final Map<String, Set<String>> _votedElectionsByUser =
+      <String, Set<String>>{};
 
   static String _voteId(String electionId, String userId) =>
       '${electionId}_$userId'.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
@@ -230,13 +252,15 @@ class VoteService {
     if (electionId.isEmpty || userId.isEmpty) return Stream.value(false);
     // Si ya tenemos en caché local, emitir true de inmediato y seguir escuchando Firestore
     if (hasVotedLocally(electionId, userId)) {
-      return Stream.value(true).asyncExpand((_) => _firestore
-          .collection('elections')
-          .doc(electionId)
-          .collection('votes')
-          .doc(_voteId(electionId, userId))
-          .snapshots()
-          .map((doc) => true));
+      return Stream.value(true).asyncExpand(
+        (_) => _firestore
+            .collection('elections')
+            .doc(electionId)
+            .collection('votes')
+            .doc(_voteId(electionId, userId))
+            .snapshots()
+            .map((doc) => true),
+      );
     }
     return _firestore
         .collection('elections')
@@ -253,8 +277,16 @@ class VoteService {
     required String candidateId,
   }) async {
     final batch = _firestore.batch();
-    final voteRef = _firestore.collection('elections').doc(electionId).collection('votes').doc(_voteId(electionId, userId));
-    final candidateRef = _firestore.collection('elections').doc(electionId).collection('candidates').doc(candidateId);
+    final voteRef = _firestore
+        .collection('elections')
+        .doc(electionId)
+        .collection('votes')
+        .doc(_voteId(electionId, userId));
+    final candidateRef = _firestore
+        .collection('elections')
+        .doc(electionId)
+        .collection('candidates')
+        .doc(candidateId);
     final electionRef = _firestore.collection('elections').doc(electionId);
 
     // Registrar el voto
@@ -281,10 +313,14 @@ class VoteService {
   }
 
   Future<ElectionResults?> getElectionResults(String electionId) async {
-    final electionDoc = await _firestore.collection('elections').doc(electionId).get();
+    final electionDoc = await _firestore
+        .collection('elections')
+        .doc(electionId)
+        .get();
     if (!electionDoc.exists) return null;
 
-    final totalVotes = (electionDoc.data()?['totalVotes'] as num?)?.toInt() ?? 0;
+    final totalVotes =
+        (electionDoc.data()?['totalVotes'] as num?)?.toInt() ?? 0;
     final candidatesSnap = await _firestore
         .collection('elections')
         .doc(electionId)
@@ -304,6 +340,10 @@ class VoteService {
       );
     }).toList();
 
-    return ElectionResults(electionId: electionId, results: results, totalVotes: totalVotes);
+    return ElectionResults(
+      electionId: electionId,
+      results: results,
+      totalVotes: totalVotes,
+    );
   }
 }

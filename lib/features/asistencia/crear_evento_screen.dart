@@ -7,10 +7,12 @@ class CrearEventoAsistenciaScreen extends StatefulWidget {
   const CrearEventoAsistenciaScreen({super.key});
 
   @override
-  State<CrearEventoAsistenciaScreen> createState() => _CrearEventoAsistenciaScreenState();
+  State<CrearEventoAsistenciaScreen> createState() =>
+      _CrearEventoAsistenciaScreenState();
 }
 
-class _CrearEventoAsistenciaScreenState extends State<CrearEventoAsistenciaScreen> {
+class _CrearEventoAsistenciaScreenState
+    extends State<CrearEventoAsistenciaScreen> {
   final _nombreController = TextEditingController();
   final _descripcionController = TextEditingController();
   TipoReunion _tipo = TipoReunion.ordinaria;
@@ -38,7 +40,13 @@ class _CrearEventoAsistenciaScreenState extends State<CrearEventoAsistenciaScree
     );
     if (time == null || !mounted) return;
     setState(() {
-      _fecha = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _fecha = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
     });
   }
 
@@ -60,7 +68,10 @@ class _CrearEventoAsistenciaScreenState extends State<CrearEventoAsistenciaScree
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Datos del evento', style: Theme.of(context).textTheme.titleMedium),
+                    Text(
+                      'Datos del evento',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: _nombreController,
@@ -85,13 +96,16 @@ class _CrearEventoAsistenciaScreenState extends State<CrearEventoAsistenciaScree
                         FilterChip(
                           label: const Text('Ordinaria'),
                           selected: _tipo == TipoReunion.ordinaria,
-                          onSelected: (_) => setState(() => _tipo = TipoReunion.ordinaria),
+                          onSelected: (_) =>
+                              setState(() => _tipo = TipoReunion.ordinaria),
                         ),
                         const SizedBox(width: 8),
                         FilterChip(
                           label: const Text('Extraordinaria'),
                           selected: _tipo == TipoReunion.extraordinaria,
-                          onSelected: (_) => setState(() => _tipo = TipoReunion.extraordinaria),
+                          onSelected: (_) => setState(
+                            () => _tipo = TipoReunion.extraordinaria,
+                          ),
                         ),
                       ],
                     ),
@@ -116,7 +130,9 @@ class _CrearEventoAsistenciaScreenState extends State<CrearEventoAsistenciaScree
               FilledButton(
                 onPressed: () async {
                   if (_nombreController.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('El nombre es obligatorio')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('El nombre es obligatorio')),
+                    );
                     return;
                   }
                   setState(() => _loading = true);
@@ -127,16 +143,22 @@ class _CrearEventoAsistenciaScreenState extends State<CrearEventoAsistenciaScree
                       nombre: _nombreController.text.trim(),
                       fecha: _fecha.millisecondsSinceEpoch,
                       tipoReunion: _tipo,
-                      descripcion: _descripcionController.text.trim().isEmpty ? null : _descripcionController.text.trim(),
+                      descripcion: _descripcionController.text.trim().isEmpty
+                          ? null
+                          : _descripcionController.text.trim(),
                     );
                     await service.createEvento(evento);
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Evento creado')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Evento creado')),
+                      );
                       Navigator.pop(context);
                     }
                   } catch (e) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('Error: $e')));
                     }
                   } finally {
                     if (mounted) setState(() => _loading = false);

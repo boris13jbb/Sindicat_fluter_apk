@@ -201,7 +201,8 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                 StreamBuilder<List<EventoAsistencia>>(
                   stream: AsistenciaService().getAllEventos(),
                   builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+                    if (snap.connectionState == ConnectionState.waiting &&
+                        !snap.hasData) {
                       return const CircularProgressIndicator();
                     }
                     final eventos = snap.data ?? [];
@@ -209,7 +210,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                     final isValidValue =
                         _eventoAsistenciaId == null ||
                         eventos.any((e) => e.id == _eventoAsistenciaId);
-                    
+
                     return DropdownButtonFormField<String?>(
                       initialValue: isValidValue ? _eventoAsistenciaId : null,
                       decoration: const InputDecoration(
@@ -245,7 +246,8 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                 stream: _electionService.getCandidates(widget.electionId),
                 initialData: _initialCandidates,
                 builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+                  if (snap.connectionState == ConnectionState.waiting &&
+                      !snap.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
 
@@ -260,7 +262,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                       ),
                     );
                   }
-                  
+
                   final candidates = snap.data ?? [];
 
                   if (candidates.isEmpty) {
@@ -277,7 +279,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                       ],
                     );
                   }
-                  
+
                   return Column(
                     children: [
                       ...candidates.map(

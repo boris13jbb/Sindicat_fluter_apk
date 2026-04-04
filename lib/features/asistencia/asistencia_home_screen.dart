@@ -32,11 +32,15 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Error: ${snap.error}', textAlign: TextAlign.center),
+                child: Text(
+                  'Error: ${snap.error}',
+                  textAlign: TextAlign.center,
+                ),
               ),
             );
           }
-          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          if (snap.connectionState == ConnectionState.waiting &&
+              !snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
           final eventos = snap.data ?? [];
@@ -50,9 +54,9 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                     Text(
                       'Acciones Rápidas',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -61,7 +65,10 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                           child: _QuickAction(
                             icon: Icons.qr_code_scanner,
                             label: 'Escanear',
-                            onTap: () => Navigator.pushNamed(context, '/asistencia/scanner'),
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/asistencia/scanner',
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -69,7 +76,10 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                           child: _QuickAction(
                             icon: Icons.assignment_turned_in,
                             label: 'Asistencias',
-                            onTap: () => Navigator.pushNamed(context, '/asistencia/asistencias'),
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/asistencia/asistencias',
+                            ),
                           ),
                         ),
                       ],
@@ -81,7 +91,10 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                           child: _QuickAction(
                             icon: Icons.people,
                             label: 'Personas',
-                            onTap: () => Navigator.pushNamed(context, '/asistencia/personas'),
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/asistencia/personas',
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -89,7 +102,10 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                           child: _QuickAction(
                             icon: Icons.file_download,
                             label: 'Exportar',
-                            onTap: () => Navigator.pushNamed(context, '/asistencia/exportar'),
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/asistencia/exportar',
+                            ),
                           ),
                         ),
                       ],
@@ -101,8 +117,11 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.3),
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,15 +133,20 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                           children: [
                             Text(
                               'Eventos Recientes',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                              style: Theme.of(context).textTheme.titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                             ),
                             if (eventos.isNotEmpty)
                               Chip(
                                 label: Text('${eventos.length}'),
-                                backgroundColor: Theme.of(context).colorScheme.primary,
-                                labelStyle: TextStyle(color: Theme.of(context).colorScheme.onPrimary),
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.primary,
+                                labelStyle: TextStyle(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimary,
+                                ),
                               ),
                           ],
                         ),
@@ -133,9 +157,20 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.event_note, size: 80, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4)),
+                                Icon(
+                                  Icons.event_note,
+                                  size: 80,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.primary.withValues(alpha: 0.4),
+                                ),
                                 const SizedBox(height: 16),
-                                Text('No hay eventos', style: Theme.of(context).textTheme.titleMedium),
+                                Text(
+                                  'No hay eventos',
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium,
+                                ),
                                 const SizedBox(height: 8),
                                 Text(
                                   'Crea tu primer evento para gestionar asistencias.',
@@ -144,7 +179,10 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                                 ),
                                 const SizedBox(height: 24),
                                 FilledButton.icon(
-                                  onPressed: () => Navigator.pushNamed(context, '/asistencia/crear_evento'),
+                                  onPressed: () => Navigator.pushNamed(
+                                    context,
+                                    '/asistencia/crear_evento',
+                                  ),
                                   icon: const Icon(Icons.add),
                                   label: const Text('Crear Evento'),
                                 ),
@@ -163,17 +201,33 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                                 child: ListTile(
                                   contentPadding: const EdgeInsets.all(16),
                                   leading: CircleAvatar(
-                                    backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                    child: Text('${DateTime.fromMillisecondsSinceEpoch(e.fecha).day}', style: Theme.of(context).textTheme.titleMedium),
+                                    backgroundColor: Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer,
+                                    child: Text(
+                                      '${DateTime.fromMillisecondsSinceEpoch(e.fecha).day}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
                                   ),
                                   title: Text(e.nombre),
-                                  subtitle: Text('${_formatFecha(e.fecha)} • ${e.descripcion ?? "Sin descripción"}'),
+                                  subtitle: Text(
+                                    '${_formatFecha(e.fecha)} • ${e.descripcion ?? "Sin descripción"}',
+                                  ),
                                   trailing: Chip(
-                                    label: Text(e.tipoReunion.value, style: const TextStyle(fontSize: 10)),
+                                    label: Text(
+                                      e.tipoReunion.value,
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
                                     padding: EdgeInsets.zero,
                                     visualDensity: VisualDensity.compact,
                                   ),
-                                  onTap: () => Navigator.pushNamed(context, '/asistencia/evento_detail', arguments: e),
+                                  onTap: () => Navigator.pushNamed(
+                                    context,
+                                    '/asistencia/evento_detail',
+                                    arguments: e,
+                                  ),
                                 ),
                               );
                             },
@@ -188,7 +242,8 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.pushNamed(context, '/asistencia/crear_evento'),
+        onPressed: () =>
+            Navigator.pushNamed(context, '/asistencia/crear_evento'),
         child: const Icon(Icons.add),
       ),
     );
@@ -196,7 +251,11 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
 }
 
 class _QuickAction extends StatelessWidget {
-  const _QuickAction({required this.icon, required this.label, required this.onTap});
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;
@@ -215,7 +274,11 @@ class _QuickAction extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 28, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              Icon(
+                icon,
+                size: 28,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               const SizedBox(height: 4),
               Text(label, style: Theme.of(context).textTheme.labelLarge),
             ],

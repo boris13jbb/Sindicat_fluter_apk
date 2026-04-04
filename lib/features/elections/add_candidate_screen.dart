@@ -49,7 +49,8 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
                   labelText: 'Nombre del Candidato *',
                   prefixIcon: Icon(Icons.person),
                 ),
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Requerido' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -96,16 +97,20 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
                     try {
                       final service = ElectionService();
                       final imageUrl = _imageUrlController.text.trim();
-                      await service.addCandidate(Candidate(
-                        id: '',
-                        electionId: widget.electionId,
-                        name: _nameController.text.trim(),
-                        description: _descriptionController.text.trim().isEmpty
-                            ? null
-                            : _descriptionController.text.trim(),
-                        imageUrl: imageUrl.isEmpty ? null : imageUrl,
-                        order: int.tryParse(_orderController.text.trim()) ?? 0,
-                      ));
+                      await service.addCandidate(
+                        Candidate(
+                          id: '',
+                          electionId: widget.electionId,
+                          name: _nameController.text.trim(),
+                          description:
+                              _descriptionController.text.trim().isEmpty
+                              ? null
+                              : _descriptionController.text.trim(),
+                          imageUrl: imageUrl.isEmpty ? null : imageUrl,
+                          order:
+                              int.tryParse(_orderController.text.trim()) ?? 0,
+                        ),
+                      );
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(

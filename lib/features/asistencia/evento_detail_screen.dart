@@ -31,15 +31,28 @@ class EventoDetailScreen extends StatelessWidget {
                   title: const Text('Eliminar evento'),
                   content: Text('¿Eliminar "${evento.nombre}"?'),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Eliminar', style: TextStyle(color: Theme.of(ctx).colorScheme.error))),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancelar'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text(
+                        'Eliminar',
+                        style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.error,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               );
               if (ok == true && context.mounted) {
                 await service.deleteEvento(evento.id);
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Evento eliminado')));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Evento eliminado')),
+                  );
                   Navigator.pop(context);
                 }
               }
@@ -57,11 +70,21 @@ class EventoDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(evento.nombre, style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    evento.nombre,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   const SizedBox(height: 8),
-                  Text(_formatFecha(evento.fecha), style: Theme.of(context).textTheme.bodyMedium),
-                  if (evento.descripcion != null && evento.descripcion!.isNotEmpty)
-                    Text(evento.descripcion!, style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    _formatFecha(evento.fecha),
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  if (evento.descripcion != null &&
+                      evento.descripcion!.isNotEmpty)
+                    Text(
+                      evento.descripcion!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   const SizedBox(height: 8),
                   Chip(label: Text(evento.tipoReunion.value)),
                 ],
@@ -70,7 +93,10 @@ class EventoDetailScreen extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text('Registros de Asistencia', style: Theme.of(context).textTheme.titleMedium),
+            child: Text(
+              'Registros de Asistencia',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -80,7 +106,8 @@ class EventoDetailScreen extends StatelessWidget {
                 if (snap.hasError) {
                   return Center(child: Text('Error: ${snap.error}'));
                 }
-                if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+                if (snap.connectionState == ConnectionState.waiting &&
+                    !snap.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final list = snap.data ?? [];
@@ -102,7 +129,9 @@ class EventoDetailScreen extends StatelessWidget {
                       margin: const EdgeInsets.only(bottom: 8),
                       child: ListTile(
                         title: Text(a.persona.nombreCompleto),
-                        subtitle: Text('${a.asistencia.asistio ? "Asistió" : "No asistió"} • ${_formatFecha(a.asistencia.fechaRegistro ?? 0)}'),
+                        subtitle: Text(
+                          '${a.asistencia.asistio ? "Asistió" : "No asistió"} • ${_formatFecha(a.asistencia.fechaRegistro ?? 0)}',
+                        ),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete_outline),
                           onPressed: () async {
@@ -110,16 +139,29 @@ class EventoDetailScreen extends StatelessWidget {
                               context: context,
                               builder: (ctx) => AlertDialog(
                                 title: const Text('Eliminar registro'),
-                                content: const Text('¿Quitar este registro de asistencia?'),
+                                content: const Text(
+                                  '¿Quitar este registro de asistencia?',
+                                ),
                                 actions: [
-                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-                                  TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Eliminar')),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('Cancelar'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text('Eliminar'),
+                                  ),
                                 ],
                               ),
                             );
                             if (ok == true) {
                               await service.deleteAsistencia(a.asistencia.id);
-                              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Registro eliminado')));
+                              if (context.mounted)
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Registro eliminado'),
+                                  ),
+                                );
                             }
                           },
                         ),
@@ -138,13 +180,21 @@ class EventoDetailScreen extends StatelessWidget {
         children: [
           FloatingActionButton.small(
             heroTag: 'manual',
-            onPressed: () => Navigator.pushNamed(context, '/asistencia/registro_manual', arguments: evento),
+            onPressed: () => Navigator.pushNamed(
+              context,
+              '/asistencia/registro_manual',
+              arguments: evento,
+            ),
             child: const Icon(Icons.person_add),
           ),
           const SizedBox(height: 12),
           FloatingActionButton(
             heroTag: 'scan',
-            onPressed: () => Navigator.pushNamed(context, '/asistencia/scanner', arguments: evento),
+            onPressed: () => Navigator.pushNamed(
+              context,
+              '/asistencia/scanner',
+              arguments: evento,
+            ),
             child: const Icon(Icons.qr_code_scanner),
           ),
         ],

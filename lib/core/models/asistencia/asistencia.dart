@@ -45,7 +45,9 @@ class AsistenciaRegistro {
       eventoId: (map['eventoId'] ?? '').toString(),
       personaId: (map['personaId'] ?? '').toString(),
       fechaRegistro: (map['fechaRegistro'] as num?)?.toInt(),
-      metodoRegistro: MetodoRegistro.fromString((map['metodoRegistro'] as String?) ?? 'MANUAL'),
+      metodoRegistro: MetodoRegistro.fromString(
+        (map['metodoRegistro'] as String?) ?? 'MANUAL',
+      ),
       justificacion: map['justificacion'] as String?,
       asistio: map['asistio'] as bool? ?? true,
     );
