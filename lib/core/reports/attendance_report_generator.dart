@@ -1,6 +1,5 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import '../models/asistencia/evento.dart';
 import '../models/asistencia/asistencia.dart';

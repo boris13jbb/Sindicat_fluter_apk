@@ -370,7 +370,7 @@ class ElectionReportGenerator {
       child: pw.Text(
         text,
         textAlign: alignRight ? pw.TextAlign.right : pw.TextAlign.left,
-        style: const pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
+        style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11),
       ),
     );
   }

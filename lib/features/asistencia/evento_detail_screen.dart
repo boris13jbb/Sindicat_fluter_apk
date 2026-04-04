@@ -156,12 +156,13 @@ class EventoDetailScreen extends StatelessWidget {
                             );
                             if (ok == true) {
                               await service.deleteAsistencia(a.asistencia.id);
-                              if (context.mounted)
+                              if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('Registro eliminado'),
                                   ),
                                 );
+                              }
                             }
                           },
                         ),

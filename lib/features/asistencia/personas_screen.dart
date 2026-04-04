@@ -109,12 +109,13 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                               );
                               if (ok == true) {
                                 await _service.deletePersona(p.id);
-                                if (context.mounted)
+                                if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content: Text('Persona eliminada'),
                                     ),
                                   );
+                                }
                               }
                             }
                           },
@@ -178,8 +179,9 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
           ),
           FilledButton(
             onPressed: () {
-              if (nombres.text.trim().isEmpty || apellidos.text.trim().isEmpty)
+              if (nombres.text.trim().isEmpty || apellidos.text.trim().isEmpty) {
                 return;
+              }
               Navigator.pop(ctx, true);
             },
             child: const Text('Guardar'),
@@ -198,15 +200,17 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
             : identificador.text.trim(),
       );
       await _service.createPersona(p);
-      if (context.mounted)
+      if (context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Persona agregada')));
+      }
     } catch (e) {
-      if (context.mounted)
+      if (context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
     }
   }
 }

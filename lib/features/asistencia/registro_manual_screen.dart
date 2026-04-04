@@ -84,12 +84,12 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        _InfoRow(label: 'Nombre:', value: widget.evento.nombre),
-                        _InfoRow(
+                        _infoRow(label: 'Nombre:', value: widget.evento.nombre),
+                        _infoRow(
                           label: 'Fecha:',
                           value: _formatDate(widget.evento.fecha),
                         ),
-                        _InfoRow(
+                        _infoRow(
                           label: 'Tipo:',
                           value: _formatTipoReunion(
                             widget.evento.tipoReunion.value,
@@ -199,7 +199,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                       final personas = snap.data!
                         ..sort((a, b) => a.apellidos.compareTo(b.apellidos));
                       return DropdownButtonFormField<PersonaAsistencia>(
-                        value: _personaSeleccionada,
+                        initialValue: _personaSeleccionada,
                         decoration: InputDecoration(
                           labelText: 'Seleccionar Persona *',
                           hintText: 'Busque y seleccione una persona',
@@ -356,7 +356,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
     );
   }
 
-  Widget _InfoRow({required String label, required String value}) {
+  Widget _infoRow({required String label, required String value}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(

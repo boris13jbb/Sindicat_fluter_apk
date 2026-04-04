@@ -1,12 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/election.dart';
 import '../../core/models/candidate.dart';
@@ -504,13 +501,6 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
   }
 }
 
-class _ExportData {
-  final Election election;
-  final List<Candidate> candidates;
-
-  _ExportData({required this.election, required this.candidates});
-}
-
 class _ExportParams {
   final String electionId;
   final String type;
@@ -578,7 +568,7 @@ Future<_ExportResult> _processExportData(_ExportParams params) async {
           ? (c.voteCount / totalVotes * 100).toStringAsFixed(2)
           : '0.00';
       sb.writeln(
-        '${i + 1},${c.name.replaceAll(",", " ")},${c.voteCount},${pct}%',
+        '${i + 1},${c.name.replaceAll(",", " ")},${c.voteCount},$pct%',
       );
     }
 
