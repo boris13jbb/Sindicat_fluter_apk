@@ -46,7 +46,7 @@ class ImportService {
   ];
 
   /// Columnas obligatorias
-  static const requiredColumns = ['numero_socio', 'nombres', 'apellidos'];
+  static const requiredColumns = ['numero_socio', 'nombres', 'apellidos', 'documento'];
 
   /// Mapeo de columnas alternativas a columnas estándar
   static const Map<String, List<String>> columnMappings = {
@@ -56,10 +56,16 @@ class ImportService {
     'documento': ['documento', 'cedula', 'cedula_ciudadania', 'identificacion', 'dni'],
     'email': ['email', 'correo', 'email_address', 'correo_electronico'],
     'telefono': ['telefono', 'celular', 'phone', 'movil', 'telefono_celular'],
+    'departamento': ['departamento', 'depto', 'area', 'seccion'],
+    'nivel': ['nivel', 'grado', 'categoria', 'cargo'],
+    'mod': ['mod', 'modulo', 'modalidad'],
   };
 
   /// Columnas que contienen nombre completo (se separará automáticamente)
   static const fullNameColumns = ['trabajador', 'nombre_completo', 'nombre', 'fullname', 'nombre_apellido'];
+
+  /// Columnas adicionales opcionales que se almacenan en el modelo
+  static const optionalColumns = ['departamento', 'nivel', 'mod'];
 
   /// Normalizar headers: mapea columnas alternativas a nombres estándar
   List<String> normalizeHeaders(List<String> headers) {
@@ -220,24 +226,43 @@ class ImportService {
   }
 
   /// Verificar duplicados en Firestore
+  /// Firestore limita whereIn a máximo 30 elementos
   Future<Map<String, bool>> checkDuplicates(List<String> memberNumbers) async {
     if (memberNumbers.isEmpty) return {};
 
     final result = <String, bool>{};
 
-    // Consultar Firestore para verificar cuáles ya existen
-    final snapshot = await _firestore
-        .collection('members')
-        .where('memberNumber', whereIn: memberNumbers)
-        .get();
+    // Firestore tiene un límite de 30 elementos en whereIn
+    const batchSize = 30;
+    
+    // Dividir en lotes de máximo 30 elementos
+    for (int i = 0; i < memberNumbers.length; i += batchSize) {
+      final end = (i + batchSize < memberNumbers.length)
+          ? i + batchSize
+          : memberNumbers.length;
+      final batch = memberNumbers.sublist(i, end);
 
-    // Marcar cuáles ya existen
-    for (final doc in snapshot.docs) {
-      final memberNumber = doc.data()['memberNumber'] as String?;
-      if (memberNumber != null) {
-        result[memberNumber] = true;
+      debugPrint('🔍 Verificando duplicados: lote ${i ~/ batchSize + 1} (${batch.length} elementos)');
+
+      try {
+        final snapshot = await _firestore
+            .collection('members')
+            .where('memberNumber', whereIn: batch)
+            .get();
+
+        // Marcar cuáles ya existen
+        for (final doc in snapshot.docs) {
+          final memberNumber = doc.data()['memberNumber'] as String?;
+          if (memberNumber != null) {
+            result[memberNumber] = true;
+          }
+        }
+      } catch (e) {
+        debugPrint('❌ Error verificando duplicados en lote ${i ~/ batchSize + 1}: $e');
       }
     }
+
+    debugPrint('✅ Duplicados encontrados: ${result.length} de ${memberNumbers.length} verificados');
 
     return result;
   }
@@ -354,6 +379,22 @@ class ImportService {
         }
 
         // Crear objeto Member
+        final additionalData = <String, dynamic>{};
+        
+        // Capturar columnas opcionales si existen
+        if (validation.data.containsKey('departamento') && 
+            (validation.data['departamento'] as String).isNotEmpty) {
+          additionalData['departamento'] = validation.data['departamento'];
+        }
+        if (validation.data.containsKey('nivel') && 
+            (validation.data['nivel'] as String).isNotEmpty) {
+          additionalData['nivel'] = validation.data['nivel'];
+        }
+        if (validation.data.containsKey('mod') && 
+            (validation.data['mod'] as String).isNotEmpty) {
+          additionalData['mod'] = validation.data['mod'];
+        }
+
         final member = Member(
           id: '', // Se generará en Firestore
           memberNumber: memberNumber,
@@ -369,6 +410,7 @@ class ImportService {
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
           createdBy: userId,
+          additionalData: additionalData.isNotEmpty ? additionalData : null,
         );
 
         validRows.add(member.toMap());
@@ -586,6 +628,22 @@ class ImportService {
         }
 
         // Crear objeto Member
+        final additionalData = <String, dynamic>{};
+        
+        // Capturar columnas opcionales si existen
+        if (validation.data.containsKey('departamento') && 
+            (validation.data['departamento'] as String).isNotEmpty) {
+          additionalData['departamento'] = validation.data['departamento'];
+        }
+        if (validation.data.containsKey('nivel') && 
+            (validation.data['nivel'] as String).isNotEmpty) {
+          additionalData['nivel'] = validation.data['nivel'];
+        }
+        if (validation.data.containsKey('mod') && 
+            (validation.data['mod'] as String).isNotEmpty) {
+          additionalData['mod'] = validation.data['mod'];
+        }
+
         final member = Member(
           id: '',
           memberNumber: memberNumber,
@@ -601,6 +659,7 @@ class ImportService {
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
           createdBy: userId,
+          additionalData: additionalData.isNotEmpty ? additionalData : null,
         );
 
         validRows.add(member.toMap());

@@ -44,7 +44,14 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.auth.uid == userId;
       
       // Actualizar: superadmin puede actualizar cualquier usuario, o el usuario puede actualizar su propio perfil
-      allow update: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      // IMPORTANTE: No permitir que usuarios cambien su propio rol (escalación de privilegios)
+      allow update: if isSuperAdmin() || (
+        isAuthenticated() && 
+        request.auth.uid == userId &&
+        // Bloquear cambios en campo 'role'
+        !('role' in request.resource.data) ||
+        request.resource.data.role == getResource(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+      );
       
       // Eliminar: solo superadmin
       allow delete: if isSuperAdmin();
@@ -74,9 +81,10 @@ service cloud.firestore {
         allow delete: if isSuperAdmin();
       }
 
-      // Votos
+      // Votos - CERRAR LECTURA PÚBLICA
       match /votes/{voteId} {
-        allow read: if isAuthenticated();
+        // Solo admin/superadmin pueden leer votos (proteger privacidad)
+        allow read: if isAdmin();
         allow create: if isAuthenticated()
                 && request.resource.data.userId == request.auth.uid
                 && voteId == request.resource.data.electionId + '_' + request.resource.data.userId;

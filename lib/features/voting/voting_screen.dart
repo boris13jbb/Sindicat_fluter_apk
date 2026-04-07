@@ -207,6 +207,7 @@ class _VotingScreenState extends State<VotingScreen> {
       voteService: _voteService,
       initialCandidates: initialCandidates,
       onVoteSuccess: () => setState(() => _localVoteDone = true),
+      memberId: _userEmail, // 🆕 Usar email como memberId temporal
     );
   }
 }
@@ -253,6 +254,7 @@ class _VotingContent extends StatefulWidget {
     required this.voteService,
     required this.initialCandidates,
     required this.onVoteSuccess,
+    this.memberId, // 🆕 ID del socio para validación de elegibilidad
   });
 
   final Election election;
@@ -261,6 +263,7 @@ class _VotingContent extends StatefulWidget {
   final VoteService voteService;
   final List<Candidate> initialCandidates;
   final VoidCallback onVoteSuccess;
+  final String? memberId; // 🆕 ID del socio
 
   @override
   State<_VotingContent> createState() => _VotingContentState();
@@ -435,6 +438,7 @@ class _VotingContentState extends State<_VotingContent> {
         electionId: widget.electionId,
         userId: widget.userId,
         candidateId: _selected!.id,
+        memberId: widget.memberId, // 🆕 Pasar memberId para validación de elegibilidad
       );
       widget.voteService.recordLocalVote(widget.electionId, widget.userId);
       widget.onVoteSuccess();

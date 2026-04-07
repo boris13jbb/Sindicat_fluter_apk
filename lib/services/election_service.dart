@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import '../core/models/candidate.dart';
 import '../core/models/election.dart';
 import '../core/models/election_result.dart';
+import '../core/models/audit_log.dart';
+import 'audit_service.dart';
 import 'dart:async';
 
 /// Modo de elegibilidad para votación
@@ -57,10 +59,12 @@ class ResultsBootstrap {
 }
 
 class ElectionService {
-  ElectionService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  ElectionService({FirebaseFirestore? firestore, AuditService? audit})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _audit = audit ?? AuditService();
 
   final FirebaseFirestore _firestore;
+  final AuditService _audit;
 
   /// Un listener Firestore por elección; [getCandidates] reutiliza el mismo `.map()` por id.
   final Map<String, Stream<CandidatesLiveState>> _candidatesLiveCache = {};
@@ -146,6 +150,16 @@ class ElectionService {
     final ref = _firestore.collection('elections').doc();
     final data = election.toMap()..['id'] = ref.id;
     await ref.set(data);
+
+    // Registrar en auditoría
+    await _audit.logAction(
+      action: AuditAction.create,
+      entityType: AuditEntityType.election,
+      entityId: ref.id,
+      description: 'Elección creada: ${election.title}',
+      platform: 'flutter',
+    );
+
     return ref.id;
   }
 
@@ -154,10 +168,30 @@ class ElectionService {
         .collection('elections')
         .doc(election.id)
         .update(election.toMap());
+
+    // Registrar en auditoría
+    await _audit.logAction(
+      action: AuditAction.update,
+      entityType: AuditEntityType.election,
+      entityId: election.id,
+      description: 'Elección actualizada: ${election.title}',
+      platform: 'flutter',
+    );
   }
 
   Future<void> deleteElection(String electionId) async {
+    // Obtener título antes de eliminar para auditoría
+    final election = await getElection(electionId);
     await _firestore.collection('elections').doc(electionId).delete();
+
+    // Registrar en auditoría
+    await _audit.logAction(
+      action: AuditAction.delete,
+      entityType: AuditEntityType.election,
+      entityId: electionId,
+      description: 'Elección eliminada: ${election?.title ?? electionId}',
+      platform: 'flutter',
+    );
   }
 
   Stream<CandidatesLiveState> watchCandidatesLive(String electionId) {
@@ -222,6 +256,15 @@ class ElectionService {
         data['order'] = candidate.order;
       }
       await ref.set(data);
+
+      // Registrar en auditoría
+      await _audit.logAction(
+        action: AuditAction.create,
+        entityType: AuditEntityType.candidate,
+        entityId: ref.id,
+        description: 'Candidato creado: ${candidate.name} (Elección: ${candidate.electionId})',
+        platform: 'flutter',
+      );
     } catch (e) {
       debugPrint('Failed to add candidate: $e');
       rethrow;
@@ -235,23 +278,51 @@ class ElectionService {
         .collection('candidates')
         .doc(candidate.id)
         .update(candidate.toMap());
+
+    // Registrar en auditoría
+    await _audit.logAction(
+      action: AuditAction.update,
+      entityType: AuditEntityType.candidate,
+      entityId: candidate.id,
+      description: 'Candidato actualizado: ${candidate.name}',
+      platform: 'flutter',
+    );
   }
 
   Future<void> deleteCandidate(String electionId, String candidateId) async {
+    // Obtener nombre del candidato antes de eliminar para auditoría
+    final candidateDoc = await _firestore
+        .collection('elections')
+        .doc(electionId)
+        .collection('candidates')
+        .doc(candidateId)
+        .get();
+
     await _firestore
         .collection('elections')
         .doc(electionId)
         .collection('candidates')
         .doc(candidateId)
         .delete();
+
+    // Registrar en auditoría
+    await _audit.logAction(
+      action: AuditAction.delete,
+      entityType: AuditEntityType.candidate,
+      entityId: candidateId,
+      description: 'Candidato eliminado: ${candidateDoc.data()?['name'] ?? candidateId}',
+      platform: 'flutter',
+    );
   }
 }
 
 class VoteService {
-  VoteService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  VoteService({FirebaseFirestore? firestore, AuditService? audit})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _audit = audit ?? AuditService();
 
   final FirebaseFirestore _firestore;
+  final AuditService _audit;
 
   /// Caché local: usuario ya votó en esta elección (bloquea al volver a entrar en la misma sesión).
   static final Map<String, Set<String>> _votedElectionsByUser =
@@ -407,6 +478,15 @@ class VoteService {
 
     try {
       await batch.commit();
+
+      // Registrar emisión de voto en auditoría (después de commit exitoso)
+      await _audit.logAction(
+        action: AuditAction.vote,
+        entityType: AuditEntityType.election,
+        entityId: electionId,
+        description: 'Voto emitido por usuario $userId en elección $electionId',
+        platform: 'flutter',
+      );
     } catch (e) {
       debugPrint('Vote casting error: $e');
       rethrow;
