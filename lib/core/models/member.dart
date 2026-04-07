@@ -28,7 +28,8 @@ class Member {
   final String firstName; // Nombres
   final String lastName; // Apellidos
   final String fullName; // Nombre completo (calculado)
-  final String? documentId; // Cédula/DNI
+  final String? workerCode; // Código/Número de trabajador (identificación interna)
+  final String? documentId; // Cédula/DNI (documento oficial)
   final String? email;
   final String? phone;
   final MemberStatus status; // activo, inactivo
@@ -43,6 +44,7 @@ class Member {
     required this.firstName,
     required this.lastName,
     required this.fullName,
+    this.workerCode,
     this.documentId,
     this.email,
     this.phone,
@@ -61,6 +63,7 @@ class Member {
       firstName: map['firstName'] ?? '',
       lastName: map['lastName'] ?? '',
       fullName: map['fullName'] ?? '',
+      workerCode: map['workerCode'],
       documentId: map['documentId'],
       email: map['email'],
       phone: map['phone'],
@@ -83,6 +86,7 @@ class Member {
       'firstName': firstName,
       'lastName': lastName,
       'fullName': fullName,
+      if (workerCode != null) 'workerCode': workerCode,
       if (documentId != null) 'documentId': documentId,
       if (email != null) 'email': email,
       if (phone != null) 'phone': phone,
@@ -101,6 +105,7 @@ class Member {
     String? firstName,
     String? lastName,
     String? fullName,
+    String? workerCode,
     String? documentId,
     String? email,
     String? phone,
@@ -116,6 +121,7 @@ class Member {
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
       fullName: fullName ?? this.fullName,
+      workerCode: workerCode ?? this.workerCode,
       documentId: documentId ?? this.documentId,
       email: email ?? this.email,
       phone: phone ?? this.phone,

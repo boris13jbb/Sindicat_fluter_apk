@@ -378,7 +378,18 @@ class ImportService {
           continue;
         }
 
-        // Crear objeto Member
+        // Crear objeto Member con ambos campos: workerCode y documentId
+        final workerCode = validation.data['workerCode'] as String?;
+        final documentId = validation.data['documento'] as String?;
+        
+        // Validar que al menos uno de los identificadores exista
+        if ((workerCode == null || workerCode.isEmpty) && 
+            (documentId == null || documentId.isEmpty)) {
+          errorsCount++;
+          errorDetails.add('Fila ${i + 2}: Se requiere código de trabajador O cédula');
+          continue;
+        }
+        
         final additionalData = <String, dynamic>{};
         
         // Capturar columnas opcionales si existen
@@ -395,15 +406,19 @@ class ImportService {
           additionalData['mod'] = validation.data['mod'];
         }
 
+        // Generar ID único combinando workerCode y documentId
+        final memberId = workerCode ?? documentId ?? DateTime.now().millisecondsSinceEpoch.toString();
+
         final member = Member(
-          id: '', // Se generará en Firestore
+          id: memberId,
           memberNumber: memberNumber,
           firstName: validation.data['nombres'] as String? ?? '',
           lastName: validation.data['apellidos'] as String? ?? '',
           fullName:
               '${validation.data['nombres'] ?? ''} ${validation.data['apellidos'] ?? ''}'
                   .trim(),
-          documentId: validation.data['documento'] as String?,
+          workerCode: workerCode,
+          documentId: documentId,
           email: validation.data['email'] as String?,
           phone: validation.data['telefono'] as String?,
           status: MemberStatus.active,
@@ -419,7 +434,8 @@ class ImportService {
         if (validRows.length >= 500) {
           final batch = _firestore.batch();
           for (final row in validRows) {
-            final docRef = _firestore.collection('members').doc();
+            final docId = row['workerCode'] as String? ?? row['documentId'] as String? ?? '';
+            final docRef = _firestore.collection('members').doc(docId);
             batch.set(docRef, row);
           }
           await batch.commit();
