@@ -23,7 +23,8 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final isAdmin = auth.user?.role == UserRole.admin;
+    final isAdmin = auth.user?.role == UserRole.admin ||
+        auth.user?.role == UserRole.superadmin;
 
     return Scaffold(
       appBar: ProfessionalAppBar(

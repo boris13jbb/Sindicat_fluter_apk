@@ -55,7 +55,8 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = context.watch<AuthProvider>().user?.role == UserRole.admin;
+    final isAdmin = context.watch<AuthProvider>().user?.role == UserRole.admin ||
+        context.watch<AuthProvider>().user?.role == UserRole.superadmin;
     return Scaffold(
       appBar: ProfessionalAppBar(
         title: 'Resultados en Tiempo Real',
@@ -336,29 +337,21 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
     try {
       debugPrint('Iniciando exportación: $type');
 
-      // Mostrar indicador de carga
+      // Mostrar loading simple
       if (!context.mounted) return;
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => Center(
+        builder: (ctx) => const Center(
           child: Card(
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(
-                    type == 'pdf' ? 'Generando PDF...' : 'Preparando CSV...',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Procesando datos en segundo plano...',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Generando...'),
                 ],
               ),
             ),
@@ -366,213 +359,145 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
         ),
       );
 
-      // Obtener datos de Firestore en el hilo principal (con Firebase inicializado)
-      debugPrint('Obteniendo datos de Firestore...');
-      final election = await _electionService.getElection(widget.electionId);
+      // Usar loadResultsBootstrap para obtener datos instantáneamente (caché local)
+      debugPrint('Cargando datos de resultados...');
+      final bootstrap = await _electionService
+          .loadResultsBootstrap(widget.electionId)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () =>
+                throw Exception('Timeout: no se pudieron cargar los datos'),
+          );
+
+      final election = bootstrap.election;
       if (election == null) {
         throw Exception('Elección no encontrada');
       }
 
-      final candidatesStream = _electionService.getCandidates(
-        widget.electionId,
+      final candidates = bootstrap.candidates;
+      debugPrint('Datos cargados: ${candidates.length} candidatos');
+
+      if (candidates.isEmpty) {
+        throw Exception('No hay candidatos en esta elección');
+      }
+
+      // Procesar datos directamente
+      final sortedCandidates = List<Candidate>.from(candidates)
+        ..sort((a, b) => b.voteCount.compareTo(a.voteCount));
+      final totalVotes = sortedCandidates.fold<int>(
+        0,
+        (sum, c) => sum + c.voteCount,
       );
-      final candidates = await candidatesStream.first;
 
-      debugPrint('Datos obtenidos: ${candidates.length} candidatos');
+      debugPrint('Generando $type...');
 
-      // Ejecutar SOLO el procesamiento pesado en un isolate separado
-      final result = await compute(
-        _processExportData,
-        _ExportParams(
-          electionId: widget.electionId,
-          type: type,
+      // Generar PDF o CSV con timeout
+      Uint8List? pdfBytes;
+      String? csv;
+      String electionTitle = election.title;
+
+      if (type == 'pdf') {
+        final generator = ElectionReportGenerator(
           election: election,
-          candidates: candidates,
-        ),
-      );
+          candidates: sortedCandidates,
+          totalVotes: totalVotes,
+        );
+        pdfBytes = await generator.generateReport().timeout(
+          const Duration(seconds: 30),
+          onTimeout: () =>
+              throw Exception('Timeout: la generación del PDF tardó demasiado'),
+        );
+      } else {
+        final sb = StringBuffer();
+        sb.writeln('SISTEMA DE VOTACIÓN ELECTRÓNICA - SINDICATO');
+        sb.writeln('REPORTE DE RESULTADOS');
+        sb.writeln('');
+        sb.writeln('Elección:,${election.title}');
+        sb.writeln('Descripción:,${election.description.replaceAll(",", " ")}');
+        sb.writeln('Fecha de generación:,${DateTime.now().toString()}');
+        sb.writeln('Total de votos:,$totalVotes');
+        sb.writeln('');
+        sb.writeln('Resultados detallados:');
+        sb.writeln('Posición,Candidato,Votos,Porcentaje');
+
+        for (var i = 0; i < sortedCandidates.length; i++) {
+          final c = sortedCandidates[i];
+          final pct = totalVotes > 0
+              ? (c.voteCount / totalVotes * 100).toStringAsFixed(2)
+              : '0.00';
+          sb.writeln(
+            '${i + 1},${c.name.replaceAll(",", " ")},${c.voteCount},$pct%',
+          );
+        }
+        csv = sb.toString();
+      }
 
       if (!context.mounted) return;
 
-      debugPrint('Datos procesados en isolate: ${result.electionTitle}');
+      debugPrint('$type generado correctamente, abriendo visor...');
 
-      // Mostrar resultado en hilo principal
+      // Cerrar loading inmediatamente
+      Navigator.of(context).pop();
+
+      // Mostrar resultado
       if (type == 'pdf') {
         await Printing.sharePdf(
-          bytes: result.pdfBytes!,
+          bytes: pdfBytes!,
           filename:
-              'resultados_${result.electionTitle.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.pdf',
+              'resultados_${electionTitle.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.pdf',
         );
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+            const SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline, color: Colors.white),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '✅ PDF Generado',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          'Reporte de resultados exportado correctamente',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
+                  Icon(Icons.check_circle_outline, color: Colors.white),
+                  SizedBox(width: 12),
+                  Text('✅ PDF generado'),
                 ],
               ),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
             ),
           );
         }
       } else if (type == 'csv') {
-        await Clipboard.setData(ClipboardData(text: result.csv!));
+        await Clipboard.setData(ClipboardData(text: csv!));
         debugPrint('CSV copiado al portapapeles');
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+            const SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline, color: Colors.white),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '✅ CSV Copiado',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        Text(
-                          'Resultados copiados al portapapeles',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
+                  Icon(Icons.check_circle_outline, color: Colors.white),
+                  SizedBox(width: 12),
+                  Text('✅ CSV copiado'),
                 ],
               ),
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 3),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
             ),
           );
         }
       }
-
-      // Cerrar loading si aún está abierto
-      if (context.mounted && Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
     } catch (e) {
       debugPrint('Error en _handleExport: $e');
-      // Cerrar loading
+      // Cerrar loading si está abierto
       if (context.mounted && Navigator.canPop(context)) {
-        Navigator.pop(context);
+        Navigator.of(context).pop();
       }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(child: Text('Error al exportar: ${e.toString()}')),
-              ],
-            ),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
+            content: Text('❌ Error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
     }
-  }
-}
-
-class _ExportParams {
-  final String electionId;
-  final String type;
-  final Election election;
-  final List<Candidate> candidates;
-
-  _ExportParams({
-    required this.electionId,
-    required this.type,
-    required this.election,
-    required this.candidates,
-  });
-}
-
-class _ExportResult {
-  final Uint8List? pdfBytes;
-  final String? csv;
-  final String electionTitle;
-
-  _ExportResult({this.pdfBytes, this.csv, required this.electionTitle});
-}
-
-// Función top-level para compute - procesa SOLO CPU (sin Firebase)
-Future<_ExportResult> _processExportData(_ExportParams params) async {
-  // Los datos YA VIENEN del hilo principal - NO usar Firebase aquí
-  final election = params.election;
-  final candidates = params.candidates;
-
-  // Ordenar y procesar (solo CPU pesado)
-  final sortedCandidates = List<Candidate>.from(candidates)
-    ..sort((a, b) => b.voteCount.compareTo(a.voteCount));
-  final totalVotes = sortedCandidates.fold<int>(
-    0,
-    (sum, c) => sum + c.voteCount,
-  );
-
-  if (params.type == 'pdf') {
-    // Generar PDF (solo CPU)
-    final generator = ElectionReportGenerator(
-      election: election,
-      candidates: sortedCandidates,
-      totalVotes: totalVotes,
-    );
-    return _ExportResult(
-      pdfBytes: await generator.generateReport(),
-      electionTitle: election.title,
-    );
-  } else {
-    // Generar CSV (solo CPU)
-    final sb = StringBuffer();
-    sb.writeln('SISTEMA DE VOTACIÓN ELECTRÓNICA - SINDICATO');
-    sb.writeln('REPORTE DE RESULTADOS');
-    sb.writeln('');
-    sb.writeln('Elección:,${election.title}');
-    sb.writeln('Descripción:,${election.description.replaceAll(",", " ")}');
-    sb.writeln('Fecha de generación:,${DateTime.now().toString()}');
-    sb.writeln('Total de votos:,$totalVotes');
-    sb.writeln('');
-    sb.writeln('Resultados detallados:');
-    sb.writeln('Posición,Candidato,Votos,Porcentaje');
-
-    for (var i = 0; i < sortedCandidates.length; i++) {
-      final c = sortedCandidates[i];
-      final pct = totalVotes > 0
-          ? (c.voteCount / totalVotes * 100).toStringAsFixed(2)
-          : '0.00';
-      sb.writeln(
-        '${i + 1},${c.name.replaceAll(",", " ")},${c.voteCount},$pct%',
-      );
-    }
-
-    return _ExportResult(csv: sb.toString(), electionTitle: election.title);
   }
 }
 

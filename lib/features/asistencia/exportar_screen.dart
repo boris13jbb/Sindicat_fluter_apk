@@ -2,29 +2,94 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'dart:async';
-import 'dart:io';
-import 'package:path/path.dart' as path;
 import '../../core/models/asistencia/asistencia.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
 
+// ============================================================================
+// FUNCIONES TOP-LEVEL PARA ISOLATES (OPTIMIZADAS)
+// ============================================================================
+
+/// Serializa AsistenciaConDatos a mapa primitivo para isolate
+Map<String, dynamic> _serializeAsistencia(AsistenciaConDatos a) {
+  return {
+    'eventoNombre': a.evento.nombre,
+    'eventoFecha': a.evento.fecha,
+    'personaNombre': a.persona.nombreCompleto,
+    'personaIdentificador': a.persona.identificador ?? 'N/A',
+    'asistio': a.asistencia.asistio,
+    'metodoRegistro': a.asistencia.metodoRegistro.value,
+    'fechaRegistro': a.asistencia.fechaRegistro ?? 0,
+  };
+}
+
+/// Formatea fecha desde timestamp
 String _formatFechaExport(int ms) {
+  if (ms == 0) return 'N/A';
   final d = DateTime.fromMillisecondsSinceEpoch(ms);
   return '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }
 
-String _toCsv(List<AsistenciaConDatos> list) {
+/// Genera CSV desde lista serializable
+String _toCsv(List<Map<String, dynamic>> list) {
   final sb = StringBuffer();
   sb.writeln('Evento,Fecha evento,Persona,Asistió,Fecha registro,Método');
   for (final a in list) {
     sb.writeln(
-      '"${a.evento.nombre}","${_formatFechaExport(a.evento.fecha)}","${a.persona.nombreCompleto}",${a.asistencia.asistio},"${_formatFechaExport(a.asistencia.fechaRegistro ?? 0)}",${a.asistencia.metodoRegistro.value}',
+      '"${a['eventoNombre']}",'
+      '"${_formatFechaExport(a['eventoFecha'] as int)}",'
+      '"${a['personaNombre']}",'
+      '${a['asistio'] ? 'Sí' : 'No'},'
+      '"${_formatFechaExport(a['fechaRegistro'] as int)}",'
+      '"${a['metodoRegistro']}"',
     );
   }
   return sb.toString();
+}
+
+/// Convierte lista serializada de vuelta a objetos AsistenciaConDatos
+List<AsistenciaConDatos> _deserializeAsistencias(
+  List<Map<String, dynamic>> serializedList,
+) {
+  return serializedList.map((map) {
+    return AsistenciaConDatos(
+      evento: EventoAsistencia(
+        id: '',
+        nombre: map['eventoNombre'] as String,
+        fecha: map['eventoFecha'] as int,
+        tipoReunion: TipoReunion.ordinaria,
+        descripcion: '',
+      ),
+      persona: PersonaAsistencia(
+        id: '',
+        nombres: (map['personaNombre'] as String).split(' ').first,
+        apellidos: (map['personaNombre'] as String)
+            .split(' ')
+            .skip(1)
+            .join(' '),
+        identificador: map['personaIdentificador'] as String?,
+      ),
+      asistencia: AsistenciaRegistro(
+        id: '',
+        eventoId: '',
+        personaId: '',
+        asistio: map['asistio'] as bool,
+        metodoRegistro: MetodoRegistro.fromString(
+          map['metodoRegistro'] as String,
+        ),
+        fechaRegistro: map['fechaRegistro'] as int,
+      ),
+    );
+  }).toList();
+}
+
+/// Función top-level para generar Excel en isolate
+Future<Uint8List> _generateExcelBytesIsolate(
+  List<Map<String, dynamic>> serializedList,
+) async {
+  final asistencias = _deserializeAsistencias(serializedList);
+  return await AsistenciaService.generateExcelExportStatic(asistencias);
 }
 
 class ExportarAsistenciaScreen extends StatefulWidget {
@@ -49,67 +114,78 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
       return;
     }
 
+    // Guardar referencia al navigator
+    final navigator = Navigator.of(context);
+
     try {
-      // Los datos ya vienen validados por el modelo AsistenciaConDatos
-      final validList = list;
+      // Serializar datos para isolate
+      debugPrint('Serializando ${list.length} registros...');
+      final serializedList = list.map(_serializeAsistencia).toList();
 
-      if (validList.isEmpty) {
-        throw Exception('Los datos de asistencia están incompletos');
-      }
-
+      // Mostrar loading
+      final dialogContext = navigator.overlay!.context;
       showDialog(
-        context: context,
+        context: dialogContext,
         barrierDismissible: false,
-        builder: (context) => Center(
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  const Text('Generando Excel...'),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Procesando ${list.length} registros...',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
+        builder: (dialogContext) => WillPopScope(
+          onWillPop: () async => false,
+          child: Center(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: 16),
+                    const Text('Generando Excel...'),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Procesando ${list.length} registros...',
+                      style: Theme.of(dialogContext).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       );
 
-      // Generar Excel en segundo plano con timeout
-      final bytes = await compute(_generateExcelBytes, validList).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw TimeoutException(
-            'La generación del Excel está tardando demasiado',
+      // Esperar a que se muestre el diálogo
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Generar Excel en isolate con timeout extendido
+      debugPrint('Generando Excel en isolate...');
+      final bytes = await compute(_generateExcelBytesIsolate, serializedList)
+          .timeout(
+            const Duration(seconds: 60), // Timeout extendido a 60s
+            onTimeout: () {
+              throw TimeoutException(
+                'La generación del Excel está tardando demasiado',
+              );
+            },
           );
-        },
-      );
 
       if (!context.mounted) return;
 
-      final directory = await getTemporaryDirectory();
-      final filePath = path.join(
-        directory.path,
-        'asistencia_${DateTime.now().millisecondsSinceEpoch}.xlsx',
-      );
-      final file = File(filePath);
-      await file.writeAsBytes(bytes);
-
-      await Share.shareXFiles([
-        XFile(filePath),
-      ], subject: 'Exportación de Asistencias');
-
-      if (!context.mounted) return;
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context); // Cerrar loading
+      // Cerrar loading ANTES de compartir
+      try {
+        if (navigator.canPop()) {
+          navigator.pop();
+          await Future.delayed(const Duration(milliseconds: 200));
+        }
+      } catch (e) {
+        debugPrint('Error cerrando loading: $e');
       }
+
+      // Compartir archivo usando Printing (mejor compatibilidad)
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'asistencia_${DateTime.now().millisecondsSinceEpoch}.xlsx',
+      );
+
+      if (!context.mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -125,10 +201,16 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
         ),
       );
     } catch (e) {
-      if (!context.mounted) return;
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
+      debugPrint('Error en _exportarExcel: $e');
+      // Cerrar loading en caso de error
+      try {
+        if (navigator.canPop()) {
+          navigator.pop();
+        }
+      } catch (e) {
+        // Ignorar errores al cerrar
       }
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -157,141 +239,80 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
       return;
     }
 
-    try {
-      debugPrint('Generando reporte profesional de PDF de asistencia...');
-
-      // Los datos ya vienen validados por el modelo AsistenciaConDatos
-      final validList = list;
-
-      if (validList.isEmpty) {
-        throw Exception('Los datos de asistencia están incompletos');
-      }
-
-      // Mostrar loading
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => Center(
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  const Text('Generando PDF...'),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Procesando ${list.length} registros...',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+    // Mostrar loading inmediato
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Generando PDF...'),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
 
-      // Generar PDF en segundo plano con timeout
-      final bytes = await compute(_generateAttendancePdf, validList).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw TimeoutException(
-            'La generación del PDF está tardando demasiado',
-          );
-        },
-      );
+    try {
+      debugPrint('Generando PDF directamente (${list.length} registros)...');
+
+      // Generar PDF DIRECTAMENTE sin isolate (más rápido para <1000 registros)
+      final bytes = await AsistenciaService.generatePDFExportStatic(list);
 
       if (!context.mounted) return;
 
-      // Usar Printing.sharePdf para mejor compatibilidad
+      // Cerrar loading inmediatamente
+      Navigator.of(context).pop();
+
+      debugPrint('PDF generado, abriendo visor...');
+
+      // Compartir PDF inmediatamente
       await Printing.sharePdf(
         bytes: bytes,
         filename: 'asistencia_${DateTime.now().millisecondsSinceEpoch}.pdf',
       );
 
       if (!context.mounted) return;
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context); // Cerrar loading
-      }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Row(
             children: [
-              const Icon(Icons.check_circle_outline, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '✅ PDF Generado',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const Text(
-                      'Reporte de asistencias exportado correctamente',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
+              Icon(Icons.check_circle_outline, color: Colors.white),
+              SizedBox(width: 12),
+              Text('✅ PDF generado correctamente'),
             ],
           ),
-          backgroundColor: Theme.of(context).colorScheme.primary,
+          backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
+          duration: Duration(seconds: 2),
         ),
       );
     } catch (e) {
       debugPrint('Error al generar PDF: $e');
-      if (!context.mounted) return;
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context);
+      // Cerrar loading si aún está abierto
+      if (context.mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
       }
+      if (!context.mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '❌ Error al Generar PDF',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      'No se pudo generar el reporte. Intente nuevamente.',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Theme.of(context).colorScheme.error,
+          content: Text('❌ Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 4),
         ),
       );
     }
-  }
-
-  // Funciones top-level para compute (aislamiento)
-  Future<Uint8List> _generateExcelBytes(List<AsistenciaConDatos> list) async {
-    return await AsistenciaService.generateExcelExportStatic(list);
-  }
-
-  Future<Uint8List> _generateAttendancePdf(
-    List<AsistenciaConDatos> list,
-  ) async {
-    return await AsistenciaService.generatePDFExportStatic(list);
   }
 
   @override
@@ -336,6 +357,8 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
               ),
             );
           }
+          // Serializar lista para CSV
+          final serializedList = list.map(_serializeAsistencia).toList();
           return Column(
             children: [
               Padding(
@@ -349,7 +372,7 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: FilledButton.icon(
                   onPressed: () {
-                    final csv = _toCsv(list);
+                    final csv = _toCsv(serializedList);
                     Clipboard.setData(ClipboardData(text: csv));
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(

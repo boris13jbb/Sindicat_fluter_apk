@@ -24,6 +24,14 @@ import 'features/asistencia/registro_manual_screen.dart';
 import 'features/asistencia/asistencias_list_screen.dart';
 import 'features/asistencia/exportar_screen.dart';
 import 'features/asistencia/scanner_screen.dart';
+import 'features/asistencia/importar_personas_screen.dart';
+import 'features/asistencia/qr_codes_screen.dart';
+// 🆕 Nuevas pantallas de gestión sindical
+import 'features/members/members_list_screen.dart';
+import 'features/members/member_form_screen.dart';
+import 'features/members/import_members_screen.dart';
+import 'features/attendance/attendance_report_screen.dart';
+import 'features/audit/audit_logs_screen.dart';
 import 'core/models/asistencia/evento.dart';
 
 void main() async {
@@ -147,6 +155,18 @@ class MyApp extends StatelessWidget {
                 ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
             return ScannerAsistenciaScreen(evento: evento);
           },
+          '/asistencia/importar_personas': (_) => const ImportarPersonasScreen(),
+          '/asistencia/qr_codes': (_) => const QRCodesScreen(),
+          // 🆕 Rutas de gestión sindical
+          '/members': (_) => const MembersListScreen(),
+          '/members/import': (_) => const ImportMembersScreen(),
+          '/attendance/report': (ctx) {
+            final eventId =
+                ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
+            if (eventId.isEmpty) return const AsistenciaHomeScreen();
+            return AttendanceReportScreen(eventId: eventId);
+          },
+          '/audit/logs': (_) => const AuditLogsScreen(),
         },
       ),
     );

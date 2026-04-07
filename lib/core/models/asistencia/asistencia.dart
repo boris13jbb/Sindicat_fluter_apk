@@ -1,6 +1,9 @@
 import 'evento.dart';
 import 'persona.dart';
 
+export 'evento.dart';
+export 'persona.dart';
+
 /// Método de registro de asistencia.
 enum MetodoRegistro {
   escaneoQr('ESCANEO_QR'),

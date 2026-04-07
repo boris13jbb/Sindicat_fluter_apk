@@ -1,9 +1,8 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:typed_data';
-import '../core/models/asistencia/evento.dart';
-import '../core/models/asistencia/persona.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:convert';
 import '../core/models/asistencia/asistencia.dart';
 import '../core/reports/attendance_report_generator.dart';
 import 'auth_service.dart';
@@ -299,30 +298,81 @@ class AsistenciaService {
     String eventoId,
     MetodoRegistro metodo,
   ) async {
+    debugPrint('📱 Iniciando registro desde escaneo...');
+    debugPrint('   Código escaneado: "$codigoEscaneado"');
+    debugPrint('   Evento ID: $eventoId');
+    
+    // Parsear código QR
     final personaData = parseQRCode(codigoEscaneado);
+    
+    if (personaData != null) {
+      debugPrint('   ✅ Persona parseada: ${personaData.nombres} ${personaData.apellidos} (${personaData.identificador})');
+    } else {
+      debugPrint('   ⚠️ No se pudieron parsear datos del QR');
+    }
+    
+    // Buscar persona por código QR exacto primero
     var persona = await getPersonaPorQR(codigoEscaneado);
-    if (persona == null && personaData?.identificador != null) {
-      persona = await getPersonaPorIdentificador(personaData!.identificador!);
+    if (persona != null) {
+      debugPrint('   ✅ Persona encontrada por código QR exacto: ${persona.nombreCompleto}');
     }
+    
+    // Si no se encuentra, buscar por identificador
+    if (persona == null && personaData?.identificador != null && personaData!.identificador!.isNotEmpty) {
+      debugPrint('   🔍 Buscando por identificador: ${personaData.identificador}');
+      persona = await getPersonaPorIdentificador(personaData.identificador!);
+      if (persona != null) {
+        debugPrint('   ✅ Persona encontrada por identificador: ${persona.nombreCompleto}');
+      }
+    }
+    
+    // Si aún no se encuentra, crear nueva persona
     if (persona == null) {
-      final id = await createPersona(
-        PersonaAsistencia(
-          id: '',
-          nombres: personaData?.nombres ?? 'Sin nombre',
-          apellidos: personaData?.apellidos ?? 'Sin apellido',
-          identificador: personaData?.identificador,
-          codigoQR: codigoEscaneado,
-        ),
+      debugPrint('   🆕 Creando nueva persona...');
+      final nombres = personaData?.nombres ?? '';
+      final apellidos = personaData?.apellidos ?? '';
+      final identificador = personaData?.identificador ?? '';
+      
+      debugPrint('      Nombres: "$nombres"');
+      debugPrint('      Apellidos: "$apellidos"');
+      debugPrint('      Identificador: "$identificador"');
+      
+      if (nombres.isEmpty && apellidos.isEmpty && identificador.isEmpty) {
+        debugPrint('   ❌ ERROR: QR vacío o sin datos válidos');
+        throw Exception('El código QR no contiene datos válidos. Asegúrate de usar el formato: {"nombres":"...","apellidos":"...","identificador":"..."}');
+      }
+      
+      final nuevaPersona = PersonaAsistencia(
+        id: '',
+        nombres: nombres.isNotEmpty ? nombres : 'Sin nombre',
+        apellidos: apellidos.isNotEmpty ? apellidos : 'Sin apellido',
+        identificador: identificador,
+        codigoQR: codigoEscaneado,
       );
+      
+      final id = await createPersona(nuevaPersona);
       persona = await getPersonaById(id);
+      
+      if (persona != null) {
+        debugPrint('   ✅ Nueva persona creada: ${persona.nombreCompleto} (ID: $id)');
+      }
     }
-    if (persona == null) return null;
-    final existente = await getAsistenciaPorEventoYPersona(
-      eventoId,
-      persona.id,
-    );
-    if (existente != null) return null;
-    return createAsistencia(
+    
+    if (persona == null) {
+      debugPrint('   ❌ ERROR: No se pudo crear/encontrar persona');
+      return null;
+    }
+    
+    // Verificar duplicado de asistencia
+    final existente = await getAsistenciaPorEventoYPersona(eventoId, persona.id);
+    if (existente != null) {
+      debugPrint('   ⚠️ Ya existe asistencia para esta persona en este evento');
+      return null;
+    }
+    
+    // Crear registro de asistencia
+    debugPrint('   ✅ Registrando asistencia...');
+    final asistenciaId = await createAsistencia(
       AsistenciaRegistro(
         id: '',
         eventoId: eventoId,
@@ -331,35 +381,35 @@ class AsistenciaService {
       ),
       persona.id,
     );
+    
+    debugPrint('   ✅ Asistencia registrada exitosamente! ID: $asistenciaId');
+    return asistenciaId;
   }
 
   /// Registro manual de asistencia (compatible con Android)
+  /// identificadorPersona: ID de Firestore de la persona existente
   Future<String?> registrarAsistenciaManual(
-    String identificadorPersona,
+    String personaId, // ID de Firestore de la persona
     String eventoId,
     bool asistio,
     String justificacion,
   ) async {
-    var persona = await getPersonaPorIdentificador(identificadorPersona);
-    if (persona == null) {
-      // Crear nueva persona si no existe
-      final id = await createPersona(
-        PersonaAsistencia(
-          id: '',
-          nombres: identificadorPersona, // Se puede editar después
-          apellidos: '',
-          identificador: identificadorPersona,
-        ),
-      );
-      persona = await getPersonaById(id);
+    if (personaId.isEmpty) {
+      throw Exception('ID de persona no proporcionado');
     }
-    if (persona == null) return null;
+    
+    // Obtener persona existente
+    final persona = await getPersonaById(personaId);
+    if (persona == null) {
+      throw Exception('Persona no encontrada con ID: $personaId');
+    }
 
+    // Verificar duplicado
     final existente = await getAsistenciaPorEventoYPersona(
       eventoId,
       persona.id,
     );
-    if (existente != null) return null;
+    if (existente != null) return null; // Ya existe, retornar null
 
     return createAsistencia(
       AsistenciaRegistro(
@@ -381,18 +431,47 @@ class AsistenciaService {
   }
 
   static PersonaData? parseQRCode(String codigo) {
-    if (codigo.startsWith('{')) {
-      /* lógica JSON */
+    if (codigo.trim().isEmpty) return null;
+    
+    final limpio = codigo.trim();
+    
+    // Intentar parsear como JSON
+    if (limpio.startsWith('{')) {
+      try {
+        final Map<String, dynamic> jsonMap = jsonDecode(limpio);
+        
+        final nombres = jsonMap['nombres']?.toString() ?? '';
+        final apellidos = jsonMap['apellidos']?.toString() ?? '';
+        final identificador = jsonMap['identificador']?.toString() ?? '';
+        
+        debugPrint('✅ QR parseado exitosamente:');
+        debugPrint('   Nombres: $nombres');
+        debugPrint('   Apellidos: $apellidos');
+        debugPrint('   Identificador: $identificador');
+        
+        return PersonaData(
+          nombres: nombres,
+          apellidos: apellidos,
+          identificador: identificador,
+        );
+      } catch (e) {
+        debugPrint('❌ Error parseando JSON QR: $e');
+        debugPrint('   Código: $limpio');
+      }
     }
-    final partes = codigo.split(',');
+    
+    // Formato CSV: Juan,Pérez,12345
+    final partes = limpio.split(',');
     if (partes.length >= 3) {
       return PersonaData(
-        nombres: partes[0],
-        apellidos: partes[1],
-        identificador: partes[2],
+        nombres: partes[0].trim(),
+        apellidos: partes[1].trim(),
+        identificador: partes[2].trim(),
       );
     }
-    return PersonaData(identificador: codigo);
+    
+    // Solo identificador: 12345
+    return PersonaData(identificador: limpio);
   }
 
   // ---------- Exportación ----------

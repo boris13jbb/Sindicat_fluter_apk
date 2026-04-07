@@ -179,6 +179,18 @@ class EventoDetailScreen extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // 🆕 Botón para ver reporte con faltas calculadas
+          FloatingActionButton.small(
+            heroTag: 'report',
+            onPressed: () => Navigator.pushNamed(
+              context,
+              '/attendance/report',
+              arguments: evento.id,
+            ),
+            tooltip: 'Ver reporte de asistencia',
+            child: const Icon(Icons.bar_chart),
+          ),
+          const SizedBox(height: 12),
           FloatingActionButton.small(
             heroTag: 'manual',
             onPressed: () => Navigator.pushNamed(

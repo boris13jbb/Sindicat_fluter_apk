@@ -15,7 +15,8 @@ class RegistroManualScreen extends StatefulWidget {
 
 class _RegistroManualScreenState extends State<RegistroManualScreen> {
   final _service = AsistenciaService();
-  PersonaAsistencia? _personaSeleccionada;
+  String? _personaIdSeleccionada; // Usar ID en lugar de objeto para Dropdown
+  PersonaAsistencia? _personaObj;
   bool _asistio = true;
   final _justificacionController = TextEditingController();
   bool _usarNueva = false;
@@ -163,14 +164,15 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                   TextField(
                     controller: _identificadorController,
                     decoration: InputDecoration(
-                      labelText: 'Identificador (Opcional)',
-                      hintText: 'Ej: DNI, Código, etc.',
+                      labelText: 'Número de Trabajador *',
+                      hintText: 'Ej: 12345 (obligatorio para evitar duplicados)',
                       prefixIcon: const Icon(Icons.qr_code),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                       filled: true,
                     ),
+                    onChanged: (_) => setState(() {}),
                     textCapitalization: TextCapitalization.characters,
                   ),
                 ] else
@@ -198,8 +200,23 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                       }
                       final personas = snap.data!
                         ..sort((a, b) => a.apellidos.compareTo(b.apellidos));
-                      return DropdownButtonFormField<PersonaAsistencia>(
-                        initialValue: _personaSeleccionada,
+                      
+                      // Si no hay persona seleccionada, seleccionar la primera
+                      if (_personaIdSeleccionada == null && personas.isNotEmpty) {
+                        _personaIdSeleccionada = personas.first.id;
+                        _personaObj = personas.first;
+                      }
+                      
+                      // Asegurar que _personaObj esté sincronizado
+                      if (_personaIdSeleccionada != null) {
+                        _personaObj = personas.firstWhere(
+                          (p) => p.id == _personaIdSeleccionada,
+                          orElse: () => personas.first,
+                        );
+                      }
+                      
+                      return DropdownButtonFormField<String>(
+                        value: _personaIdSeleccionada,
                         decoration: InputDecoration(
                           labelText: 'Seleccionar Persona *',
                           hintText: 'Busque y seleccione una persona',
@@ -212,7 +229,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                         items: personas
                             .map(
                               (p) => DropdownMenuItem(
-                                value: p,
+                                value: p.id,
                                 child: Text(
                                   p.nombreCompleto,
                                   style: const TextStyle(
@@ -222,8 +239,13 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                               ),
                             )
                             .toList(),
-                        onChanged: (p) =>
-                            setState(() => _personaSeleccionada = p),
+                        onChanged: (id) => setState(() {
+                          _personaIdSeleccionada = id;
+                          _personaObj = personas.firstWhere(
+                            (p) => p.id == id,
+                            orElse: () => personas.first,
+                          );
+                        }),
                         isExpanded: true,
                       );
                     },
@@ -397,10 +419,12 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
   bool get _puedeGuardar {
     if (_justificacionController.text.trim().isEmpty) return false;
     if (_usarNueva) {
+      // Para nueva persona: nombres, apellidos Y identificador son obligatorios
       return _nombresController.text.trim().isNotEmpty &&
-          _apellidosController.text.trim().isNotEmpty;
+          _apellidosController.text.trim().isNotEmpty &&
+          _identificadorController.text.trim().isNotEmpty;
     }
-    return _personaSeleccionada != null;
+    return _personaObj != null;
   }
 
   void _mostrarError(String mensaje) {
@@ -454,14 +478,22 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
 
     try {
       if (_usarNueva) {
+        // Verificar si ya existe persona con ese identificador
+        final identificador = _identificadorController.text.trim();
+        final personaExistente = await _service.getPersonaPorIdentificador(identificador);
+        
+        if (personaExistente != null) {
+          _mostrarError('⚠️ Ya existe una persona con número de trabajador: $identificador. Seleccione "Persona Existente"');
+          setState(() => _loading = false);
+          return;
+        }
+        
         // Crear nueva persona
         final p = PersonaAsistencia(
           id: '',
           nombres: _nombresController.text.trim(),
           apellidos: _apellidosController.text.trim(),
-          identificador: _identificadorController.text.trim().isEmpty
-              ? null
-              : _identificadorController.text.trim(),
+          identificador: identificador,
         );
 
         final id = await _service.createPersona(p);
@@ -473,7 +505,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
         );
 
         if (res != null && mounted) {
-          _mostrarExito('✅ Asistencia registrada correctamente');
+          _mostrarExito('✅ Persona creada y asistencia registrada correctamente');
           Navigator.pop(context);
         } else if (mounted) {
           _mostrarError(
@@ -482,8 +514,21 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
         }
       } else {
         // Usar persona existente
+        if (_personaObj == null) {
+          _mostrarError('⚠️ Debe seleccionar una persona');
+          setState(() => _loading = false);
+          return;
+        }
+        
+        // Verificar que la persona tenga identificador
+        if (_personaObj!.identificador == null || _personaObj!.identificador!.isEmpty) {
+          _mostrarError('⚠️ La persona seleccionada no tiene número de trabajador. Edítela en la sección "Socios"');
+          setState(() => _loading = false);
+          return;
+        }
+        
         final res = await _service.registrarAsistenciaManual(
-          _personaSeleccionada!.id,
+          _personaObj!.id,
           widget.evento.id,
           _asistio,
           _justificacionController.text.trim(),

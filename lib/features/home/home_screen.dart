@@ -70,13 +70,35 @@ class HomeScreen extends StatelessWidget {
                   icon: Icons.how_to_vote,
                   onTap: () => Navigator.pushNamed(context, '/voto/elections'),
                 ),
-                if (user?.role == UserRole.admin) ...[
+                if (user?.role == UserRole.admin ||
+                    user?.role == UserRole.superadmin) ...[
                   const SizedBox(height: 16),
                   _ModuleCard(
                     title: 'Sistema de Asistencia',
                     subtitle: 'Control de asistencia a eventos',
                     icon: Icons.how_to_reg,
                     onTap: () => Navigator.pushNamed(context, '/asistencia'),
+                  ),
+                ],
+                // 🆕 Nuevos módulos de gestión sindical
+                if (user?.role == UserRole.admin ||
+                    user?.role == UserRole.superadmin) ...[
+                  const SizedBox(height: 16),
+                  _ModuleCard(
+                    title: 'Gestión de Socios',
+                    subtitle: 'Administrar socios e importación masiva',
+                    icon: Icons.people,
+                    onTap: () => Navigator.pushNamed(context, '/members'),
+                  ),
+                ],
+                if (user?.role == UserRole.admin ||
+                    user?.role == UserRole.superadmin) ...[
+                  const SizedBox(height: 16),
+                  _ModuleCard(
+                    title: 'Registro de Auditoría',
+                    subtitle: 'Ver logs de acciones del sistema',
+                    icon: Icons.history,
+                    onTap: () => Navigator.pushNamed(context, '/audit/logs'),
                   ),
                 ],
               ],

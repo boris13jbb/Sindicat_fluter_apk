@@ -5,6 +5,28 @@ import '../core/models/election.dart';
 import '../core/models/election_result.dart';
 import 'dart:async';
 
+/// Modo de elegibilidad para votación
+enum EligibilityMode {
+  all_active_members('Todos los socios activos'),
+  only_attendees('Solo asistentes a evento');
+
+  const EligibilityMode(this.displayName);
+  final String displayName;
+
+  static EligibilityMode fromString(String value) {
+    switch (value.toLowerCase()) {
+      case 'all_active_members':
+      case 'todos':
+        return EligibilityMode.all_active_members;
+      case 'only_attendees':
+      case 'solo_asistentes':
+        return EligibilityMode.only_attendees;
+      default:
+        return EligibilityMode.all_active_members;
+    }
+  }
+}
+
 /// Documento de elección + si Firestore aún confirma caché o escrituras locales.
 class ElectionLiveState {
   const ElectionLiveState({required this.election, required this.isSyncing});
@@ -271,11 +293,90 @@ class VoteService {
         .map((doc) => doc.exists);
   }
 
+  /// Verificar si un usuario es elegible para votar en una elección
+  Future<bool> isUserEligibleToVote({
+    required String electionId,
+    required String userId,
+    required String memberId,
+  }) async {
+    try {
+      // Obtener configuración de la elección
+      final electionDoc = await _firestore
+          .collection('elections')
+          .doc(electionId)
+          .get();
+
+      if (!electionDoc.exists) {
+        debugPrint('Elección no encontrada: $electionId');
+        return false;
+      }
+
+      final electionData = electionDoc.data()!;
+      final requireAttendance =
+          electionData['requireAttendance'] as bool? ?? false;
+
+      // Si no requiere asistencia, todos los socios activos pueden votar
+      if (!requireAttendance) {
+        return true;
+      }
+
+      // Si requiere asistencia, verificar que tenga asistencia en el evento
+      final eventoAsistenciaId = electionData['eventoAsistenciaId'] as String?;
+
+      if (eventoAsistenciaId == null || eventoAsistenciaId.isEmpty) {
+        debugPrint(
+          'Elección requiere asistencia pero no tiene evento configurado',
+        );
+        return false;
+      }
+
+      // Verificar si el socio tiene asistencia registrada en el evento
+      final attendanceSnapshot = await _firestore
+          .collection('attendance_events')
+          .doc(eventoAsistenciaId)
+          .collection('asistencias')
+          .where('personaId', isEqualTo: memberId)
+          .where('asistio', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      final hasAttendance = attendanceSnapshot.docs.isNotEmpty;
+
+      if (!hasAttendance) {
+        debugPrint(
+          'Socio $memberId no tiene asistencia en evento $eventoAsistenciaId',
+        );
+      }
+
+      return hasAttendance;
+    } catch (e) {
+      debugPrint('Error verificando elegibilidad: $e');
+      return false;
+    }
+  }
+
   Future<void> castVote({
     required String electionId,
     required String userId,
     required String candidateId,
+    String? memberId, // 🆕 ID del socio para validación de elegibilidad
   }) async {
+    // 🆕 Validar elegibilidad antes de permitir el voto
+    if (memberId != null && memberId.isNotEmpty) {
+      final isEligible = await isUserEligibleToVote(
+        electionId: electionId,
+        userId: userId,
+        memberId: memberId,
+      );
+
+      if (!isEligible) {
+        throw Exception(
+          'No tienes permiso para votar en esta elección. '
+          'Verifica que cumplas con los requisitos de elegibilidad.',
+        );
+      }
+    }
+
     final batch = _firestore.batch();
     final voteRef = _firestore
         .collection('elections')

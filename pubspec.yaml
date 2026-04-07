@@ -49,6 +49,21 @@ dependencies:
   permission_handler: ^11.3.1
   path: ^1.9.0
   image: ^4.1.7  # Para procesar imágenes en PDF
+  
+  # CSV y Excel
+  csv: ^6.0.0
+  file_picker: ^8.1.4
+  excel: ^4.0.6
+  
+  # Utilidades
+  intl: ^0.19.0
+  uuid: ^4.5.1
+  
+  # Escaneo de códigos QR y barras
+  mobile_scanner: ^5.1.1
+  
+  # Generación de códigos QR
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

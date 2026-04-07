@@ -107,7 +107,9 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
-    if (user?.role != UserRole.admin) {
+    final isAdmin = user?.role == UserRole.admin ||
+        user?.role == UserRole.superadmin;
+    if (!isAdmin) {
       return const Scaffold(body: Center(child: Text('Acceso denegado')));
     }
 

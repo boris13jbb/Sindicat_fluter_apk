@@ -1,7 +1,6 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/foundation.dart';
-import '../models/asistencia/evento.dart';
 import '../models/asistencia/asistencia.dart';
 
 /// Generador profesional de reportes PDF para asistencias a eventos.

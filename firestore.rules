@@ -5,55 +5,154 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ==================== FUNCIONES AUXILIARES ====================
+    
     function isAuthenticated() {
       return request.auth != null && request.auth.uid != null;
     }
-
-    match /users/{userId} {
-      allow read, update: if isAuthenticated() && request.auth.uid == userId;
-      allow create: if isAuthenticated() && request.auth.uid == userId && request.resource.data.role == 'VOTER';
+    
+    // Obtener rol del usuario (maneja caso donde documento no existe)
+    function getUserRole() {
+      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(userDocPath)
+        ? get(userDocPath).data.role
+        : 'USER';
     }
+    
+    // Verificar si es superadmin
+    function isSuperAdmin() {
+      return isAuthenticated() && getUserRole() == 'SUPERADMIN';
+    }
+    
+    // Verificar si es admin o superadmin
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() in ['SUPERADMIN', 'ADMIN'];
+    }
+    
+    // Verificar si es operador de asistencia
+    function isOperator() {
+      return isAuthenticated() && getUserRole() in ['SUPERADMIN', 'ADMIN', 'OPERADOR_ASISTENCIA'];
+    }
+
+    // ==================== USUARIOS ====================
+    
+    match /users/{userId} {
+      // Leer: usuario autenticado puede leer su propio documento
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Crear: cualquier usuario autenticado puede crear su propio documento (auto-registro)
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Actualizar: superadmin puede actualizar cualquier usuario, o el usuario puede actualizar su propio perfil
+      allow update: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      
+      // Eliminar: solo superadmin
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== SOCIOS (MEMBERS) ====================
+    
+    match /members/{memberId} {
+      allow read: if isAuthenticated();
+      allow create: if isSuperAdmin();
+      allow update: if isSuperAdmin() || isAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== ELECCIONES ====================
 
     match /elections/{electionId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isSuperAdmin();
 
+      // Candidatos
       match /candidates/{candidateId} {
         allow read: if isAuthenticated();
-        allow create, update, delete: if isAuthenticated();
+        allow create, update: if isAdmin();
+        allow delete: if isSuperAdmin();
       }
 
+      // Votos
       match /votes/{voteId} {
-        allow read: if isAuthenticated()
-          && (resource == null || resource.data.userId == request.auth.uid);
+        allow read: if isAuthenticated();
         allow create: if isAuthenticated()
                 && request.resource.data.userId == request.auth.uid
-                && voteId != "";
-        allow update, delete: if false;
+                && voteId == request.resource.data.electionId + '_' + request.resource.data.userId;
+        allow update, delete: if false; // Los votos son inmutables
       }
     }
 
-    match /events/{eventId} {
-      allow read, create: if isAuthenticated() && eventId != "";
-      allow update, delete: if false;
+    // ==================== EVENTOS DE ASISTENCIA ====================
+    
+    // Sistema nuevo: attendance_events con subcolecciones
+    match /attendance_events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isOperator();
+      allow delete: if isSuperAdmin();
+
+      // Asistencias del evento
+      match /asistencias/{asistenciaId} {
+        allow read: if isAuthenticated();
+        allow create: if isOperator();
+        allow update: if isOperator();
+        allow delete: if isSuperAdmin();
+      }
     }
 
+    // ==================== EVENTOS ANTIGUOS ====================
+    // Colecciones legacy para compatibilidad con Android
+    
     match /eventos/{eventoId} {
-      allow read, write: if isAuthenticated() && eventoId != "";
+      allow read: if isAuthenticated();
+      allow create, update: if isOperator();
+      allow delete: if isSuperAdmin();
 
       match /asistencias/{asistenciaId} {
-        allow read, write: if isAuthenticated() && asistenciaId != "";
+        allow read: if isAuthenticated();
+        allow create, update: if isOperator();
+        allow delete: if isSuperAdmin();
       }
     }
 
     match /personas/{personaId} {
-      allow read, write: if isAuthenticated() && personaId != "";
+      allow read: if isAuthenticated();
+      allow create, update: if isOperator();
+      allow delete: if isSuperAdmin();
     }
 
     match /asistencias/{asistenciaId} {
-      allow read, write: if isAuthenticated() && asistenciaId != "";
+      allow read: if isAuthenticated();
+      allow create, update: if isOperator();
+      allow delete: if isSuperAdmin();
     }
 
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isOperator();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ==================== REGISTROS DE AUDITORÍA ====================
+    
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated(); // Solo append
+      allow update, delete: if false; // Inmutables
+    }
+
+    // ==================== LOGS DE IMPORTACIÓN ====================
+    
+    match /import_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSuperAdmin();
+      allow update, delete: if false;
+    }
+
+    // ==================== REGLA POR DEFECTO ====================
+    
     match /{document=**} {
       allow read, write: if false;
     }

@@ -179,7 +179,8 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
           ),
           FilledButton(
             onPressed: () {
-              if (nombres.text.trim().isEmpty || apellidos.text.trim().isEmpty) {
+              if (nombres.text.trim().isEmpty ||
+                  apellidos.text.trim().isEmpty) {
                 return;
               }
               Navigator.pop(ctx, true);

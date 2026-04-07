@@ -67,7 +67,9 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
-    if (user?.role != UserRole.admin) {
+    final isAdmin = user?.role == UserRole.admin ||
+        user?.role == UserRole.superadmin;
+    if (!isAdmin) {
       return Scaffold(
         appBar: AppBar(title: const Text('Crear Elección')),
         body: const Center(

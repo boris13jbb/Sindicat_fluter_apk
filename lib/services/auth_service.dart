@@ -91,9 +91,9 @@ class AuthService {
   Future<void> signUpWithEmployeeNumber({
     required String email,
     required String password,
-    required String employeeNumber,
+    String? employeeNumber,
     String? displayName,
-    String role = 'VOTER',
+    String role = 'USER',
   }) async {
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
@@ -108,7 +108,7 @@ class AuthService {
         email: fbUser.email ?? email,
         displayName: displayName ?? fbUser.displayName,
         role: UserRole.fromString(role),
-        employeeNumber: employeeNumber,
+        employeeNumber: employeeNumber?.trim().isEmpty ?? true ? null : employeeNumber,
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
       await _firestore

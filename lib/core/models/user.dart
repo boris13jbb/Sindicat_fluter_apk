@@ -8,7 +8,7 @@ class AppUser {
     required this.email,
     this.displayName,
     required this.role,
-    required this.employeeNumber,
+    this.employeeNumber,
     this.createdAt,
   });
 
@@ -16,7 +16,7 @@ class AppUser {
   final String email;
   final String? displayName;
   final UserRole role;
-  final String employeeNumber;
+  final String? employeeNumber;
   final int? createdAt;
 
   factory AppUser.fromMap(Map<String, dynamic> map, [String? id]) {
@@ -26,7 +26,7 @@ class AppUser {
       email: map['email'] as String? ?? '',
       displayName: map['displayName'] as String?,
       role: UserRole.fromString((map['role'] as String?) ?? 'VOTER'),
-      employeeNumber: map['employeeNumber'] as String? ?? '',
+      employeeNumber: map['employeeNumber'] as String?,
       createdAt: (map['createdAt'] as num?)?.toInt(),
     );
   }

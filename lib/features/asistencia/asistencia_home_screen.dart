@@ -110,6 +110,33 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _QuickAction(
+                            icon: Icons.qr_code_2,
+                            label: 'Códigos QR',
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/asistencia/qr_codes',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _QuickAction(
+                            icon: Icons.upload_file,
+                            label: 'Importar Excel',
+                            color: Colors.green.shade600,
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/asistencia/importar_personas',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -255,16 +282,18 @@ class _QuickAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.color,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Theme.of(context).colorScheme.primaryContainer,
+      color: color ?? Theme.of(context).colorScheme.primaryContainer,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
@@ -277,10 +306,16 @@ class _QuickAction extends StatelessWidget {
               Icon(
                 icon,
                 size: 28,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                color: color != null ? Colors.white : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               const SizedBox(height: 4),
-              Text(label, style: Theme.of(context).textTheme.labelLarge),
+              Text(
+                label, 
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: color != null ? Colors.white : null,
+                  fontWeight: color != null ? FontWeight.bold : null,
+                ),
+              ),
             ],
           ),
         ),
