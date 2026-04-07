@@ -48,6 +48,89 @@ class ImportService {
   /// Columnas obligatorias
   static const requiredColumns = ['numero_socio', 'nombres', 'apellidos'];
 
+  /// Mapeo de columnas alternativas a columnas estándar
+  static const Map<String, List<String>> columnMappings = {
+    'numero_socio': ['numero_socio', 'codigo', 'codigo_socio', 'id', 'num_socio'],
+    'nombres': ['nombres', 'nombre', 'primer_nombre', 'nombres_completos'],
+    'apellidos': ['apellidos', 'apellido', 'apellidos_completos'],
+    'documento': ['documento', 'cedula', 'cedula_ciudadania', 'identificacion', 'dni'],
+    'email': ['email', 'correo', 'email_address', 'correo_electronico'],
+    'telefono': ['telefono', 'celular', 'phone', 'movil', 'telefono_celular'],
+  };
+
+  /// Columnas que contienen nombre completo (se separará automáticamente)
+  static const fullNameColumns = ['trabajador', 'nombre_completo', 'nombre', 'fullname', 'nombre_apellido'];
+
+  /// Normalizar headers: mapea columnas alternativas a nombres estándar
+  List<String> normalizeHeaders(List<String> headers) {
+    final normalized = <String>[];
+    bool hasFullNameColumn = false;
+    bool hasNames = false;
+    bool hasLastNames = false;
+    
+    // Primera pasada: detectar si tenemos nombres y apellidos separados
+    for (final header in headers) {
+      final headerLower = header.trim().toLowerCase();
+      for (final entry in columnMappings.entries) {
+        if (entry.key == 'nombres' && entry.value.contains(headerLower)) {
+          hasNames = true;
+        }
+        if (entry.key == 'apellidos' && entry.value.contains(headerLower)) {
+          hasLastNames = true;
+        }
+      }
+    }
+    
+    // Segunda pasada: normalizar headers
+    for (final header in headers) {
+      final headerLower = header.trim().toLowerCase();
+      String? mappedColumn;
+      
+      // Buscar en el mapeo
+      for (final entry in columnMappings.entries) {
+        if (entry.value.contains(headerLower)) {
+          mappedColumn = entry.key;
+          break;
+        }
+      }
+      
+      // Si no se encontró mapeo y es una columna de nombre completo, intentar mapear
+      if (mappedColumn == null && fullNameColumns.contains(headerLower)) {
+        if (!hasNames && !hasLastNames) {
+          // No tenemos nombres ni apellidos separados, usar esta columna para ambos
+          mappedColumn = 'nombres'; // Mapear a nombres, separaremos después
+          hasFullNameColumn = true;
+        }
+      }
+      
+      normalized.add(mappedColumn ?? headerLower);
+    }
+    
+    debugPrint('📊 Headers originales: $headers');
+    debugPrint('📊 Headers normalizados: $normalized');
+    
+    return normalized;
+  }
+
+  /// Separar nombre completo en nombres y apellidos
+  Map<String, String> splitFullName(String fullName) {
+    final parts = fullName.trim().split(RegExp(r'\s+'));
+    
+    if (parts.length == 1) {
+      // Solo una palabra, asumir que es nombre
+      return {'nombres': parts[0], 'apellidos': ''};
+    } else if (parts.length == 2) {
+      // Dos palabras: nombre apellido
+      return {'nombres': parts[0], 'apellidos': parts[1]};
+    } else {
+      // Múltiples palabras: primera mitad nombres, segunda mitad apellidos
+      final mid = (parts.length / 2).ceil();
+      final nombres = parts.sublist(0, mid).join(' ');
+      final apellidos = parts.sublist(mid).join(' ');
+      return {'nombres': nombres, 'apellidos': apellidos};
+    }
+  }
+
   /// Parsear archivo CSV manualmente
   List<List<String>> parseCsv(Uint8List bytes, {String delimiter = ','}) {
     final csvString = String.fromCharCodes(bytes);
@@ -71,8 +154,10 @@ class ImportService {
   RowValidationResult validateRow(
     List<String> row,
     List<String> headers,
-    int rowIndex,
-  ) {
+    int rowIndex, {
+    bool hasFullNameColumn = false,
+    int fullNameIndex = -1,
+  }) {
     final errors = <String>[];
     final data = <String, dynamic>{};
 
@@ -86,6 +171,17 @@ class ImportService {
     for (var i = 0; i < headers.length; i++) {
       if (i < row.length) {
         data[headers[i]] = row[i].trim();
+      }
+    }
+
+    // Si tenemos una columna de nombre completo (trabajador), separar en nombres y apellidos
+    if (hasFullNameColumn && fullNameIndex >= 0 && fullNameIndex < row.length) {
+      final fullName = row[fullNameIndex].trim();
+      if (fullName.isNotEmpty) {
+        final split = splitFullName(fullName);
+        data['nombres'] = split['nombres'];
+        data['apellidos'] = split['apellidos'];
+        debugPrint('📝 Fila $rowIndex: Separado "$fullName" → nombres: "${split['nombres']}", apellidos: "${split['apellidos']}"');
       }
     }
 
@@ -168,14 +264,26 @@ class ImportService {
         throw Exception('El archivo CSV está vacío');
       }
 
-      // Primera fila son los headers
-      final headers = rows.first.map((h) => h.trim().toLowerCase()).toList();
+      // Primera fila son los headers - NORMALIZAR usando mapeo automático
+      final rawHeaders = rows.first.map((h) => h.trim().toLowerCase()).toList();
+      final headers = normalizeHeaders(rawHeaders);
+
+      // Detectar si hay columna de nombre completo para separar
+      bool hasFullNameColumn = false;
+      int fullNameIndex = -1;
+      for (int i = 0; i < rawHeaders.length; i++) {
+        if (fullNameColumns.contains(rawHeaders[i])) {
+          hasFullNameColumn = true;
+          fullNameIndex = i;
+          break;
+        }
+      }
 
       // Verificar que existan las columnas obligatorias
       for (final col in requiredColumns) {
         if (!headers.contains(col)) {
           throw Exception(
-            'Columna obligatoria "$col" no encontrada en el archivo',
+            'Columna obligatoria "$col" no encontrada en el archivo. Columnas encontradas: ${rawHeaders.join(", ")}\n\nMapeo automático aplicado: ${headers.join(", ")}\n\nSugerencia: Asegúrate de que tu archivo tenga columnas equivalentes a: ${requiredColumns.join(", ")}',
           );
         }
       }
@@ -193,6 +301,8 @@ class ImportService {
           dataRows[i],
           headers,
           i + 2,
+          hasFullNameColumn: hasFullNameColumn,
+          fullNameIndex: fullNameIndex,
         ); // +2 porque empieza en fila 2
         validations.add(validation);
 
@@ -367,19 +477,32 @@ class ImportService {
         throw Exception('La hoja de cálculo está vacía');
       }
 
-      // Primera fila son los headers
-      final headers = sheet.rows[0]
+      // Primera fila son los headers - NORMALIZAR usando mapeo automático
+      final rawHeaders = sheet.rows[0]
           .map((cell) => (cell?.value?.toString().trim().toLowerCase()) ?? '')
           .toList();
+      final headers = normalizeHeaders(rawHeaders);
 
-      debugPrint('📊 Headers detectados: $headers');
+      debugPrint('📊 Headers detectados: $rawHeaders');
+      debugPrint('📊 Headers normalizados: $headers');
 
       // Verificar que existan las columnas obligatorias
       for (final col in requiredColumns) {
         if (!headers.contains(col)) {
           throw Exception(
-            'Columna obligatoria "$col" no encontrada en el archivo. Columnas encontradas: $headers',
+            'Columna obligatoria "$col" no encontrada en el archivo. Columnas encontradas: $rawHeaders\n\nMapeo automático aplicado: $headers\n\nSugerencia: Asegúrate de que tu archivo tenga columnas equivalentes a: ${requiredColumns.join(", ")}',
           );
+        }
+      }
+
+      // Detectar si hay columna de nombre completo para separar
+      bool hasFullNameColumn = false;
+      int fullNameIndex = -1;
+      for (int i = 0; i < rawHeaders.length; i++) {
+        if (fullNameColumns.contains(rawHeaders[i])) {
+          hasFullNameColumn = true;
+          fullNameIndex = i;
+          break;
         }
       }
 
@@ -410,6 +533,8 @@ class ImportService {
           stringRow,
           headers,
           i + 2,
+          hasFullNameColumn: hasFullNameColumn,
+          fullNameIndex: fullNameIndex,
         );
         validations.add(validation);
 
