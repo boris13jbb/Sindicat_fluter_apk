@@ -13,6 +13,11 @@ class HomeScreen extends StatelessWidget {
       appBar: ProfessionalAppBar(
         title: 'Sistema Integrado Sindicato',
         actions: [
+          // 🔑 Botón de perfil de usuario
+          IconButton(
+            icon: const Icon(Icons.person),
+            onPressed: () => Navigator.pushNamed(context, '/profile'),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {

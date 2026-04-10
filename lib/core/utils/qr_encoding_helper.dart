@@ -1,15 +1,35 @@
 import 'dart:convert';
 import '../models/asistencia/persona.dart';
+import '../models/member.dart';
 
 /// Utilidades para generar y gestionar códigos QR de asistencia
 class QREncodingHelper {
-  /// Genera un código QR en formato JSON estándar
+  /// Genera un código QR en formato JSON estándar para PersonaAsistencia
   /// Formato: {"nombres":"Juan","apellidos":"Pérez","identificador":"12345"}
   static String generateQRCode(PersonaAsistencia persona) {
     final qrData = {
       'nombres': persona.nombres,
       'apellidos': persona.apellidos,
       'identificador': persona.identificador ?? '',
+    };
+    return jsonEncode(qrData);
+  }
+
+  /// Genera un código QR en formato JSON para Member (socio)
+  /// Formato: {"nombres":"Juan","apellidos":"Pérez","identificador":"12345"}
+  /// IMPORTANTE: El identificador es SIEMPRE el workerCode (Número de Trabajador)
+  static String generateMemberQRCode(Member member) {
+    // Validar que el workerCode exista
+    if (member.workerCode == null || member.workerCode!.isEmpty) {
+      throw Exception(
+        'No se puede generar QR: El socio no tiene Número de Trabajador (workerCode) asignado',
+      );
+    }
+    
+    final qrData = {
+      'nombres': member.firstName,
+      'apellidos': member.lastName,
+      'identificador': member.workerCode, // SIEMPRE usar workerCode, nunca documentId
     };
     return jsonEncode(qrData);
   }

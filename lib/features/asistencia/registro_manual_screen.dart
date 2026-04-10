@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../core/models/asistencia/evento.dart';
 import '../../core/models/asistencia/persona.dart';
+import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
+import '../../services/members_service.dart';
 
 class RegistroManualScreen extends StatefulWidget {
   const RegistroManualScreen({super.key, required this.evento});
@@ -15,6 +17,7 @@ class RegistroManualScreen extends StatefulWidget {
 
 class _RegistroManualScreenState extends State<RegistroManualScreen> {
   final _service = AsistenciaService();
+  final _membersService = MembersService();
   String? _personaIdSeleccionada; // Usar ID en lugar de objeto para Dropdown
   PersonaAsistencia? _personaObj;
   bool _asistio = true;
@@ -26,12 +29,154 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
   bool _loading = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Sincronizar members → personas al cargar la pantalla
+    _sincronizarMiembros();
+  }
+
+  /// Ejecuta sincronización de members a personas en segundo plano
+  Future<void> _sincronizarMiembros() async {
+    try {
+      debugPrint('🔄 Ejecutando sincronización members → personas...');
+      final resultado = await _service.sincronizarMiembrosConPersonas();
+      debugPrint('✅ Sincronización completada: $resultado');
+      
+      if (mounted) {
+        final total = resultado['total_procesados'] ?? 0;
+        final sincronizados = resultado['sincronizados'] ?? 0;
+        
+        if (sincronizados > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '✅ Se sincronizaron $sincronizados de $total miembros',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error en sincronización: $e');
+    }
+  }
+
+  @override
   void dispose() {
     _justificacionController.dispose();
     _nombresController.dispose();
     _apellidosController.dispose();
     _identificadorController.dispose();
     super.dispose();
+  }
+
+  /// Construye un stream combinado de Members (gestión sindical) y Personas legacy
+  /// para mostrar todas las personas disponibles en un solo dropdown.
+  /// Evita duplicados basándose en el identificador único.
+  Stream<List<Map<String, dynamic>>> _buildCombinedMembersStream() {
+    // Usar StreamController para combinar datos de ambas fuentes
+    return _membersService.getAllMembers().asyncExpand((members) {
+      // Crear un stream que emita el resultado combinado
+      return _combinarPersonasYMembers(members).asStream();
+    });
+  }
+
+  /// Método auxiliar para combinar members y personas legacy
+  Future<List<Map<String, dynamic>>> _combinarPersonasYMembers(
+    List<Member> members,
+  ) async {
+    final result = <Map<String, dynamic>>[];
+    final identificadoresVistos = <String>{};
+    
+    debugPrint('🔄 Combinando ${members.length} members con personas legacy...');
+    
+    try {
+      // 1. Agregar Members (prioridad alta)
+      for (final member in members) {
+        final identificador = member.workerCode?.isNotEmpty == true 
+            ? member.workerCode! 
+            : (member.documentId ?? '');
+        
+        if (identificador.isEmpty) {
+          debugPrint('⚠️ Omitiendo member ${member.fullName}: sin identificador');
+          continue;
+        }
+        
+        // Marcar como visto para evitar duplicados
+        identificadoresVistos.add(identificador);
+        
+        final persona = PersonaAsistencia(
+          id: member.id,
+          nombres: member.firstName,
+          apellidos: member.lastName,
+          identificador: identificador,
+        );
+        
+        result.add({
+          'id': member.id,
+          'persona': persona,
+          'source': 'member',
+        });
+      }
+      
+      debugPrint('   ✅ Agregados ${result.length} members');
+      
+      // 2. Agregar Personas legacy que NO estén ya en members
+      try {
+        final personasSnapshot = await _service.firestore
+            .collection('personas')
+            .get();
+        
+        debugPrint('   📊 Encontradas ${personasSnapshot.docs.length} personas legacy');
+        
+        int personasAgregadas = 0;
+        for (final doc in personasSnapshot.docs) {
+          try {
+            final persona = PersonaAsistencia.fromMap(doc.data(), doc.id);
+            
+            // Solo agregar si no tiene identificador o si el identificador no está en members
+            final identificador = persona.identificador;
+            if (identificador != null && identificador.isNotEmpty) {
+              if (identificadoresVistos.contains(identificador)) {
+                debugPrint('   ⏭️ Saltando persona duplicada: $identificador');
+                continue; // Ya existe en members, saltar
+              }
+              identificadoresVistos.add(identificador);
+            }
+            
+            result.add({
+              'id': persona.id,
+              'persona': persona,
+              'source': 'persona',
+            });
+            personasAgregadas++;
+          } catch (e) {
+            debugPrint('   ❌ Error procesando persona ${doc.id}: $e');
+          }
+        }
+        
+        debugPrint('   ✅ Agregadas $personasAgregadas personas legacy');
+      } catch (e) {
+        debugPrint('⚠️ Error cargando personas legacy: $e');
+        // Continuar con solo members si hay error
+      }
+      
+      // Ordenar por apellido
+      result.sort((a, b) {
+        final pa = a['persona'] as PersonaAsistencia;
+        final pb = b['persona'] as PersonaAsistencia;
+        return pa.apellidos.toLowerCase().compareTo(pb.apellidos.toLowerCase());
+      });
+      
+      debugPrint('📊 Total personas cargadas: ${result.length} (${result.where((r) => r['source'] == 'member').length} members, ${result.where((r) => r['source'] == 'persona').length} legacy)');
+      
+      return result;
+    } catch (e) {
+      debugPrint('❌ Error en _combinarPersonasYMembers: $e');
+      rethrow;
+    }
   }
 
   @override
@@ -176,9 +321,49 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                     textCapitalization: TextCapitalization.characters,
                   ),
                 ] else
-                  StreamBuilder<List<PersonaAsistencia>>(
-                    stream: _service.getAllPersonas(),
+                  // Mostrar lista combinada de Members y Personas legacy
+                  StreamBuilder<List<Map<String, dynamic>>>(
+                    stream: _buildCombinedMembersStream(),
                     builder: (context, snap) {
+                      // Manejar errores
+                      if (snap.hasError) {
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  size: 48,
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Error al cargar personas',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    color: Theme.of(context).colorScheme.error,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'No se pudieron cargar los datos. Intente nuevamente.',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: () => setState(() {}), // Rebuild para reintentar
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('Reintentar'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      
+                      // Estado de carga
                       if (!snap.hasData) {
                         return Card(
                           child: Padding(
@@ -198,25 +383,69 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                           ),
                         );
                       }
-                      final personas = snap.data!
-                        ..sort((a, b) => a.apellidos.compareTo(b.apellidos));
+                      
+                      final personas = snap.data!;
+                      
+                      // Estado vacío
+                      if (personas.isEmpty) {
+                        return Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.person_off,
+                                  size: 48,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No hay personas registradas',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Agregue personas en la sección "Socios" o use la opción "Nueva Persona"',
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
                       
                       // Si no hay persona seleccionada, seleccionar la primera
-                      if (_personaIdSeleccionada == null && personas.isNotEmpty) {
-                        _personaIdSeleccionada = personas.first.id;
-                        _personaObj = personas.first;
+                      if (_personaIdSeleccionada == null) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted && personas.isNotEmpty) {
+                            setState(() {
+                              _personaIdSeleccionada = personas.first['id'];
+                              _personaObj = personas.first['persona'] as PersonaAsistencia;
+                            });
+                          }
+                        });
                       }
                       
                       // Asegurar que _personaObj esté sincronizado
                       if (_personaIdSeleccionada != null) {
-                        _personaObj = personas.firstWhere(
-                          (p) => p.id == _personaIdSeleccionada,
-                          orElse: () => personas.first,
-                        );
+                        final found = personas.where(
+                          (p) => p['id'] == _personaIdSeleccionada,
+                        ).firstOrNull;
+                        
+                        if (found != null) {
+                          _personaObj = found['persona'] as PersonaAsistencia;
+                        } else {
+                          // Si no se encuentra, limpiar selección
+                          _personaIdSeleccionada = null;
+                          _personaObj = null;
+                        }
                       }
                       
                       return DropdownButtonFormField<String>(
-                        value: _personaIdSeleccionada,
+                        initialValue: _personaIdSeleccionada,
                         decoration: InputDecoration(
                           labelText: 'Seleccionar Persona *',
                           hintText: 'Busque y seleccione una persona',
@@ -228,23 +457,42 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                         ),
                         items: personas
                             .map(
-                              (p) => DropdownMenuItem(
-                                value: p.id,
-                                child: Text(
-                                  p.nombreCompleto,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
+                              (item) {
+                                final p = item['persona'] as PersonaAsistencia;
+                                final source = item['source'] as String;
+                                return DropdownMenuItem(
+                                  value: p.id,
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          p.nombreCompleto,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      if (source == 'member')
+                                        Icon(
+                                          Icons.verified_user,
+                                          size: 16,
+                                          color: Colors.green,
+                                        ),
+                                    ],
                                   ),
-                                ),
-                              ),
+                                );
+                              },
                             )
                             .toList(),
                         onChanged: (id) => setState(() {
                           _personaIdSeleccionada = id;
-                          _personaObj = personas.firstWhere(
-                            (p) => p.id == id,
-                            orElse: () => personas.first,
-                          );
+                          final found = personas.where(
+                            (p) => p['id'] == id,
+                          ).firstOrNull;
+                          
+                          if (found != null) {
+                            _personaObj = found['persona'] as PersonaAsistencia;
+                          }
                         }),
                         isExpanded: true,
                       );

@@ -16,6 +16,7 @@ class _CrearEventoAsistenciaScreenState
   final _nombreController = TextEditingController();
   final _descripcionController = TextEditingController();
   TipoReunion _tipo = TipoReunion.ordinaria;
+  Modalidad? _modalidad;
   DateTime _fecha = DateTime.now();
   bool _loading = false;
 
@@ -119,6 +120,67 @@ class _CrearEventoAsistenciaScreenState
                       'Fecha: ${_fecha.day}/${_fecha.month}/${_fecha.year} ${_fecha.hour.toString().padLeft(2, '0')}:${_fecha.minute.toString().padLeft(2, '0')}',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
+                    const SizedBox(height: 16),
+                    // 🆕 Selección de Modalidad de Turno
+                    Row(
+                      children: [
+                        Text(
+                          'Modalidad de Turno:',
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<Modalidad>(
+                            value: _modalidad,
+                            decoration: const InputDecoration(
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            hint: const Text('Seleccionar modalidad'),
+                            items: Modalidad.values.map((modalidad) {
+                              return DropdownMenuItem(
+                                value: modalidad,
+                                child: Text(
+                                  JustificacionHelper.obtenerDescripcionModalidad(modalidad),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() => _modalidad = value);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_modalidad != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                JustificacionHelper.obtenerJustificacion(_modalidad!),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.blue.shade800,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -146,6 +208,7 @@ class _CrearEventoAsistenciaScreenState
                       descripcion: _descripcionController.text.trim().isEmpty
                           ? null
                           : _descripcionController.text.trim(),
+                      modalidad: _modalidad,
                     );
                     await service.createEvento(evento);
                     if (context.mounted) {

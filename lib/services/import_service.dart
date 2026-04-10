@@ -43,6 +43,7 @@ class ImportService {
     'documento',
     'email',
     'telefono',
+    'worker_code', // Código/Número de trabajador
   ];
 
   /// Columnas obligatorias
@@ -56,13 +57,15 @@ class ImportService {
     'documento': ['documento', 'cedula', 'cedula_ciudadania', 'identificacion', 'dni'],
     'email': ['email', 'correo', 'email_address', 'correo_electronico'],
     'telefono': ['telefono', 'celular', 'phone', 'movil', 'telefono_celular'],
+    'worker_code': ['worker_code', 'codigo_trabajador', 'numero_trabajador', 'employee_number', 'no_empleado', 'legajo', 'trabajador'],
     'departamento': ['departamento', 'depto', 'area', 'seccion'],
     'nivel': ['nivel', 'grado', 'categoria', 'cargo'],
     'mod': ['mod', 'modulo', 'modalidad'],
   };
 
-  /// Columnas que contienen nombre completo (se separará automáticamente)
-  static const fullNameColumns = ['trabajador', 'nombre_completo', 'nombre', 'fullname', 'nombre_apellido'];
+  /// Columnas que contienen nombre completo (se separará automáticamente en nombres y apellidos)
+  /// IMPORTANTE: 'trabajador' removido de aquí porque ahora es worker_code
+  static const fullNameColumns = ['nombre_completo', 'fullname', 'nombre_apellido'];
 
   /// Columnas adicionales opcionales que se almacenan en el modelo
   static const optionalColumns = ['departamento', 'nivel', 'mod'];
@@ -379,7 +382,7 @@ class ImportService {
         }
 
         // Crear objeto Member con ambos campos: workerCode y documentId
-        final workerCode = validation.data['workerCode'] as String?;
+        final workerCode = validation.data['worker_code'] as String?;
         final documentId = validation.data['documento'] as String?;
         
         // Validar que al menos uno de los identificadores exista
@@ -644,6 +647,17 @@ class ImportService {
         }
 
         // Crear objeto Member
+        final workerCode = validation.data['worker_code'] as String?;
+        final documentId = validation.data['documento'] as String?;
+        
+        // Validar que al menos uno de los identificadores exista
+        if ((workerCode == null || workerCode.isEmpty) && 
+            (documentId == null || documentId.isEmpty)) {
+          errorsCount++;
+          errorDetails.add('Fila ${i + 2}: Se requiere código de trabajador O cédula');
+          continue;
+        }
+        
         final additionalData = <String, dynamic>{};
         
         // Capturar columnas opcionales si existen
@@ -660,15 +674,19 @@ class ImportService {
           additionalData['mod'] = validation.data['mod'];
         }
 
+        // Generar ID único combinando workerCode y documentId
+        final memberId = workerCode ?? documentId ?? DateTime.now().millisecondsSinceEpoch.toString();
+
         final member = Member(
-          id: '',
+          id: memberId,
           memberNumber: memberNumber,
           firstName: validation.data['nombres'] as String? ?? '',
           lastName: validation.data['apellidos'] as String? ?? '',
           fullName:
               '${validation.data['nombres'] ?? ''} ${validation.data['apellidos'] ?? ''}'
                   .trim(),
-          documentId: validation.data['documento'] as String?,
+          workerCode: workerCode,
+          documentId: documentId,
           email: validation.data['email'] as String?,
           phone: validation.data['telefono'] as String?,
           status: MemberStatus.active,

@@ -26,38 +26,51 @@ class MembersService {
   }) {
     Query query = _firestore.collection('members');
 
-    // Nota: No aplicamos where en Firestore para evitar índices compuestos
-    // El filtrado se hace en cliente para mayor flexibilidad
+    // Nota: No aplicamos where ni orderBy en Firestore para evitar índices compuestos
+    // El filtrado y ordenamiento se hacen en cliente para mayor flexibilidad
 
-    return query
-        .orderBy('lastName', descending: false)
-        .orderBy('firstName', descending: false)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map(
-                (doc) =>
-                    Member.fromMap(doc.data() as Map<String, dynamic>, doc.id),
-              )
-              .toList(),
-        )
-        .map((members) {
-          // Filtrado en cliente por estado
-          if (status != null) {
-            members = members.where((m) => m.status == status).toList();
-          }
-          // Filtrado en cliente por búsqueda
-          if (searchQuery != null && searchQuery.isNotEmpty) {
-            final query = searchQuery.toLowerCase();
-            members = members.where((m) {
-              return m.fullName.toLowerCase().contains(query) ||
-                  m.memberNumber.toLowerCase().contains(query) ||
-                  (m.documentId?.toLowerCase().contains(query) ?? false) ||
-                  (m.email?.toLowerCase().contains(query) ?? false);
-            }).toList();
-          }
-          return members;
-        });
+    return query.snapshots().map(
+      (snapshot) {
+        debugPrint(
+          '📊 Stream de members: ${snapshot.docs.length} documentos recibidos',
+        );
+        return snapshot.docs
+            .map(
+              (doc) =>
+                  Member.fromMap(doc.data() as Map<String, dynamic>, doc.id),
+            )
+            .toList();
+      },
+    ).map((members) {
+      // Filtrado en cliente por estado
+      if (status != null) {
+        members = members.where((m) => m.status == status).toList();
+      }
+      
+      // Ordenamiento en cliente por apellido y nombre
+      members.sort((a, b) {
+        final lastNameCompare = a.lastName.toLowerCase().compareTo(
+          b.lastName.toLowerCase(),
+        );
+        if (lastNameCompare != 0) return lastNameCompare;
+        return a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase());
+      });
+      
+      // Filtrado en cliente por búsqueda
+      if (searchQuery != null && searchQuery.isNotEmpty) {
+        final query = searchQuery.toLowerCase();
+        members = members.where((m) {
+          return m.fullName.toLowerCase().contains(query) ||
+              m.memberNumber.toLowerCase().contains(query) ||
+              (m.workerCode?.toLowerCase().contains(query) ?? false) ||
+              (m.documentId?.toLowerCase().contains(query) ?? false) ||
+              (m.email?.toLowerCase().contains(query) ?? false);
+        }).toList();
+      }
+      
+      debugPrint('✅ Members procesados: ${members.length}');
+      return members;
+    });
   }
 
   /// Obtener stream de socios activos
@@ -107,6 +120,25 @@ class MembersService {
       return Member.fromMap(snapshot.docs.first.data(), snapshot.docs.first.id);
     } catch (e) {
       debugPrint('Error buscando socio por documento: $e');
+      return null;
+    }
+  }
+
+  /// Buscar socios por workerCode (Número de Trabajador) - CLAVE PRINCIPAL para asistencia
+  Future<Member?> getMemberByWorkerCode(String workerCode) async {
+    try {
+      if (workerCode.isEmpty) return null;
+      
+      final snapshot = await _firestore
+          .collection('members')
+          .where('workerCode', isEqualTo: workerCode)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) return null;
+      return Member.fromMap(snapshot.docs.first.data(), snapshot.docs.first.id);
+    } catch (e) {
+      debugPrint('Error buscando socio por workerCode: $e');
       return null;
     }
   }

@@ -23,6 +23,38 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   bool _loading = false;
   String? _mensaje;
   String? _eventoIdSeleccionado; // Cambiado a String (ID) para evitar duplicados en Dropdown
+  
+  @override
+  void initState() {
+    super.initState();
+    // Sincronizar members → personas al cargar la pantalla para asegurar consistencia
+    _sincronizarMiembros();
+  }
+  
+  Future<void> _sincronizarMiembros() async {
+    try {
+      debugPrint('🔄 Ejecutando sincronización members → personas desde scanner...');
+      final resultado = await _service.sincronizarMiembrosConPersonas();
+      debugPrint('✅ Sincronización completada: $resultado');
+      
+      if (mounted) {
+        final total = resultado['total_procesados'] ?? 0;
+        final sincronizados = resultado['sincronizados'] ?? 0;
+        
+        if (sincronizados > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Se sincronizaron $sincronizados de $total miembros'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('❌ Error en sincronización: $e');
+    }
+  }
 
   EventoAsistencia? get _evento {
     // Buscar evento por ID en lugar de almacenar objeto

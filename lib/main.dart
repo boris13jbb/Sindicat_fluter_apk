@@ -32,6 +32,7 @@ import 'features/members/member_form_screen.dart';
 import 'features/members/import_members_screen.dart';
 import 'features/attendance/attendance_report_screen.dart';
 import 'features/audit/audit_logs_screen.dart';
+import 'features/profile/user_profile_screen.dart';
 import 'core/models/asistencia/evento.dart';
 
 void main() async {
@@ -167,6 +168,7 @@ class MyApp extends StatelessWidget {
             return AttendanceReportScreen(eventId: eventId);
           },
           '/audit/logs': (_) => const AuditLogsScreen(),
+          '/profile': (_) => const UserProfileScreen(),
         },
       ),
     );

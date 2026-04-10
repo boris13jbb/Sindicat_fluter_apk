@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -7,9 +8,11 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import '../../core/models/asistencia/persona.dart';
+import '../../core/models/member.dart';
 import '../../core/utils/qr_encoding_helper.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
+import '../../services/members_service.dart';
 
 /// Pantalla para ver códigos QR de personas
 class QRCodesScreen extends StatefulWidget {
@@ -21,6 +24,7 @@ class QRCodesScreen extends StatefulWidget {
 
 class _QRCodesScreenState extends State<QRCodesScreen> {
   final _service = AsistenciaService();
+  final _membersService = MembersService();
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -39,7 +43,6 @@ class _QRCodesScreenState extends State<QRCodesScreen> {
       ),
       body: Column(
         children: [
-          // Barra de búsqueda
           Padding(
             padding: const EdgeInsets.all(16),
             child: TextField(
@@ -55,28 +58,39 @@ class _QRCodesScreenState extends State<QRCodesScreen> {
               onChanged: (value) => setState(() => _searchQuery = value),
             ),
           ),
-          
-          // Lista de personas con QRs
           Expanded(
-            child: StreamBuilder<List<PersonaAsistencia>>(
-              stream: _service.getAllPersonas(),
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _buildCombinedStream(),
               builder: (context, snap) {
-                if (!snap.hasData) {
+                if (snap.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                          const SizedBox(height: 16),
+                          Text('Error: ${snap.error}', textAlign: TextAlign.center),
+                          const SizedBox(height: 24),
+                          ElevatedButton.icon(
+                            onPressed: () => setState(() {}),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Reintentar'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                
-                var personas = snap.data!;
-                
-                // Filtrar por búsqueda
-                if (_searchQuery.isNotEmpty) {
-                  final query = _searchQuery.toLowerCase();
-                  personas = personas.where((p) {
-                    return p.nombreCompleto.toLowerCase().contains(query) ||
-                        (p.identificador?.contains(query) ?? false);
-                  }).toList();
-                }
-                
-                if (personas.isEmpty) {
+
+                final items = snap.data ?? [];
+
+                if (items.isEmpty) {
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -90,16 +104,22 @@ class _QRCodesScreenState extends State<QRCodesScreen> {
                     ),
                   );
                 }
-                
+
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: personas.length,
+                  itemCount: items.length,
                   itemBuilder: (context, index) {
-                    final persona = personas[index];
-                    return _PersonaQRCard(
-                      persona: persona,
-                      onDelete: () => setState(() {}),
-                    );
+                    final item = items[index];
+                    final source = item['source'] as String;
+
+                    if (source == 'member') {
+                      return _MemberQRCard(member: item['data'] as Member);
+                    } else {
+                      return _PersonaQRCard(
+                        persona: item['data'] as PersonaAsistencia,
+                        onDelete: () => setState(() {}),
+                      );
+                    }
                   },
                 );
               },
@@ -109,15 +129,311 @@ class _QRCodesScreenState extends State<QRCodesScreen> {
       ),
     );
   }
+
+  /// Construye stream combinado de members + personas legacy
+  Stream<List<Map<String, dynamic>>> _buildCombinedStream() {
+    return _membersService.getAllMembers().asyncExpand((members) {
+      return _combinarDatos(members).asStream();
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> _combinarDatos(
+    List<Member> members,
+  ) async {
+    final result = <Map<String, dynamic>>[];
+    final identificadoresVistos = <String>{};
+
+    debugPrint('🔄 QR Screen: Combinando ${members.length} members con personas legacy...');
+
+    try {
+      // 1. Agregar Members
+      for (final member in members) {
+        final identificador =
+            member.workerCode?.isNotEmpty == true
+                ? member.workerCode!
+                : (member.documentId ?? '');
+
+        if (identificador.isEmpty) continue;
+
+        if (_searchQuery.isNotEmpty) {
+          final query = _searchQuery.toLowerCase();
+          final matches =
+              member.fullName.toLowerCase().contains(query) ||
+              member.memberNumber.toLowerCase().contains(query) ||
+              identificador.toLowerCase().contains(query);
+
+          if (!matches) continue;
+        }
+
+        identificadoresVistos.add(identificador);
+        result.add({'id': member.id, 'data': member, 'source': 'member'});
+      }
+
+      debugPrint('   ✅ Agregados ${result.length} members');
+
+      // 2. Agregar Personas legacy sin duplicados
+      try {
+        final personasSnapshot = await _service.firestore
+            .collection('personas')
+            .get();
+
+        debugPrint('   📊 Encontradas ${personasSnapshot.docs.length} personas legacy');
+
+        int personasAgregadas = 0;
+        for (final doc in personasSnapshot.docs) {
+          try {
+            final persona = PersonaAsistencia.fromMap(doc.data(), doc.id);
+            final identificador = persona.identificador;
+
+            if (identificador != null &&
+                identificador.isNotEmpty &&
+                identificadoresVistos.contains(identificador)) {
+              continue;
+            }
+
+            if (identificador != null && identificador.isNotEmpty) {
+              identificadoresVistos.add(identificador);
+            }
+
+            if (_searchQuery.isNotEmpty) {
+              final query = _searchQuery.toLowerCase();
+              final matches =
+                  persona.nombreCompleto.toLowerCase().contains(query) ||
+                  (persona.identificador?.toLowerCase().contains(query) ?? false);
+
+              if (!matches) continue;
+            }
+
+            result.add({'id': persona.id, 'data': persona, 'source': 'persona'});
+            personasAgregadas++;
+          } catch (e) {
+            debugPrint('   ❌ Error procesando persona ${doc.id}: $e');
+          }
+        }
+
+        debugPrint('   ✅ Agregadas $personasAgregadas personas legacy');
+      } catch (e) {
+        debugPrint('⚠️ Error cargando personas legacy: $e');
+      }
+
+      // Ordenar por apellido
+      result.sort((a, b) {
+        final sourceA = a['source'] as String;
+        final sourceB = b['source'] as String;
+
+        String nombreA, nombreB;
+        if (sourceA == 'member') {
+          final m = a['data'] as Member;
+          nombreA = m.lastName.toLowerCase();
+        } else {
+          final p = a['data'] as PersonaAsistencia;
+          nombreA = p.apellidos.toLowerCase();
+        }
+
+        if (sourceB == 'member') {
+          final m = b['data'] as Member;
+          nombreB = m.lastName.toLowerCase();
+        } else {
+          final p = b['data'] as PersonaAsistencia;
+          nombreB = p.apellidos.toLowerCase();
+        }
+
+        return nombreA.compareTo(nombreB);
+      });
+
+      debugPrint(
+        '📊 QR Screen Total: ${result.length} '
+        '(${result.where((r) => r['source'] == 'member').length} members, '
+        '${result.where((r) => r['source'] == 'persona').length} legacy)',
+      );
+
+      return result;
+    } catch (e) {
+      debugPrint('❌ Error en _combinarDatos: $e');
+      rethrow;
+    }
+  }
 }
 
-/// Tarjeta con código QR de una persona
+/// Tarjeta con código QR de un socio moderno (Member)
+class _MemberQRCard extends StatefulWidget {
+  const _MemberQRCard({required this.member});
+  final Member member;
+
+  @override
+  State<_MemberQRCard> createState() => _MemberQRCardState();
+}
+
+class _MemberQRCardState extends State<_MemberQRCard> {
+  final _qrKey = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    // Generar QR de manera segura con fallback
+    final qrData = widget.member.workerCode?.isNotEmpty == true
+        ? QREncodingHelper.generateMemberQRCode(widget.member)
+        : widget.member.id;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            RepaintBoundary(
+              key: _qrKey,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: QrImageView(
+                  data: qrData,
+                  size: 100,
+                  backgroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.member.fullName,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'N° Socio: ${widget.member.memberNumber}',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  ),
+                  if (widget.member.workerCode != null &&
+                      widget.member.workerCode!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Código: ${widget.member.workerCode}',
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                    ),
+                  ],
+                  if (widget.member.workerCode == null ||
+                      widget.member.workerCode!.isEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '⚠️ Sin workerCode',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade700,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Wrap(
+              spacing: 4,
+              children: [
+                IconButton(
+                  onPressed: () => _copiarDatosMiembro(context),
+                  icon: const Icon(Icons.copy, size: 18),
+                  tooltip: 'Copiar datos',
+                  color: Colors.green,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+                IconButton(
+                  onPressed: () => _compartirQRMiembro(),
+                  icon: const Icon(Icons.share, size: 18),
+                  tooltip: 'Compartir QR',
+                  color: Colors.blue,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _copiarDatosMiembro(BuildContext context) {
+    final qrData = widget.member.workerCode?.isNotEmpty == true
+        ? QREncodingHelper.generateMemberQRCode(widget.member)
+        : widget.member.id;
+    Clipboard.setData(ClipboardData(text: qrData));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('✅ Código copiado al portapapeles'),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _compartirQRMiembro() async {
+    try {
+      final boundary = _qrKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) throw Exception('No se pudo capturar el QR');
+
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) throw Exception('Error al generar imagen');
+
+      final pngBytes = byteData.buffer.asUint8List();
+      final directory = await getTemporaryDirectory();
+      final identificador = widget.member.workerCode ?? widget.member.id;
+      final filePath = '${directory.path}/qr_$identificador.png';
+      final file = File(filePath);
+      await file.writeAsBytes(pngBytes);
+
+      await Share.shareXFiles(
+        [XFile(filePath)],
+        text:
+            'Código QR - ${widget.member.fullName}\nN° Trabajador: $identificador',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ QR compartido'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error al compartir: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}
+
+/// Tarjeta con código QR de una persona legacy
 class _PersonaQRCard extends StatefulWidget {
   const _PersonaQRCard({
     required this.persona,
     required this.onDelete,
   });
-  
+
   final PersonaAsistencia persona;
   final VoidCallback onDelete;
 
@@ -132,7 +448,7 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
   void _copiarDatos(BuildContext context) {
     final qrData = QREncodingHelper.generateQRCode(widget.persona);
     Clipboard.setData(ClipboardData(text: qrData));
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('✅ Código copiado al portapapeles'),
@@ -144,34 +460,33 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
 
   Future<void> _compartirQR() async {
     try {
-      // Capturar QR usando RepaintBoundary
-      final boundary = _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      
+      final boundary =
+          _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+
       if (boundary == null) {
         throw Exception('No se pudo capturar el QR');
       }
-      
+
       final image = await boundary.toImage(pixelRatio: 3.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      
+
       if (byteData == null) {
         throw Exception('Error al generar imagen');
       }
-      
+
       final pngBytes = byteData.buffer.asUint8List();
-      
-      // Guardar archivo temporal
       final directory = await getTemporaryDirectory();
-      final filePath = '${directory.path}/qr_${widget.persona.identificador ?? widget.persona.id}.png';
+      final filePath =
+          '${directory.path}/qr_${widget.persona.identificador ?? widget.persona.id}.png';
       final file = File(filePath);
       await file.writeAsBytes(pngBytes);
-      
-      // Compartir
+
       await Share.shareXFiles(
         [XFile(filePath)],
-        text: 'Código QR - ${widget.persona.nombreCompleto}\nN°: ${widget.persona.identificador}',
+        text:
+            'Código QR - ${widget.persona.nombreCompleto}\nN°: ${widget.persona.identificador}',
       );
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -210,9 +525,7 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Eliminar'),
           ),
         ],
@@ -245,195 +558,19 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
     }
   }
 
-  void _editarPersona(BuildContext context) async {
-    final nombresController = TextEditingController(text: widget.persona.nombres);
-    final apellidosController = TextEditingController(text: widget.persona.apellidos);
-    final identificadorController = TextEditingController(text: widget.persona.identificador ?? '');
-
-    final resultado = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('✏️ Editar Persona'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nombresController,
-                decoration: const InputDecoration(
-                  labelText: 'Nombres *',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: apellidosController,
-                decoration: const InputDecoration(
-                  labelText: 'Apellidos *',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: identificadorController,
-                decoration: const InputDecoration(
-                  labelText: 'N° Trabajador *',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    );
-
-    if (resultado == true) {
-      if (nombresController.text.trim().isEmpty || 
-          apellidosController.text.trim().isEmpty ||
-          identificadorController.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('❌ Todos los campos son obligatorios'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      try {
-        final personaEditada = PersonaAsistencia(
-          id: widget.persona.id,
-          nombres: nombresController.text.trim(),
-          apellidos: apellidosController.text.trim(),
-          identificador: identificadorController.text.trim(),
-        );
-
-        await _service.updatePersona(personaEditada);
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ ${personaEditada.nombreCompleto} actualizado'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Error: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-
-    nombresController.dispose();
-    apellidosController.dispose();
-    identificadorController.dispose();
-  }
-
-  void _mostrarDetalles(BuildContext context) {
-    final qrData = QREncodingHelper.generateQRCode(widget.persona);
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Código QR'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // QR grande
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: QrImageView(
-                  data: qrData,
-                  size: 250,
-                  backgroundColor: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Datos
-              Text(
-                widget.persona.nombreCompleto,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'N°: ${widget.persona.identificador ?? 'Sin número'}',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 16),
-              // Formato del código
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  qrData,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final qrData = QREncodingHelper.generateQRCode(widget.persona);
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Código QR
             RepaintBoundary(
               key: _qrKey,
               child: Container(
@@ -450,10 +587,7 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                 ),
               ),
             ),
-            
             const SizedBox(width: 16),
-            
-            // Información
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,24 +608,19 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  
-                  // Botones de acción - Sin overflow
                   Wrap(
                     spacing: 4,
                     runSpacing: 4,
                     alignment: WrapAlignment.start,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: () => _mostrarDetalles(context),
-                        icon: const Icon(Icons.qr_code, size: 16),
-                        label: const Text('Ver'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          minimumSize: const Size(0, 32),
-                        ),
+                      IconButton(
+                        onPressed: () => _copiarDatos(context),
+                        icon: const Icon(Icons.copy, size: 18),
+                        tooltip: 'Copiar datos',
+                        color: Colors.green,
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 32, minHeight: 32),
                       ),
                       IconButton(
                         onPressed: _compartirQR,
@@ -499,21 +628,8 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                         tooltip: 'Compartir QR',
                         color: Colors.blue,
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => _editarPersona(context),
-                        icon: const Icon(Icons.edit, size: 18),
-                        tooltip: 'Editar',
-                        color: Colors.orange,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
+                        constraints:
+                            const BoxConstraints(minWidth: 32, minHeight: 32),
                       ),
                       IconButton(
                         onPressed: () => _eliminarPersona(context),
@@ -521,10 +637,8 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                         tooltip: 'Eliminar',
                         color: Colors.red,
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
+                        constraints:
+                            const BoxConstraints(minWidth: 32, minHeight: 32),
                       ),
                     ],
                   ),
