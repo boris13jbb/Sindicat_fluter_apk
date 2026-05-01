@@ -3,13 +3,22 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/models/asistencia/asistencia.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
+import '../../services/attendance_service.dart';
 
 /// En web/escritorio no hay cámara; se usa un campo para pegar el código QR o barcode.
 /// [evento] puede ser null si se abre desde el home; entonces se debe elegir evento en pantalla.
 class ScannerAsistenciaScreen extends StatefulWidget {
-  const ScannerAsistenciaScreen({super.key, this.evento});
+  const ScannerAsistenciaScreen({
+    super.key,
+    this.evento,
+    this.attendanceEventId,
+  });
 
+  /// Evento colección **`eventos`** (legacy).
   final EventoAsistencia? evento;
+
+  /// Doc en **`attendance_events`** cuando el registro va al modelo de reporte.
+  final String? attendanceEventId;
 
   @override
   State<ScannerAsistenciaScreen> createState() =>
@@ -27,8 +36,8 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   @override
   void initState() {
     super.initState();
-    // Sincronizar members → personas al cargar la pantalla para asegurar consistencia
     _sincronizarMiembros();
+    if (widget.attendanceEventId != null) _cargarMetaAttendance();
   }
 
   Future<void> _sincronizarMiembros() async {
@@ -62,7 +71,32 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
 
   EventoAsistencia? _eventoSeleccionadoObj;
 
-  EventoAsistencia? get _eventoReal => widget.evento ?? _eventoSeleccionadoObj;
+  EventoAsistencia? get _eventoLegacy => widget.evento ?? _eventoSeleccionadoObj;
+
+  String? _tituloAttendance;
+  bool _loadingMeta = false;
+
+  bool get _puedeRegistrar =>
+      widget.attendanceEventId != null || _eventoLegacy != null;
+
+  Future<void> _cargarMetaAttendance() async {
+    final id = widget.attendanceEventId;
+    if (id == null || id.isEmpty) return;
+    setState(() {
+      _loadingMeta = true;
+      _tituloAttendance = null;
+    });
+    try {
+      final ev = await AttendanceService().getEventById(id);
+      if (!mounted) return;
+      setState(() {
+        _tituloAttendance = ev?.nombre ?? '(evento)';
+        _loadingMeta = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingMeta = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -104,8 +138,24 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
               ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 8),
-            // Selector de evento
-            if (widget.evento != null)
+            // Selector de evento / contexto
+            if (widget.attendanceEventId != null)
+              _loadingMeta
+                  ? const LinearProgressIndicator()
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Evento reporte (attendance_events)',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                        Text(
+                          _tituloAttendance ?? '…',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ],
+                    )
+            else if (widget.evento != null)
               Text(
                 'Evento: ${widget.evento!.nombre}',
                 style: Theme.of(context).textTheme.titleMedium,
@@ -199,11 +249,11 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
               const Center(child: CircularProgressIndicator())
             else
               FilledButton(
-                onPressed: _eventoReal != null ? _registrar : null,
+                onPressed: _puedeRegistrar ? _registrar : null,
                 child: Text(
-                  _eventoReal == null
-                      ? 'Selecciona un evento'
-                      : 'Registrar asistencia',
+                  _puedeRegistrar
+                      ? 'Registrar asistencia'
+                      : 'Selecciona un evento',
                 ),
               ),
           ],
@@ -213,11 +263,15 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   }
 
   Future<void> _registrar() async {
-    final evento = _eventoReal;
-    if (evento == null) {
+    final leg = _eventoLegacy;
+    final attId = widget.attendanceEventId;
+    final eventoFirestoreId =
+        attId ?? leg?.id;
+    if (eventoFirestoreId == null || eventoFirestoreId.isEmpty) {
       setState(() => _mensaje = 'Selecciona un evento primero');
       return;
     }
+
     final codigo = _codigoController.text.trim();
     if (codigo.isEmpty) {
       setState(() => _mensaje = 'Escribe o pega un código');
@@ -233,8 +287,9 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
           : MetodoRegistro.escaneoBarcode;
       final id = await _service.registrarAsistenciaDesdeEscaneo(
         codigo,
-        evento.id,
+        eventoFirestoreId,
         metodo,
+        registrosAttendanceEvents: attId != null,
       );
       if (!mounted) return;
       if (id != null) {
@@ -245,8 +300,9 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
         });
       } else {
         setState(
-          () => _mensaje =
-              '⚠️ Ya estaba registrado o no se pudo crear la persona',
+          () => _mensaje = attId != null
+              ? '⚠️ Ya está registrado o el QR no coincide con socio en `members`.'
+              : '⚠️ Ya estaba registrado o no se pudo crear la persona',
         );
       }
     } catch (e) {
@@ -258,28 +314,31 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
 
   /// Iniciar escaneo con cámara - Modo continuo
   Future<void> _iniciarEscaneo() async {
-    final evento = _eventoReal;
-    if (evento == null) {
+    final leg = _eventoLegacy;
+    final attId = widget.attendanceEventId;
+    final eventoFirestoreId =
+        attId ?? leg?.id;
+    if (eventoFirestoreId == null || eventoFirestoreId.isEmpty) {
       setState(() => _mensaje = '⚠️ Selecciona un evento primero');
       return;
     }
 
-    // Abrir escáner en modo continuo
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => ScannerQRScreen(
-          eventoId: evento.id,
+          eventId: eventoFirestoreId,
+          registrosAttendanceEvents: attId != null,
           onRegistroExitoso: (codigo) async {
-            // Registrar asistencia desde el escáner continuo
             final metodo = codigo.startsWith('{')
                 ? MetodoRegistro.escaneoQr
                 : MetodoRegistro.escaneoBarcode;
 
             final id = await _service.registrarAsistenciaDesdeEscaneo(
               codigo,
-              evento.id,
+              eventoFirestoreId,
               metodo,
+              registrosAttendanceEvents: attId != null,
             );
 
             if (id == null) {
@@ -296,11 +355,13 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
 class ScannerQRScreen extends StatefulWidget {
   const ScannerQRScreen({
     super.key,
-    required this.eventoId,
+    required this.eventId,
+    this.registrosAttendanceEvents = false,
     this.onRegistroExitoso,
   });
 
-  final String eventoId;
+  final String eventId;
+  final bool registrosAttendanceEvents;
   final Future<void> Function(String codigo)? onRegistroExitoso;
 
   @override

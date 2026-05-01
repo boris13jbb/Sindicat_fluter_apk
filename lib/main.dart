@@ -27,6 +27,8 @@ import 'features/asistencia/exportar_screen.dart';
 import 'features/asistencia/scanner_screen.dart';
 import 'features/asistencia/importar_personas_screen.dart';
 import 'features/asistencia/qr_codes_screen.dart';
+import 'features/asistencia/route_args.dart';
+import 'features/asistencia/attendance_event_detail_screen.dart';
 // 🆕 Nuevas pantallas de gestión sindical
 import 'features/members/members_list_screen.dart';
 import 'features/members/import_members_screen.dart';
@@ -168,16 +170,40 @@ class MyApp extends StatelessWidget {
               _attendanceRoles,
             );
           },
-          '/asistencia/personas': (_) =>
-              _roleGuard(const PersonasAsistenciaScreen(), _attendanceRoles),
-          '/asistencia/registro_manual': (ctx) {
-            final evento =
-                ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
-            if (evento == null) {
+          '/asistencia/attendance_event_detail': (ctx) {
+            final eventId =
+                ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
+            if (eventId.isEmpty) {
               return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
             }
             return _roleGuard(
-              RegistroManualScreen(evento: evento),
+              AttendanceEventDetailScreen(eventId: eventId),
+              _attendanceRoles,
+            );
+          },
+          '/asistencia/personas': (_) =>
+              _roleGuard(const PersonasAsistenciaScreen(), _attendanceRoles),
+          '/asistencia/registro_manual': (ctx) {
+            final raw = ModalRoute.of(ctx)?.settings.arguments;
+            EventoAsistencia? evento;
+            String? attendanceEventId;
+            if (raw is AsistenciaEventRouteArgs) {
+              evento = raw.evento;
+              attendanceEventId = raw.attendanceEventId;
+            } else if (raw is EventoAsistencia) {
+              evento = raw;
+            }
+            final okAttendance = attendanceEventId != null &&
+                attendanceEventId.isNotEmpty;
+            if (!okAttendance && evento == null) {
+              return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
+            }
+            return _roleGuard(
+              RegistroManualScreen(
+                evento: evento,
+                attendanceEventId:
+                    okAttendance ? attendanceEventId : null,
+              ),
               _attendanceRoles,
             );
           },
@@ -186,10 +212,23 @@ class MyApp extends StatelessWidget {
           '/asistencia/exportar': (_) =>
               _roleGuard(const ExportarAsistenciaScreen(), _attendanceRoles),
           '/asistencia/scanner': (ctx) {
-            final evento =
-                ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
+            final raw = ModalRoute.of(ctx)?.settings.arguments;
+            EventoAsistencia? evento;
+            String? attendanceEventId;
+            if (raw is AsistenciaEventRouteArgs) {
+              evento = raw.evento;
+              attendanceEventId = raw.attendanceEventId;
+            } else if (raw is EventoAsistencia) {
+              evento = raw;
+            }
             return _roleGuard(
-              ScannerAsistenciaScreen(evento: evento),
+              ScannerAsistenciaScreen(
+                evento: evento,
+                attendanceEventId: attendanceEventId != null &&
+                        attendanceEventId.isNotEmpty
+                    ? attendanceEventId
+                    : null,
+              ),
               _attendanceRoles,
             );
           },

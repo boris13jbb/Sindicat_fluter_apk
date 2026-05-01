@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
-import '../../core/models/asistencia/evento.dart';
-import '../../core/models/asistencia/persona.dart';
+import '../../core/models/asistencia/asistencia.dart';
 import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
 import '../../services/members_service.dart';
+import '../../services/attendance_service.dart';
 
+/// Registro contra **`eventos/{id}`** (legacy) **o** `attendance_events/{id}` (reporte).
 class RegistroManualScreen extends StatefulWidget {
-  const RegistroManualScreen({super.key, required this.evento});
+  const RegistroManualScreen({
+    super.key,
+    this.evento,
+    this.attendanceEventId,
+  });
 
-  final EventoAsistencia evento;
+  /// Modo legacy: documento colección **`eventos`**.
+  final EventoAsistencia? evento;
+
+  /// Modo nuevo: doc **`attendance_events`** (solo socios enlazados a `members`).
+  final String? attendanceEventId;
 
   @override
   State<RegistroManualScreen> createState() => _RegistroManualScreenState();
@@ -18,11 +27,22 @@ class RegistroManualScreen extends StatefulWidget {
 class _RegistroManualScreenState extends State<RegistroManualScreen> {
   final _service = AsistenciaService();
   final _membersService = MembersService();
+  final _attendanceService = AttendanceService();
+
   String? _personaIdSeleccionada; // Usar ID en lugar de objeto para Dropdown
   PersonaAsistencia? _personaObj;
   bool _asistio = true;
   final _justificacionController = TextEditingController();
   bool _usarNueva = false;
+
+  /// `member` cuando la fila proviene del padrón sincronizado; `persona` si es legacy solo `personas`.
+  String _personaSource = 'member';
+  AttendanceEvent? _attendanceEventCached;
+
+  bool get _esModoAttendanceNuevo =>
+      widget.attendanceEventId != null &&
+      widget.attendanceEventId!.isNotEmpty;
+
   final _nombresController = TextEditingController();
   final _apellidosController = TextEditingController();
   final _identificadorController = TextEditingController();
@@ -31,8 +51,35 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
   @override
   void initState() {
     super.initState();
-    // Sincronizar members → personas al cargar la pantalla
+    if (_esModoAttendanceNuevo) {
+      assert(
+        widget.evento == null,
+        'Use solo attendanceEventId o evento legacy, no ambos.',
+      );
+      _usarNueva = false;
+      _cargarAttendanceEventDoc();
+    } else if (widget.evento == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Configuración de evento inválida')),
+          );
+          Navigator.pop(context);
+        }
+      });
+    }
     _sincronizarMiembros();
+  }
+
+  Future<void> _cargarAttendanceEventDoc() async {
+    final id = widget.attendanceEventId;
+    if (id == null) return;
+    try {
+      final ev = await _attendanceService.getEventById(id);
+      if (mounted) setState(() => _attendanceEventCached = ev);
+    } catch (_) {
+      debugPrint('Error cargando attendance_event');
+    }
   }
 
   /// Ejecuta sincronización de members a personas en segundo plano
@@ -230,48 +277,89 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        _infoRow(label: 'Nombre:', value: widget.evento.nombre),
-                        _infoRow(
-                          label: 'Fecha:',
-                          value: _formatDate(widget.evento.fecha),
-                        ),
-                        _infoRow(
-                          label: 'Tipo:',
-                          value: _formatTipoReunion(
-                            widget.evento.tipoReunion.value,
+                        if (_esModoAttendanceNuevo) ...[
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              'Este registro guarda en attendance_events; el reporte '
+                              'cruza por el id del documento en members.',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: Colors.blue.shade800),
+                            ),
                           ),
-                        ),
+                          _infoRow(
+                            label: 'Nombre:',
+                            value: _attendanceEventCached?.nombre ?? 'Cargando…',
+                          ),
+                          _infoRow(
+                            label: 'Fecha:',
+                            value: _formatDate(
+                              _attendanceEventCached?.fecha ??
+                                  DateTime.now().millisecondsSinceEpoch,
+                            ),
+                          ),
+                          _infoRow(
+                            label: 'Lugar:',
+                            value: _attendanceEventCached?.lugar ?? '—',
+                          ),
+                          _infoRow(
+                            label: 'Tipo:',
+                            value: _attendanceEventCached?.tipo ?? '—',
+                          ),
+                        ] else if (widget.evento != null) ...[
+                          _infoRow(label: 'Nombre:', value: widget.evento!.nombre),
+                          _infoRow(
+                            label: 'Fecha:',
+                            value: _formatDate(widget.evento!.fecha),
+                          ),
+                          _infoRow(
+                            label: 'Tipo:',
+                            value: _formatTipoReunion(
+                              widget.evento!.tipoReunion.value,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(height: 24),
                 // Selector de tipo de registro
-                Text(
-                  'Tipo de Registro',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
+                if (!_esModoAttendanceNuevo) ...[
+                  Text(
+                    'Tipo de Registro',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(
-                      value: false,
-                      label: Text('Persona Existente'),
-                      icon: Icon(Icons.person),
-                    ),
-                    ButtonSegment(
-                      value: true,
-                      label: Text('Nueva Persona'),
-                      icon: Icon(Icons.person_add),
-                    ),
-                  ],
-                  selected: {_usarNueva},
-                  onSelectionChanged: (s) =>
-                      setState(() => _usarNueva = s.first),
-                ),
-                const SizedBox(height: 24),
+                  const SizedBox(height: 12),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(
+                        value: false,
+                        label: Text('Persona Existente'),
+                        icon: Icon(Icons.person),
+                      ),
+                      ButtonSegment(
+                        value: true,
+                        label: Text('Nueva Persona'),
+                        icon: Icon(Icons.person_add),
+                      ),
+                    ],
+                    selected: {_usarNueva},
+                    onSelectionChanged: (s) =>
+                        setState(() => _usarNueva = s.first),
+                  ),
+                  const SizedBox(height: 24),
+                ] else ...[
+                  Text(
+                    'Selecciona un socio del padrón (personas marcadas provenientes del módulo Socios aparecen como verificado).',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontStyle: FontStyle.italic,
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 // Campos según el tipo de registro
                 if (_usarNueva) ...[
                   _buildSectionTitle(context, 'Datos de la Persona'),
@@ -422,8 +510,13 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted && personas.isNotEmpty) {
                             setState(() {
-                              _personaIdSeleccionada = personas.first['id'];
-                              _personaObj = personas.first['persona'] as PersonaAsistencia;
+                              _personaIdSeleccionada =
+                                  personas.first['id'] as String;
+                              _personaObj =
+                                  personas.first['persona'] as PersonaAsistencia;
+                              _personaSource =
+                                  personas.first['source'] as String? ??
+                                      'member';
                             });
                           }
                         });
@@ -437,10 +530,13 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                         
                         if (found != null) {
                           _personaObj = found['persona'] as PersonaAsistencia;
+                          _personaSource =
+                              found['source'] as String? ?? 'persona';
                         } else {
                           // Si no se encuentra, limpiar selección
                           _personaIdSeleccionada = null;
                           _personaObj = null;
+                          _personaSource = 'member';
                         }
                       }
                       
@@ -674,6 +770,62 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
     setState(() => _loading = true);
 
     try {
+      if (_esModoAttendanceNuevo) {
+        final attId = widget.attendanceEventId;
+        if (attId == null || attId.isEmpty) {
+          _mostrarError('Evento de asistencia inválido');
+          setState(() => _loading = false);
+          return;
+        }
+        if (_personaObj == null) {
+          _mostrarError('Debe seleccionar una persona');
+          setState(() => _loading = false);
+          return;
+        }
+        if (_personaSource != 'member' &&
+            (_personaObj!.identificador == null ||
+                _personaObj!.identificador!.trim().isEmpty)) {
+          _mostrarError(
+            'La persona seleccionada no tiene número de trabajador o documento '
+            'reconocible. Actualícelo en Socios o elija otro socio.',
+          );
+          setState(() => _loading = false);
+          return;
+        }
+        final memberId = await _memberIdFirestoreParaAttendance();
+        if (memberId == null || memberId.isEmpty) {
+          _mostrarError(
+            'No se pudo relacionar esta fila con un documento en la colección '
+            'members. Revise código de trabajador, número o documento en Socios.',
+          );
+          setState(() => _loading = false);
+          return;
+        }
+        final existe = await _attendanceService.hasAttendanceRecord(
+          attId,
+          memberId,
+        );
+        if (existe) {
+          _mostrarError(
+            'Ya existe un registro para este socio en este evento de asistencia',
+          );
+          setState(() => _loading = false);
+          return;
+        }
+        final nota = _justificacionController.text.trim();
+        await _attendanceService.registerAttendance(
+          eventId: attId,
+          personaId: memberId,
+          asistio: _asistio,
+          metodo: MetodoRegistro.manual,
+          observaciones: nota.isEmpty ? null : nota,
+        );
+        if (!mounted) return;
+        _mostrarExito('Asistencia registrada correctamente');
+        Navigator.pop(context);
+        return;
+      }
+
       if (_usarNueva) {
         // Verificar si ya existe persona con ese identificador
         final identificador = _identificadorController.text.trim();
@@ -696,7 +848,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
         final id = await _service.createPersona(p);
         final res = await _service.registrarAsistenciaManual(
           id,
-          widget.evento.id,
+          widget.evento!.id,
           _asistio,
           _justificacionController.text.trim(),
         );
@@ -726,7 +878,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
         
         final res = await _service.registrarAsistenciaManual(
           _personaObj!.id,
-          widget.evento.id,
+          widget.evento!.id,
           _asistio,
           _justificacionController.text.trim(),
         );
@@ -750,6 +902,24 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<String?> _memberIdFirestoreParaAttendance() async {
+    final p = _personaObj;
+    if (p == null) return null;
+    if (_personaSource == 'member') {
+      final doc = await _membersService.getMemberById(p.id);
+      return doc?.id;
+    }
+    final raw = p.identificador?.trim();
+    if (raw != null && raw.isNotEmpty) {
+      Member? m = await _membersService.getMemberByWorkerCode(raw);
+      m ??= await _membersService.getMemberByNumber(raw);
+      m ??= await _membersService.getMemberByDocument(raw);
+      if (m != null) return m.id;
+    }
+    final byId = await _membersService.getMemberById(p.id);
+    return byId?.id;
   }
 
   Future<void> _abrirBuscadorPersona(List<Map<String, dynamic>> personas) async {
@@ -781,6 +951,8 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
       _personaObj = found != null
           ? found['persona'] as PersonaAsistencia
           : null;
+      _personaSource =
+          found != null ? (found['source'] as String? ?? 'persona') : 'member';
     });
   }
 

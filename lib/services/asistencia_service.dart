@@ -10,6 +10,7 @@ import '../core/reports/attendance_report_generator.dart';
 import '../core/utils/qr_encoding_helper.dart';
 import 'auth_service.dart';
 import 'members_service.dart';
+import 'attendance_service.dart';
 
 /// Servicio de asistencia con Firestore (compatible con module-asistencia Android).
 class AsistenciaService {
@@ -366,11 +367,14 @@ class AsistenciaService {
   /// Servicio de miembros para lookup por workerCode
   final MembersService _membersService = MembersService();
 
+  /// Si [registrosAttendanceEvents] es `true`, escribe en
+  /// `attendance_events/{eventoId}/asistencias`; en ese modo [personaId] debe corresponder al id del doc en **`members`**.
   Future<String?> registrarAsistenciaDesdeEscaneo(
     String codigoEscaneado,
     String eventoId,
-    MetodoRegistro metodo,
-  ) async {
+    MetodoRegistro metodo, {
+    bool registrosAttendanceEvents = false,
+  }) async {
     debugPrint('📱 ========== INICIO REGISTRO ASISTENCIA ==========');
     debugPrint('📱 Código escaneado: "$codigoEscaneado"');
     debugPrint('📱 Evento ID: $eventoId');
@@ -634,6 +638,34 @@ class AsistenciaService {
       return null;
     }
 
+    if (registrosAttendanceEvents) {
+      final attendanceApi = AttendanceService();
+      final personaIdFirestore = memberEncontrado?.id ??
+          await _memberFirestoreIdParaReporteAttendance(persona);
+      if (personaIdFirestore == null || personaIdFirestore.isEmpty) {
+        debugPrint(
+          '   ❌ Evento tipo reporte: el código no coincide con un socio activo '
+          '(id en collection members). Confirme padrón o QR del socio.',
+        );
+        return null;
+      }
+      if (await attendanceApi.hasAttendanceRecord(
+        eventoId,
+        personaIdFirestore,
+      )) {
+        debugPrint(
+          '   ⚠️ Esta persona ya tiene registro en este evento (`attendance_events`).',
+        );
+        return null;
+      }
+      return attendanceApi.registerAttendance(
+        eventId: eventoId,
+        personaId: personaIdFirestore,
+        asistio: true,
+        metodo: metodo,
+      );
+    }
+
     // Verificar duplicado de asistencia
     final existente = await getAsistenciaPorEventoYPersona(
       eventoId,
@@ -673,6 +705,20 @@ class AsistenciaService {
     debugPrint('=========================================\n');
 
     return asistenciaId;
+  }
+
+  Future<String?> _memberFirestoreIdParaReporteAttendance(
+    PersonaAsistencia persona,
+  ) async {
+    final raw = persona.identificador?.trim();
+    if (raw != null && raw.isNotEmpty) {
+      Member? m = await _membersService.getMemberByWorkerCode(raw);
+      m ??= await _membersService.getMemberByNumber(raw);
+      m ??= await _membersService.getMemberByDocument(raw);
+      if (m != null) return m.id;
+    }
+    final porDocId = await _membersService.getMemberById(persona.id);
+    return porDocId?.id;
   }
 
   /// Registro manual de asistencia (compatible con Android)

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/asistencia/evento.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
+import '../../services/attendance_service.dart';
 
 class AsistenciaHomeScreen extends StatefulWidget {
   const AsistenciaHomeScreen({super.key});
@@ -12,6 +13,10 @@ class AsistenciaHomeScreen extends StatefulWidget {
 
 class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
   final AsistenciaService _service = AsistenciaService();
+  final AttendanceService _attendanceService = AttendanceService();
+
+  /// 0 = colección **`eventos`** (legacy); 1 = **`attendance_events`** (reporte).
+  int _listaSegmento = 0;
 
   static String _formatFecha(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -25,39 +30,20 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
         title: 'Control de Asistencia',
         onNavigateBack: () => Navigator.pop(context),
       ),
-      body: StreamBuilder<List<EventoAsistencia>>(
-        stream: _service.getAllEventos(),
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Error: ${snap.error}',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          if (snap.connectionState == ConnectionState.waiting &&
-              !snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final eventos = snap.data ?? [];
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Acciones Rápidas',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Acciones Rápidas',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: Theme.of(context).colorScheme.primary,
                       ),
-                    ),
+                ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -166,139 +152,330 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                   ],
                 ),
               ),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.3),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(24),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 4),
+                    child: SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment<int>(
+                          value: 0,
+                          label: Text('Clásicos'),
+                          icon: Icon(Icons.history_edu_outlined, size: 18),
+                        ),
+                        ButtonSegment<int>(
+                          value: 1,
+                          label: Text('Reporte'),
+                          icon: Icon(Icons.insert_chart_outlined, size: 18),
+                        ),
+                      ],
+                      selected: {_listaSegmento},
+                      onSelectionChanged: (s) =>
+                          setState(() => _listaSegmento = s.first),
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Eventos Recientes',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.bold),
-                            ),
-                            if (eventos.isNotEmpty)
-                              Chip(
-                                label: Text('${eventos.length}'),
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.primary,
-                                labelStyle: TextStyle(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onPrimary,
-                                ),
-                              ),
-                          ],
-                        ),
+                  Expanded(
+                    child: _listaSegmento == 0
+                        ? _buildListaEventosClasicos(context)
+                        : _buildListaEventosReporte(context),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.pushNamed(
+          context,
+          _listaSegmento == 0
+              ? '/asistencia/crear_evento'
+              : '/asistencia/crear_attendance_event',
+        ),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildListaEventosClasicos(BuildContext context) {
+    return StreamBuilder<List<EventoAsistencia>>(
+      stream: _service.getAllEventos(),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Error: ${snap.error}',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final eventos = snap.data ?? [];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Eventos clásicos (colección eventos)',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                  ),
+                  if (eventos.isNotEmpty)
+                    Chip(
+                      label: Text('${eventos.length}'),
+                      backgroundColor:
+                          Theme.of(context).colorScheme.primary,
+                      labelStyle: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimary,
                       ),
-                      if (eventos.isEmpty)
-                        Expanded(
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.event_note,
-                                  size: 80,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.primary.withValues(alpha: 0.4),
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No hay eventos',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Crea tu primer evento para gestionar asistencias.',
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                                const SizedBox(height: 24),
-                                FilledButton.icon(
-                                  onPressed: () => Navigator.pushNamed(
-                                    context,
-                                    '/asistencia/crear_evento',
-                                  ),
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Crear Evento'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      else
-                        Expanded(
-                          child: ListView.builder(
-                            itemCount: eventos.length,
-                            itemBuilder: (context, i) {
-                              final e = eventos[i];
-                              return Card(
-                                margin: const EdgeInsets.only(bottom: 12),
-                                child: ListTile(
-                                  contentPadding: const EdgeInsets.all(16),
-                                  leading: CircleAvatar(
-                                    backgroundColor: Theme.of(
-                                      context,
-                                    ).colorScheme.primaryContainer,
-                                    child: Text(
-                                      '${DateTime.fromMillisecondsSinceEpoch(e.fecha).day}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleMedium,
-                                    ),
-                                  ),
-                                  title: Text(e.nombre),
-                                  subtitle: Text(
-                                    '${_formatFecha(e.fecha)} • ${e.descripcion ?? "Sin descripción"}',
-                                  ),
-                                  trailing: Chip(
-                                    label: Text(
-                                      e.tipoReunion.value,
-                                      style: const TextStyle(fontSize: 10),
-                                    ),
-                                    padding: EdgeInsets.zero,
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                                  onTap: () => Navigator.pushNamed(
-                                    context,
-                                    '/asistencia/evento_detail',
-                                    arguments: e,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                    ),
+                ],
+              ),
+            ),
+            if (eventos.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.event_note,
+                        size: 80,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withValues(alpha: 0.4),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No hay eventos clásicos',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Crea un evento en la colección legacy eventos para '
+                        'registrar en asistencias globales.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: () => Navigator.pushNamed(
+                          context,
+                          '/asistencia/crear_evento',
                         ),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Crear evento clásico'),
+                      ),
                     ],
                   ),
                 ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: eventos.length,
+                  itemBuilder: (context, i) {
+                    final e = eventos[i];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.all(16),
+                        leading: CircleAvatar(
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primaryContainer,
+                          child: Text(
+                            '${DateTime.fromMillisecondsSinceEpoch(e.fecha).day}',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        title: Text(e.nombre),
+                        subtitle: Text(
+                          '${_formatFecha(e.fecha)} • '
+                          '${e.descripcion ?? 'Sin descripción'}',
+                        ),
+                        trailing: Chip(
+                          label: Text(
+                            e.tipoReunion.value,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onTap: () => Navigator.pushNamed(
+                          context,
+                          '/asistencia/evento_detail',
+                          arguments: e,
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ),
-            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildListaEventosReporte(BuildContext context) {
+    return StreamBuilder<List<AttendanceEvent>>(
+      stream: _attendanceService.getAllEvents(),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Error: ${snap.error}',
+                textAlign: TextAlign.center,
+              ),
+            ),
           );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () =>
-            Navigator.pushNamed(context, '/asistencia/crear_evento'),
-        child: const Icon(Icons.add),
-      ),
+        }
+        if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final eventos = snap.data ?? [];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Eventos reporte (attendance_events)',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                  ),
+                  if (eventos.isNotEmpty)
+                    Chip(
+                      label: Text('${eventos.length}'),
+                      backgroundColor:
+                          Theme.of(context).colorScheme.secondaryContainer,
+                      labelStyle: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (eventos.isEmpty)
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.bar_chart_outlined,
+                        size: 80,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .secondary
+                            .withValues(alpha: 0.45),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No hay eventos de reporte',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Los registros aquí escriben en la subcolección '
+                        'attendance_events/{id}/asistencias y cruzan con members.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: () => Navigator.pushNamed(
+                          context,
+                          '/asistencia/crear_attendance_event',
+                        ),
+                        icon: const Icon(Icons.add_chart),
+                        label: const Text('Crear evento reporte'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.builder(
+                  itemCount: eventos.length,
+                  itemBuilder: (context, i) {
+                    final e = eventos[i];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.all(16),
+                        leading: CircleAvatar(
+                          backgroundColor:
+                              Theme.of(context).colorScheme.secondaryContainer,
+                          child: Icon(
+                            Icons.insert_chart_outlined,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSecondaryContainer,
+                          ),
+                        ),
+                        title: Text(e.nombre),
+                        subtitle: Text(
+                          '${_formatFecha(e.fecha)} • '
+                          '${e.descripcion.isEmpty ? 'Sin descripción' : e.descripcion}',
+                        ),
+                        trailing: Chip(
+                          label: Text(
+                            e.tipo,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onTap: () => Navigator.pushNamed(
+                          context,
+                          '/asistencia/attendance_event_detail',
+                          arguments: e.id,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

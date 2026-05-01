@@ -1344,8 +1344,9 @@ Prioridades antes de entrega o producción:
 | Crear evento asistencia | `/asistencia/crear_evento` |
 | Crear evento reporte (`attendance_events`) | `/asistencia/crear_attendance_event` |
 | Detalle evento | `/asistencia/evento_detail` |
-| Registro manual | `/asistencia/registro_manual` |
-| Scanner | `/asistencia/scanner` |
+| Detalle evento reporte (`attendance_events`) | `/asistencia/attendance_event_detail` (`arguments`: id doc) |
+| Registro manual | `/asistencia/registro_manual` (`EventoAsistencia` \| `AsistenciaEventRouteArgs`) |
+| Scanner | `/asistencia/scanner` (`EventoAsistencia` \| `AsistenciaEventRouteArgs`) |
 | Scanner QR cámara | `MaterialPageRoute` interna |
 | Personas asistencia | `/asistencia/personas` |
 | Asistencias | `/asistencia/asistencias` |
@@ -1423,6 +1424,7 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Unificación modelo reporte (`attendance_events`): registro manual resuelve `personaId` en `members`, evita duplicados con subcolección, escribe vía `AttendanceService.registerAttendance`; rutas nombradas aceptan `AsistenciaEventRouteArgs`; home lista segmentada «Clásicos / Reporte», FAB contextual y nueva ruta detalle `/asistencia/attendance_event_detail`. | `lib/features/asistencia/registro_manual_screen.dart`, `lib/main.dart`, `lib/features/asistencia/asistencia_home_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` OK | Aplicado localmente |
 | 2026-05-01 | Evento reporte (`attendance_events`): convocatoria «todos los socios activos» o selección múltiple de convocados con búsqueda y acciones rápidas sobre lista filtrada; validación si lista personalizada queda vacía. | `lib/features/asistencia/crear_attendance_event_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub` OK | Aplicado localmente |
 | 2026-05-01 | Registro manual asistencia: sustituye dropdown masivo por hoja inferior con filtro textual y selección táctil (`_PersonaPickSheet`). | `lib/features/asistencia/registro_manual_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub` OK | Aplicado localmente |
 | 2026-05-01 | Despliegue producción Firebase: `firebase deploy --only firestore` al proyecto configurado (`sistema-integrado-sindicato`). | `firestore.rules` | Deploy CLI completo (`released rules`) | Producción |

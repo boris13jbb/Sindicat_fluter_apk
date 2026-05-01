@@ -250,7 +250,8 @@ class AttendanceService {
   // ==================== ASISTENCIAS ====================
 
   /// Registrar asistencia manual
-  Future<void> registerAttendance({
+  /// `personaId` debe ser normalmente el id del documento en `members` para que cuadre con el reporte.
+  Future<String> registerAttendance({
     required String eventId,
     required String personaId,
     required bool asistio,
@@ -270,6 +271,7 @@ class AttendanceService {
           .doc();
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final nota = observaciones ?? '';
 
       await attendanceRef.set({
         'id': attendanceRef.id,
@@ -279,7 +281,8 @@ class AttendanceService {
         'metodoRegistro': metodo.value,
         'fechaRegistro': timestamp,
         'registradoPor': userId,
-        if (observaciones != null) 'observaciones': observaciones,
+        'justificacion': nota,
+        if (nota.isNotEmpty) 'observaciones': nota,
       });
 
       await _audit.logAction(
@@ -290,9 +293,31 @@ class AttendanceService {
             'Asistencia registrada: ${asistio ? "Presente" : "Ausente"} - Persona: $personaId',
         platform: 'flutter',
       );
+      return attendanceRef.id;
     } catch (e) {
       debugPrint('Error registrando asistencia: $e');
       rethrow;
+    }
+  }
+
+  /// Indica si ya existe un documento para la misma persona (id en `members`) en este evento.
+  Future<bool> hasAttendanceRecord(
+    String attendanceEventId,
+    String personaId,
+  ) async {
+    if (personaId.isEmpty) return false;
+    try {
+      final qs = await _firestore
+          .collection('attendance_events')
+          .doc(attendanceEventId)
+          .collection('asistencias')
+          .where('personaId', isEqualTo: personaId)
+          .limit(1)
+          .get();
+      return qs.docs.isNotEmpty;
+    } catch (e) {
+      debugPrint('Error consultando duplicados de asistencia: $e');
+      return true;
     }
   }
 
