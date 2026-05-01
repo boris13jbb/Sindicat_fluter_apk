@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../core/models/election.dart';
 import '../../core/models/candidate.dart';
 import '../../core/models/user_role.dart';
+import '../../core/security/election_visibility.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/election_service.dart';
 import '../../core/widgets/professional_app_bar.dart';
@@ -166,7 +167,10 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
               if (election == null) {
                 return const Center(child: Text('Elección no encontrada'));
               }
-              if (!isAdmin && !_canVoterViewResults(election)) {
+              if (!canViewElectionResults(
+                election: election,
+                viewerRole: userRole,
+              )) {
                 return _ResultsLockedCard(election: election);
               }
 
@@ -337,11 +341,10 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
     );
   }
 
-  bool _canVoterViewResults(Election election) {
-    return election.showResultsAutomatically && election.isEnded;
-  }
-
   Future<void> _handleExport(BuildContext context, String type) async {
+    final confirmed = await _confirmResultsExport(context, type);
+    if (!confirmed || !context.mounted) return;
+
     try {
       debugPrint('Iniciando exportación: $type');
 
@@ -506,6 +509,31 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
         );
       }
     }
+  }
+
+  Future<bool> _confirmResultsExport(BuildContext context, String type) async {
+    final label = type == 'pdf' ? 'PDF' : 'CSV';
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Exportar resultados $label'),
+            content: const Text(
+              'Se generará una exportación con conteos de votación. Verifica que la elección correcta esté seleccionada antes de compartir el archivo o copiar el contenido.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.file_download_outlined),
+                label: const Text('Exportar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 }
 
@@ -841,6 +869,7 @@ class _ResultsLockedCard extends StatelessWidget {
         '${endDate.year} '
         '${endDate.hour.toString().padLeft(2, '0')}:'
         '${endDate.minute.toString().padLeft(2, '0')}';
+    final lockedMessage = _lockedMessage(endDateText);
 
     return Center(
       child: Padding(
@@ -868,9 +897,7 @@ class _ResultsLockedCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    election.showResultsAutomatically
-                        ? 'Los resultados se publicarán automáticamente cuando finalice la elección: $endDateText.'
-                        : 'La publicación automática de resultados está desactivada para esta elección.',
+                    lockedMessage,
                     style: Theme.of(context).textTheme.bodyMedium,
                     textAlign: TextAlign.center,
                   ),
@@ -887,5 +914,21 @@ class _ResultsLockedCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _lockedMessage(String endDateText) {
+    if (!election.isActive || !election.isVisibleToVoters) {
+      return 'Esta elección no está publicada para consulta de resultados.';
+    }
+
+    if (!election.showResultsAutomatically) {
+      return 'La publicación automática de resultados está desactivada para esta elección.';
+    }
+
+    if (!hasElectionEnded(election)) {
+      return 'Los resultados se publicarán automáticamente cuando finalice la elección: $endDateText.';
+    }
+
+    return 'Los resultados aún no están disponibles para votantes.';
   }
 }

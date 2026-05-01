@@ -67,7 +67,8 @@ class AuthService {
     try {
       final doc = await _firestore.collection(_usersCollection).doc(uid).get();
       if (doc.exists && doc.data() != null) {
-        return app.AppUser.fromMap(doc.data()!, doc.id);
+        final user = app.AppUser.fromMap(doc.data()!, doc.id);
+        return _ensureUserMemberLink(user);
       }
       return null;
     } catch (_) {
@@ -95,6 +96,32 @@ class AuthService {
     if (byMemberNumber.docs.isNotEmpty) return byMemberNumber.docs.first;
 
     return null;
+  }
+
+  Future<app.AppUser> _ensureUserMemberLink(app.AppUser user) async {
+    if (user.memberId != null && user.memberId!.trim().isNotEmpty) {
+      return user;
+    }
+
+    final employeeNumber = user.employeeNumber?.trim();
+    if (employeeNumber == null || employeeNumber.isEmpty) {
+      return user;
+    }
+
+    try {
+      final member = await _getMemberByEmployeeNumber(employeeNumber);
+      if (member == null || !_memberIsActive(member.data())) {
+        return user;
+      }
+
+      await _firestore.collection(_usersCollection).doc(user.id).update({
+        'memberId': member.id,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      });
+      return user.copyWith(memberId: member.id);
+    } catch (_) {
+      return user;
+    }
   }
 
   bool _memberIsActive(Map<String, dynamic> data) {
@@ -187,6 +214,7 @@ class AuthService {
         displayName: displayName ?? fbUser.displayName,
         role: UserRole.fromString(role),
         employeeNumber: trimmedEmployeeNumber,
+        memberId: member.id,
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
       try {

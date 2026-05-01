@@ -71,6 +71,42 @@ service cloud.firestore {
       return isAuthenticated() && getUserRole() in ['SUPERADMIN', 'ADMIN', 'OPERADOR_ASISTENCIA'];
     }
 
+    function memberPath(memberId) {
+      return /databases/$(database)/documents/members/$(memberId);
+    }
+
+    function memberMatchesEmployeeNumber(memberId, employeeNumber) {
+      return memberId is string
+        && employeeNumber is string
+        && exists(memberPath(memberId))
+        && (
+          get(memberPath(memberId)).data.workerCode == employeeNumber ||
+          get(memberPath(memberId)).data.memberNumber == employeeNumber ||
+          get(memberPath(memberId)).data.documentId == employeeNumber
+        );
+    }
+
+    function validOptionalUserMemberId() {
+      return !('memberId' in request.resource.data) ||
+        request.resource.data.memberId == null ||
+        memberMatchesEmployeeNumber(
+          request.resource.data.memberId,
+          request.resource.data.employeeNumber
+        );
+    }
+
+    function validMemberIdBackfill() {
+      return !changedKeys().hasAny(['memberId']) || (
+        (!('memberId' in resource.data) ||
+          resource.data.memberId == null ||
+          resource.data.memberId == '') &&
+        memberMatchesEmployeeNumber(
+          request.resource.data.memberId,
+          request.resource.data.employeeNumber
+        )
+      );
+    }
+
     function isValidAuditLogCreate() {
       return request.resource.data.keys().hasOnly([
           'action',
@@ -144,6 +180,7 @@ service cloud.firestore {
           'displayName',
           'role',
           'employeeNumber',
+          'memberId',
           'createdAt',
           'updatedAt',
           'isActive',
@@ -156,7 +193,8 @@ service cloud.firestore {
           request.resource.data.displayName is string)
         && (!('employeeNumber' in request.resource.data) ||
           request.resource.data.employeeNumber == null ||
-          request.resource.data.employeeNumber is string);
+          request.resource.data.employeeNumber is string)
+        && validOptionalUserMemberId();
       
       // Actualizar: superadmin puede actualizar cualquier usuario, o el usuario puede actualizar su propio perfil
       // IMPORTANTE: No permitir que usuarios cambien su propio rol (escalación de privilegios)
@@ -167,8 +205,10 @@ service cloud.firestore {
           'email',
           'displayName',
           'employeeNumber',
+          'memberId',
           'updatedAt',
         ])
+        && validMemberIdBackfill()
       );
       
       // Eliminar: solo superadmin

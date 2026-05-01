@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../core/models/candidate.dart';
 import '../../core/models/election.dart';
+import '../../core/security/election_visibility.dart';
 import '../../services/asistencia_service.dart';
 import '../../services/election_service.dart';
 import '../../services/auth_service.dart';
@@ -578,8 +579,7 @@ class _AlreadyVotedContent extends StatelessWidget {
               final election = snapshot.data?.election;
               final canViewResults =
                   election != null &&
-                  election.showResultsAutomatically &&
-                  election.isEnded;
+                  canViewElectionResults(election: election);
 
               if (canViewResults) {
                 return FilledButton(
@@ -597,6 +597,10 @@ class _AlreadyVotedContent extends StatelessWidget {
                 child: Text(
                   election?.showResultsAutomatically == false
                       ? 'Los resultados serán publicados por administración.'
+                      : election == null ||
+                            !election.isActive ||
+                            !election.isVisibleToVoters
+                      ? 'Los resultados no están publicados para votantes.'
                       : 'Los resultados estarán disponibles cuando finalice la elección.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,

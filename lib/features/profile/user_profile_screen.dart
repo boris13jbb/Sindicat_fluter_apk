@@ -6,6 +6,7 @@ import '../../core/models/member.dart';
 import '../../core/utils/qr_encoding_helper.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
+import '../../services/attendance_service.dart';
 import '../../services/members_service.dart';
 
 /// Pantalla de perfil del usuario con pestañas
@@ -20,9 +21,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final MembersService _membersService = MembersService();
+  final AttendanceService _attendanceService = AttendanceService();
 
   /// Socio vinculado al usuario (padrón `members`), si existe.
   Member? _currentMember;
+  Stream<MemberAttendanceSummary>? _attendanceSummaryStream;
   bool _isLoadingMember = true;
   bool _noMembersInDatabase =
       false; // Flag para detectar si no hay miembros en BD
@@ -50,13 +53,33 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       debugPrint('   - ID: ${user.id}');
       debugPrint('   - Email: ${user.email}');
       debugPrint('   - EmployeeNumber: ${user.employeeNumber ?? "N/A"}');
+      debugPrint('   - MemberId: ${user.memberId ?? "N/A"}');
       debugPrint('   - DisplayName: ${user.displayName ?? "N/A"}');
 
       Member? foundMember;
       String searchMethod = 'ninguno';
 
+      // ESTRATEGIA 0: vínculo canónico users.memberId
+      if (user.memberId != null && user.memberId!.trim().isNotEmpty) {
+        debugPrint('\n🔗 Estrategia 0: Búsqueda por users.memberId...');
+        try {
+          final memberById = await _membersService.getMemberById(
+            user.memberId!.trim(),
+          );
+          if (memberById != null) {
+            foundMember = memberById;
+            searchMethod = 'memberId';
+            debugPrint('   ✅ Encontrado por memberId: ${foundMember.fullName}');
+          } else {
+            debugPrint('   ❌ No se encontró miembro con id=${user.memberId}');
+          }
+        } catch (e) {
+          debugPrint('   ❌ Error en búsqueda por memberId: $e');
+        }
+      }
+
       // ESTRATEGIA 1: Buscar por email del usuario (búsqueda parcial)
-      if (user.email.isNotEmpty) {
+      if (foundMember == null && user.email.isNotEmpty) {
         debugPrint('\n📧 Estrategia 1: Búsqueda por email...');
         try {
           final membersByEmail = await _membersService.searchMembers(
@@ -399,6 +422,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       if (mounted) {
         setState(() {
           _currentMember = foundMember;
+          _attendanceSummaryStream = foundMember == null
+              ? null
+              : _attendanceService.watchMemberAttendanceSummary(foundMember.id);
           _isLoadingMember = false;
         });
       }
@@ -503,7 +529,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               // Información de socio (si existe)
               if (_isLoadingMember)
                 const Center(child: CircularProgressIndicator())
-              else if (_currentMember != null)
+              else if (_currentMember != null) ...[
                 _buildInfoCard(context, 'Información de Socio', [
                   _buildInfoRow('Nombre Completo', _currentMember!.fullName),
                   _buildInfoRow('N° Socio', _currentMember!.memberNumber),
@@ -528,6 +554,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     _buildInfoRow('Cédula', _currentMember!.documentId!),
                   _buildInfoRow('Estado', _currentMember!.status.displayName),
                 ]),
+                const SizedBox(height: 16),
+                _buildAttendanceSummaryCard(context),
+              ],
             ],
           ),
         );
@@ -934,6 +963,143 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         return const Center(child: CircularProgressIndicator());
       },
     );
+  }
+
+  Widget _buildAttendanceSummaryCard(BuildContext context) {
+    final stream = _attendanceSummaryStream;
+    if (stream == null) {
+      return _buildInfoCard(context, 'Resumen de Asistencia', [
+        _buildInfoRow('Estado', 'No disponible'),
+      ]);
+    }
+
+    return StreamBuilder<MemberAttendanceSummary>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildInfoCard(context, 'Resumen de Asistencia', [
+            _buildInfoRow('Estado', 'No disponible'),
+            _buildInfoRow('Detalle', snapshot.error.toString()),
+          ]);
+        }
+
+        if (!snapshot.hasData) {
+          return _buildInfoCard(context, 'Resumen de Asistencia', [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('Calculando resumen...')),
+                ],
+              ),
+            ),
+          ]);
+        }
+
+        final summary = snapshot.data!;
+        final recentDetails = summary.detalles.take(3).toList();
+
+        return _buildInfoCard(context, 'Resumen de Asistencia', [
+          _buildInfoRow(
+            'Eventos convocados',
+            summary.totalConvocados.toString(),
+          ),
+          _buildInfoRow('Asistencias', summary.totalAsistencias.toString()),
+          _buildInfoRow(
+            'Faltas injustificadas',
+            summary.totalFaltas.toString(),
+          ),
+          _buildInfoRow('No convocado', summary.totalNoConvocado.toString()),
+          if (recentDetails.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Divider(),
+            const SizedBox(height: 8),
+            Text(
+              'Últimos eventos',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            for (final detail in recentDetails)
+              _buildAttendanceDetailRow(context, detail),
+          ],
+        ]);
+      },
+    );
+  }
+
+  Widget _buildAttendanceDetailRow(
+    BuildContext context,
+    AsistenciaDetalle detail,
+  ) {
+    final color = _attendanceStatusColor(context, detail.estado);
+    final subtitle = [
+      _formatAttendanceDate(detail.fecha),
+      if (detail.justificacion != null &&
+          detail.justificacion!.trim().isNotEmpty)
+        detail.justificacion!.trim(),
+      if (detail.isLegacy) 'Legacy',
+    ].join(' · ');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            margin: const EdgeInsets.only(top: 6),
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  detail.eventName,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${detail.estado} · $subtitle',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.72),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _attendanceStatusColor(BuildContext context, String status) {
+    if (status == 'Presente') return Colors.green.shade700;
+    if (status == 'No convocado') return Colors.blue.shade700;
+    if (status == 'Ausente justificado') return Colors.orange.shade700;
+    return Theme.of(context).colorScheme.error;
+  }
+
+  String _formatAttendanceDate(int millis) {
+    if (millis <= 0) return 'Fecha no identificada';
+    final date = DateTime.fromMillisecondsSinceEpoch(millis);
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day/$month/${date.year}';
   }
 
   /// Widget para fila de información

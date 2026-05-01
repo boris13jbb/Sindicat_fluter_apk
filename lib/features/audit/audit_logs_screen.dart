@@ -12,12 +12,15 @@ class AuditLogsScreen extends StatefulWidget {
 }
 
 class _AuditLogsScreenState extends State<AuditLogsScreen> {
+  static const int _pageSize = 50;
+
   final AuditService _service = AuditService();
 
   AuditAction? _actionFilter;
   AuditEntityType? _entityTypeFilter;
   DateTime? _startDate;
   DateTime? _endDate;
+  int _auditLimit = _pageSize;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +50,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
           entityType: _entityTypeFilter,
           startDate: _startDate,
           endDate: _endDate,
+          limit: _auditLimit,
         ),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
@@ -98,8 +102,12 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: logs.length,
+            itemCount: logs.length + 1,
             itemBuilder: (context, index) {
+              if (index == logs.length) {
+                return _buildFooter(logs.length);
+              }
+
               final log = logs[index];
               return _AuditLogCard(log: log);
             },
@@ -122,7 +130,30 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
       _entityTypeFilter = null;
       _startDate = null;
       _endDate = null;
+      _auditLimit = _pageSize;
     });
+  }
+
+  Widget _buildFooter(int count) {
+    final canLoadMore = count >= _auditLimit;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: canLoadMore
+            ? OutlinedButton.icon(
+                onPressed: () {
+                  setState(() => _auditLimit += _pageSize);
+                },
+                icon: const Icon(Icons.expand_more),
+                label: Text('Cargar $_pageSize registros más'),
+              )
+            : Text(
+                'Mostrando $count registro(s)',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+      ),
+    );
   }
 
   Future<void> _showFiltersDialog() async {
@@ -151,7 +182,10 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                     );
                   }),
                 ],
-                onChanged: (value) => setState(() => _actionFilter = value),
+                onChanged: (value) => setState(() {
+                  _actionFilter = value;
+                  _auditLimit = _pageSize;
+                }),
               ),
               const SizedBox(height: 16),
 
@@ -171,7 +205,10 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                     );
                   }),
                 ],
-                onChanged: (value) => setState(() => _entityTypeFilter = value),
+                onChanged: (value) => setState(() {
+                  _entityTypeFilter = value;
+                  _auditLimit = _pageSize;
+                }),
               ),
               const SizedBox(height: 16),
 
@@ -192,7 +229,10 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                     lastDate: DateTime.now(),
                   );
                   if (date != null) {
-                    setState(() => _startDate = date);
+                    setState(() {
+                      _startDate = date;
+                      _auditLimit = _pageSize;
+                    });
                   }
                 },
               ),
@@ -214,7 +254,10 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
                     lastDate: DateTime.now(),
                   );
                   if (date != null) {
-                    setState(() => _endDate = date);
+                    setState(() {
+                      _endDate = date;
+                      _auditLimit = _pageSize;
+                    });
                   }
                 },
               ),

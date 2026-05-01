@@ -118,7 +118,6 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
     });
   }
 
-
   Future<void> _exportarExcel(
     BuildContext context,
     List<AsistenciaConDatos> list,
@@ -129,6 +128,13 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
       );
       return;
     }
+
+    final confirmed = await _confirmarExportacion(
+      context,
+      formato: 'Excel',
+      registros: list.length,
+    );
+    if (!confirmed || !context.mounted) return;
 
     // Guardar referencia al navigator
     final navigator = Navigator.of(context);
@@ -255,6 +261,13 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
       return;
     }
 
+    final confirmed = await _confirmarExportacion(
+      context,
+      formato: 'PDF',
+      registros: list.length,
+    );
+    if (!confirmed || !context.mounted) return;
+
     // Mostrar loading inmediato
     if (!context.mounted) return;
     showDialog(
@@ -365,149 +378,181 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  '${list.length} registros. Los del modelo reporte muestran el prefijo «[Reporte]» en el nombre del evento.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              ),
-              if (mostrarActualizarReporte)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: OutlinedButton.icon(
-                    onPressed: _recargarReporte,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Actualizar lista reporte'),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            '${list.length} registros. Los del modelo reporte muestran el prefijo «[Reporte]» en el nombre del evento.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+        if (mostrarActualizarReporte)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: OutlinedButton.icon(
+              onPressed: _recargarReporte,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Actualizar lista reporte'),
+            ),
+          ),
+        if (mostrarActualizarReporte) const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: FilledButton.icon(
+            onPressed: () {
+              _copiarCsv(context, serializedList, list.length);
+            },
+            icon: const Icon(Icons.copy),
+            label: const Text('Copiar CSV al portapapeles'),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: list.length,
+            itemBuilder: (context, i) {
+              final a = list[i];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ListTile(
+                  title: Text(a.persona.nombreCompleto),
+                  subtitle: Text(
+                    '${a.evento.nombre} • ${_formatFechaExport(a.asistencia.fechaRegistro ?? 0)}',
                   ),
+                  isThreeLine: false,
                 ),
-              if (mostrarActualizarReporte) const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: FilledButton.icon(
-                  onPressed: () {
-                    final csv = _toCsv(serializedList);
-                    Clipboard.setData(ClipboardData(text: csv));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Row(
-                          children: [
-                            const Icon(
-                              Icons.check_circle_outline,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 12),
-                            const Text('Copiado al portapapeles (CSV)'),
-                          ],
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 400) {
+                  // Diseño vertical para pantallas pequeñas
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _exportarExcel(context, list),
+                          icon: const Icon(Icons.table_chart),
+                          label: const Text('Exportar Excel'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
                         ),
-                        backgroundColor: Theme.of(context).colorScheme.primary,
-                        behavior: SnackBarBehavior.floating,
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.copy),
-                  label: const Text('Copiar CSV al portapapeles'),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: list.length,
-                  itemBuilder: (context, i) {
-                    final a = list[i];
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        title: Text(a.persona.nombreCompleto),
-                        subtitle: Text(
-                          '${a.evento.nombre} • ${_formatFechaExport(a.asistencia.fechaRegistro ?? 0)}',
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _exportarPDF(context, list),
+                          icon: const Icon(Icons.picture_as_pdf),
+                          label: const Text('Exportar PDF'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
                         ),
-                        isThreeLine: false,
                       ),
-                    );
-                  },
-                ),
+                    ],
+                  );
+                } else {
+                  // Diseño horizontal para pantallas medianas/grandes
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _exportarExcel(context, list),
+                          icon: const Icon(Icons.table_chart),
+                          label: const Text('Excel'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _exportarPDF(context, list),
+                          icon: const Icon(Icons.picture_as_pdf),
+                          label: const Text('PDF'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Future<void> _copiarCsv(
+    BuildContext context,
+    List<Map<String, dynamic>> serializedList,
+    int registros,
+  ) async {
+    final confirmed = await _confirmarExportacion(
+      context,
+      formato: 'CSV al portapapeles',
+      registros: registros,
+    );
+    if (!confirmed || !context.mounted) return;
+
+    final csv = _toCsv(serializedList);
+    Clipboard.setData(ClipboardData(text: csv));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            const Text('Copiado al portapapeles (CSV)'),
+          ],
+        ),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<bool> _confirmarExportacion(
+    BuildContext context, {
+    required String formato,
+    required int registros,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Exportar $formato'),
+            content: Text(
+              'Se exportarán $registros registro(s) de asistencia. El archivo o portapapeles puede incluir nombres, eventos, horarios y estado de asistencia. Compártelo sólo con personal autorizado.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
               ),
-              const SizedBox(height: 16),
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      if (constraints.maxWidth < 400) {
-                        // Diseño vertical para pantallas pequeñas
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: () => _exportarExcel(context, list),
-                                icon: const Icon(Icons.table_chart),
-                                label: const Text('Exportar Excel'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: () => _exportarPDF(context, list),
-                                icon: const Icon(Icons.picture_as_pdf),
-                                label: const Text('Exportar PDF'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      } else {
-                        // Diseño horizontal para pantallas medianas/grandes
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () => _exportarExcel(context, list),
-                                icon: const Icon(Icons.table_chart),
-                                label: const Text('Excel'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () => _exportarPDF(context, list),
-                                icon: const Icon(Icons.picture_as_pdf),
-                                label: const Text('PDF'),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      }
-                    },
-                  ),
-                ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.file_download_outlined),
+                label: const Text('Continuar'),
               ),
-              const SizedBox(height: 16),
             ],
-          );
+          ),
+        ) ??
+        false;
   }
 
   @override
@@ -555,8 +600,8 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
                   ? 'Subcolecciones `attendance_events/*/asistencias`; socios vía id en `members`.'
                   : 'Unión en memoria de legacy + modelo reporte.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           const SizedBox(height: 8),

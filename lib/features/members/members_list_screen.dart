@@ -259,6 +259,9 @@ class _MembersListScreenState extends State<MembersListScreen> {
   }
 
   Future<void> _exportMembersCsv(BuildContext context) async {
+    final confirmed = await _confirmMembersExport(context);
+    if (!confirmed || !context.mounted) return;
+
     try {
       final list = await _service.getAllMembers().first;
       final csv = MembersService.buildMembersExportCsv(list);
@@ -273,6 +276,30 @@ class _MembersListScreenState extends State<MembersListScreen> {
         );
       }
     }
+  }
+
+  Future<bool> _confirmMembersExport(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Exportar socios'),
+            content: const Text(
+              'Se generará un CSV con datos del padrón de socios, incluyendo identificadores y modalidad. Comparte este archivo sólo con personal autorizado.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.ios_share),
+                label: const Text('Exportar'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 
   void _navigateToAddMember() async {

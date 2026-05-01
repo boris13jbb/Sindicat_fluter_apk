@@ -37,6 +37,7 @@ import 'features/audit/audit_logs_screen.dart';
 import 'features/profile/user_profile_screen.dart';
 import 'core/models/asistencia/evento.dart';
 import 'core/models/user_role.dart';
+import 'core/security/route_access.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -92,13 +93,6 @@ void main() async {
   runApp(const MyApp());
 }
 
-const _adminRoles = {UserRole.superadmin, UserRole.admin};
-const _attendanceRoles = {
-  UserRole.superadmin,
-  UserRole.admin,
-  UserRole.operadorAsistencia,
-};
-
 Widget _authGuard(Widget child) => _RouteGuard(child: child);
 
 Widget _roleGuard(Widget child, Set<UserRole> allowedRoles) {
@@ -132,7 +126,7 @@ class MyApp extends StatelessWidget {
           '/home': (_) => _authGuard(const HomeScreen()),
           '/voto/elections': (_) => _authGuard(const ElectionsScreen()),
           '/voto/create_election': (_) =>
-              _roleGuard(const CreateElectionScreen(), _adminRoles),
+              _roleGuard(const CreateElectionScreen(), adminRouteRoles),
           '/voto/voting': (ctx) {
             final id = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
             return _authGuard(VotingScreen(electionId: id));
@@ -143,46 +137,62 @@ class MyApp extends StatelessWidget {
           },
           '/voto/add_candidate': (ctx) {
             final id = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
-            return _roleGuard(AddCandidateScreen(electionId: id), _adminRoles);
+            return _roleGuard(
+              AddCandidateScreen(electionId: id),
+              adminRouteRoles,
+            );
           },
           '/voto/edit_election': (ctx) {
             final id = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
-            return _roleGuard(EditElectionScreen(electionId: id), _adminRoles);
+            return _roleGuard(
+              EditElectionScreen(electionId: id),
+              adminRouteRoles,
+            );
           },
           '/voto/event_history': (_) =>
-              _roleGuard(const EventHistoryScreen(), _adminRoles),
+              _roleGuard(const EventHistoryScreen(), adminRouteRoles),
           '/asistencia': (_) =>
-              _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles),
-          '/asistencia/crear_evento': (_) =>
-              _roleGuard(const CrearEventoAsistenciaScreen(), _attendanceRoles),
+              _roleGuard(const AsistenciaHomeScreen(), attendanceRouteRoles),
+          '/asistencia/crear_evento': (_) => _roleGuard(
+            const CrearEventoAsistenciaScreen(),
+            attendanceRouteRoles,
+          ),
           '/asistencia/crear_attendance_event': (_) => _roleGuard(
-                const CrearAttendanceEventScreen(),
-                _attendanceRoles,
-              ),
+            const CrearAttendanceEventScreen(),
+            attendanceRouteRoles,
+          ),
           '/asistencia/evento_detail': (ctx) {
             final evento =
                 ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
             if (evento == null) {
-              return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
+              return _roleGuard(
+                const AsistenciaHomeScreen(),
+                attendanceRouteRoles,
+              );
             }
             return _roleGuard(
               EventoDetailScreen(evento: evento),
-              _attendanceRoles,
+              attendanceRouteRoles,
             );
           },
           '/asistencia/attendance_event_detail': (ctx) {
             final eventId =
                 ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
             if (eventId.isEmpty) {
-              return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
+              return _roleGuard(
+                const AsistenciaHomeScreen(),
+                attendanceRouteRoles,
+              );
             }
             return _roleGuard(
               AttendanceEventDetailScreen(eventId: eventId),
-              _attendanceRoles,
+              attendanceRouteRoles,
             );
           },
-          '/asistencia/personas': (_) =>
-              _roleGuard(const PersonasAsistenciaScreen(), _attendanceRoles),
+          '/asistencia/personas': (_) => _roleGuard(
+            const PersonasAsistenciaScreen(),
+            attendanceRouteRoles,
+          ),
           '/asistencia/registro_manual': (ctx) {
             final raw = ModalRoute.of(ctx)?.settings.arguments;
             EventoAsistencia? evento;
@@ -193,24 +203,28 @@ class MyApp extends StatelessWidget {
             } else if (raw is EventoAsistencia) {
               evento = raw;
             }
-            final okAttendance = attendanceEventId != null &&
-                attendanceEventId.isNotEmpty;
+            final okAttendance =
+                attendanceEventId != null && attendanceEventId.isNotEmpty;
             if (!okAttendance && evento == null) {
-              return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
+              return _roleGuard(
+                const AsistenciaHomeScreen(),
+                attendanceRouteRoles,
+              );
             }
             return _roleGuard(
               RegistroManualScreen(
                 evento: evento,
-                attendanceEventId:
-                    okAttendance ? attendanceEventId : null,
+                attendanceEventId: okAttendance ? attendanceEventId : null,
               ),
-              _attendanceRoles,
+              attendanceRouteRoles,
             );
           },
           '/asistencia/asistencias': (_) =>
-              _roleGuard(const AsistenciasListScreen(), _attendanceRoles),
-          '/asistencia/exportar': (_) =>
-              _roleGuard(const ExportarAsistenciaScreen(), _attendanceRoles),
+              _roleGuard(const AsistenciasListScreen(), attendanceRouteRoles),
+          '/asistencia/exportar': (_) => _roleGuard(
+            const ExportarAsistenciaScreen(),
+            attendanceRouteRoles,
+          ),
           '/asistencia/scanner': (ctx) {
             final raw = ModalRoute.of(ctx)?.settings.arguments;
             EventoAsistencia? evento;
@@ -224,35 +238,39 @@ class MyApp extends StatelessWidget {
             return _roleGuard(
               ScannerAsistenciaScreen(
                 evento: evento,
-                attendanceEventId: attendanceEventId != null &&
-                        attendanceEventId.isNotEmpty
+                attendanceEventId:
+                    attendanceEventId != null && attendanceEventId.isNotEmpty
                     ? attendanceEventId
                     : null,
               ),
-              _attendanceRoles,
+              attendanceRouteRoles,
             );
           },
           '/asistencia/importar_personas': (_) =>
-              _roleGuard(const ImportarPersonasScreen(), _attendanceRoles),
+              _roleGuard(const ImportarPersonasScreen(), attendanceRouteRoles),
           '/asistencia/qr_codes': (_) =>
-              _roleGuard(const QRCodesScreen(), _attendanceRoles),
+              _roleGuard(const QRCodesScreen(), attendanceRouteRoles),
           // 🆕 Rutas de gestión sindical
-          '/members': (_) => _roleGuard(const MembersListScreen(), _adminRoles),
+          '/members': (_) =>
+              _roleGuard(const MembersListScreen(), adminRouteRoles),
           '/members/import': (_) =>
-              _roleGuard(const ImportMembersScreen(), _adminRoles),
+              _roleGuard(const ImportMembersScreen(), adminRouteRoles),
           '/attendance/report': (ctx) {
             final eventId =
                 ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
             if (eventId.isEmpty) {
-              return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
+              return _roleGuard(
+                const AsistenciaHomeScreen(),
+                attendanceRouteRoles,
+              );
             }
             return _roleGuard(
               AttendanceReportScreen(eventId: eventId),
-              _attendanceRoles,
+              attendanceRouteRoles,
             );
           },
           '/audit/logs': (_) =>
-              _roleGuard(const AuditLogsScreen(), _adminRoles),
+              _roleGuard(const AuditLogsScreen(), adminRouteRoles),
           '/profile': (_) => _authGuard(const UserProfileScreen()),
         },
       ),
@@ -270,23 +288,25 @@ class _RouteGuard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
-        if (auth.isLoading) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
+        final decision = resolveProtectedRouteAccess(
+          isLoading: auth.isLoading,
+          isSignedIn: auth.isSignedIn,
+          user: auth.user,
+          allowedRoles: allowedRoles,
+        );
 
-        final user = auth.user;
-        if (!auth.isSignedIn || user == null) {
-          return const LoginScreen();
+        switch (decision) {
+          case RouteAccessDecision.loading:
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          case RouteAccessDecision.loginRequired:
+            return const LoginScreen();
+          case RouteAccessDecision.allowed:
+            return child;
+          case RouteAccessDecision.denied:
+            return const _AccessDeniedScreen();
         }
-
-        final roles = allowedRoles;
-        if (roles == null || roles.contains(user.role)) {
-          return child;
-        }
-
-        return const _AccessDeniedScreen();
       },
     );
   }

@@ -551,6 +551,11 @@ class AttendanceService {
       return;
     }
 
+    final canonicalMemberId = userData['memberId'] as String?;
+    if (_sameToken(canonicalMemberId, memberId)) {
+      return;
+    }
+
     final memberDoc = await _firestore
         .collection('members')
         .doc(memberId)
