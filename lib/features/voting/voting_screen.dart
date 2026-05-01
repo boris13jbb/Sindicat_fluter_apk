@@ -52,11 +52,13 @@ class _VotingScreenState extends State<VotingScreen> {
         setState(() {
           // PRIORIDAD: employeeNumber (workerCode) como memberId
           // Fallback: userId si no hay employeeNumber
-          _memberId = user.employeeNumber?.isNotEmpty == true 
-              ? user.employeeNumber 
+          _memberId = user.employeeNumber?.isNotEmpty == true
+              ? user.employeeNumber
               : _userId;
         });
-        debugPrint('🗳️ MemberId inicializado: $_memberId (tipo: ${user.employeeNumber?.isNotEmpty == true ? "employeeNumber" : "userId fallback"})');
+        debugPrint(
+          '🗳️ MemberId inicializado: $_memberId (tipo: ${user.employeeNumber?.isNotEmpty == true ? "employeeNumber" : "userId fallback"})',
+        );
       }
     } catch (e) {
       debugPrint('⚠️ Error al inicializar memberId: $e');
@@ -96,7 +98,10 @@ class _VotingScreenState extends State<VotingScreen> {
           title: 'Votar',
           onNavigateBack: () => Navigator.pop(context),
         ),
-        body: _AlreadyVotedContent(electionId: widget.electionId),
+        body: _AlreadyVotedContent(
+          electionId: widget.electionId,
+          bootstrap: _bootstrap,
+        ),
       );
     }
 
@@ -122,7 +127,10 @@ class _VotingScreenState extends State<VotingScreen> {
           }
 
           if (votedSnap.data == true || _localVoteDone) {
-            return _AlreadyVotedContent(electionId: widget.electionId);
+            return _AlreadyVotedContent(
+              electionId: widget.electionId,
+              bootstrap: _bootstrap,
+            );
           }
 
           return FutureBuilder<ResultsBootstrap>(
@@ -230,7 +238,8 @@ class _VotingScreenState extends State<VotingScreen> {
       voteService: _voteService,
       initialCandidates: initialCandidates,
       onVoteSuccess: () => setState(() => _localVoteDone = true),
-      memberId: _memberId, // ✅ Pasar memberId correcto (employeeNumber o userId)
+      memberId:
+          _memberId, // ✅ Pasar memberId correcto (employeeNumber o userId)
     );
   }
 }
@@ -457,16 +466,17 @@ class _VotingContentState extends State<_VotingContent> {
 
     debugPrint('\n🗳️ Usuario confirmó voto - Iniciando proceso...');
     setState(() => _loading = true);
-    
+
     try {
       debugPrint('   📤 Llamando a castVote...');
       await widget.voteService.castVote(
         electionId: widget.electionId,
         userId: widget.userId,
         candidateId: _selected!.id,
-        memberId: widget.memberId, // 🆕 Pasar memberId para validación de elegibilidad
+        memberId: widget
+            .memberId, // 🆕 Pasar memberId para validación de elegibilidad
       );
-      
+
       debugPrint('   ✅ castVote completado sin errores');
       widget.voteService.recordLocalVote(widget.electionId, widget.userId);
       debugPrint('   ✅ Voto local registrado');
@@ -475,9 +485,9 @@ class _VotingContentState extends State<_VotingContent> {
     } catch (e, stackTrace) {
       debugPrint('   ❌ Error en _confirmar: $e');
       debugPrint('   Stack trace: $stackTrace');
-      
+
       final msg = e.toString().toLowerCase();
-      
+
       // Verificar si es error de voto ya existente
       if (msg.contains('already-exists') ||
           msg.contains('already_exists') ||
@@ -489,9 +499,11 @@ class _VotingContentState extends State<_VotingContent> {
         widget.onVoteSuccess();
         return;
       }
-      
+
       // Verificar si es error de elegibilidad
-      if (msg.contains('elegible') || msg.contains('permiso') || msg.contains('requisito')) {
+      if (msg.contains('elegible') ||
+          msg.contains('permiso') ||
+          msg.contains('requisito')) {
         debugPrint('   ❌ Error de elegibilidad detectado');
         if (mounted) {
           setState(() => _loading = false);
@@ -517,7 +529,7 @@ class _VotingContentState extends State<_VotingContent> {
         }
         return;
       }
-      
+
       // Error genérico
       if (mounted) {
         setState(() => _loading = false);
@@ -539,8 +551,12 @@ class _VotingContentState extends State<_VotingContent> {
 }
 
 class _AlreadyVotedContent extends StatelessWidget {
-  const _AlreadyVotedContent({required this.electionId});
+  const _AlreadyVotedContent({
+    required this.electionId,
+    required this.bootstrap,
+  });
   final String electionId;
+  final Future<ResultsBootstrap> bootstrap;
 
   @override
   Widget build(BuildContext context) {
@@ -556,13 +572,37 @@ class _AlreadyVotedContent extends StatelessWidget {
           ),
           const Text('Gracias por participar.'),
           const SizedBox(height: 32),
-          FilledButton(
-            onPressed: () => Navigator.pushNamed(
-              context,
-              '/voto/results',
-              arguments: electionId,
-            ),
-            child: const Text('Ver Resultados'),
+          FutureBuilder<ResultsBootstrap>(
+            future: bootstrap,
+            builder: (context, snapshot) {
+              final election = snapshot.data?.election;
+              final canViewResults =
+                  election != null &&
+                  election.showResultsAutomatically &&
+                  election.isEnded;
+
+              if (canViewResults) {
+                return FilledButton(
+                  onPressed: () => Navigator.pushNamed(
+                    context,
+                    '/voto/results',
+                    arguments: electionId,
+                  ),
+                  child: const Text('Ver Resultados'),
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  election?.showResultsAutomatically == false
+                      ? 'Los resultados serán publicados por administración.'
+                      : 'Los resultados estarán disponibles cuando finalice la elección.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              );
+            },
           ),
         ],
       ),

@@ -16,6 +16,10 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   final _resetEmailController = TextEditingController();
 
+  bool _isValidEmail(String email) {
+    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -76,9 +80,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    validator: (v) => (v == null || v.trim().isEmpty)
-                        ? 'Ingresa tu email'
-                        : null,
+                    validator: (v) {
+                      final email = v?.trim() ?? '';
+                      if (email.isEmpty) return 'Ingresa tu email';
+                      if (!_isValidEmail(email)) {
+                        return 'Ingresa un email válido';
+                      }
+                      return null;
+                    },
                     onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
                   ),
                   const SizedBox(height: 16),
@@ -189,34 +198,51 @@ class _LoginScreenState extends State<LoginScreen> {
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Recuperar contraseña'),
-          content: TextField(
-            controller: _resetEmailController,
-            decoration: const InputDecoration(labelText: 'Email'),
-            keyboardType: TextInputType.emailAddress,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            Consumer<AuthProvider>(
-              builder: (_, auth, __) {
-                return FilledButton(
-                  onPressed: _resetEmailController.text.trim().isEmpty
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final email = _resetEmailController.text.trim();
+            final isEmailValid = _isValidEmail(email);
+            return AlertDialog(
+              title: const Text('Recuperar contraseña'),
+              content: TextField(
+                controller: _resetEmailController,
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  errorText: email.isEmpty || isEmailValid
                       ? null
-                      : () async {
-                          await auth.sendPasswordResetEmail(
-                            _resetEmailController.text.trim(),
-                          );
-                          if (context.mounted) Navigator.pop(context);
-                        },
-                  child: const Text('Enviar'),
-                );
-              },
-            ),
-          ],
+                      : 'Ingresa un email válido',
+                ),
+                keyboardType: TextInputType.emailAddress,
+                onChanged: (_) => setDialogState(() {}),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                Consumer<AuthProvider>(
+                  builder: (_, auth, __) {
+                    return FilledButton(
+                      onPressed:
+                          email.isEmpty || !isEmailValid || auth.isLoading
+                          ? null
+                          : () async {
+                              await auth.sendPasswordResetEmail(email);
+                              if (context.mounted) Navigator.pop(context);
+                            },
+                      child: auth.isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Enviar'),
+                    );
+                  },
+                ),
+              ],
+            );
+          },
         );
       },
     );

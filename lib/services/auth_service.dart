@@ -75,15 +75,66 @@ class AuthService {
     }
   }
 
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?>
+  _getMemberByEmployeeNumber(String employeeNumber) async {
+    final value = employeeNumber.trim();
+    if (value.isEmpty) return null;
+
+    final byWorkerCode = await _firestore
+        .collection('members')
+        .where('workerCode', isEqualTo: value)
+        .limit(1)
+        .get();
+    if (byWorkerCode.docs.isNotEmpty) return byWorkerCode.docs.first;
+
+    final byMemberNumber = await _firestore
+        .collection('members')
+        .where('memberNumber', isEqualTo: value)
+        .limit(1)
+        .get();
+    if (byMemberNumber.docs.isNotEmpty) return byMemberNumber.docs.first;
+
+    return null;
+  }
+
+  bool _memberIsActive(Map<String, dynamic> data) {
+    final status = (data['status'] as String? ?? 'active').toLowerCase();
+    return status == 'active' || status == 'activo';
+  }
+
+  Future<void> _rollbackCreatedFirebaseUser(User user) async {
+    try {
+      await user.delete();
+    } catch (_) {
+      await _auth.signOut();
+    }
+    _currentUser = null;
+  }
+
   Future<void> signIn(String email, String password) async {
     try {
-      await _auth.signInWithEmailAndPassword(
+      final credential = await _auth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
+      final uid = credential.user?.uid;
+      if (uid == null) {
+        throw Exception('No se pudo identificar el usuario autenticado');
+      }
+
+      final user = await _getUserFromFirestore(uid);
+      if (user == null) {
+        await _auth.signOut();
+        _currentUser = null;
+        throw Exception(
+          'Tu cuenta no tiene perfil asignado. Contacta al administrador.',
+        );
+      }
+      _currentUser = user;
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
     } catch (e) {
+      if (e is Exception) rethrow;
       throw Exception('Error de conexión con el servidor');
     }
   }
@@ -103,20 +154,50 @@ class AuthService {
       final fbUser = cred.user;
       if (fbUser == null) throw Exception('Error al crear usuario');
 
+      final trimmedEmployeeNumber = employeeNumber?.trim();
+      if (trimmedEmployeeNumber == null || trimmedEmployeeNumber.isEmpty) {
+        await _rollbackCreatedFirebaseUser(fbUser);
+        throw Exception('El número de trabajador es obligatorio');
+      }
+
+      final QueryDocumentSnapshot<Map<String, dynamic>>? member;
+      try {
+        member = await _getMemberByEmployeeNumber(trimmedEmployeeNumber);
+      } catch (_) {
+        await _rollbackCreatedFirebaseUser(fbUser);
+        throw Exception(
+          'No se pudo validar el número de trabajador en el padrón.',
+        );
+      }
+
+      if (member == null) {
+        await _rollbackCreatedFirebaseUser(fbUser);
+        throw Exception(
+          'Número de trabajador no registrado en el padrón de socios.',
+        );
+      }
+      if (!_memberIsActive(member.data())) {
+        await _rollbackCreatedFirebaseUser(fbUser);
+        throw Exception('El socio asociado no se encuentra activo.');
+      }
+
       final user = app.AppUser(
         id: fbUser.uid,
         email: fbUser.email ?? email,
         displayName: displayName ?? fbUser.displayName,
         role: UserRole.fromString(role),
-        employeeNumber: employeeNumber?.trim().isEmpty ?? true
-            ? null
-            : employeeNumber,
+        employeeNumber: trimmedEmployeeNumber,
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
-      await _firestore
-          .collection(_usersCollection)
-          .doc(user.id)
-          .set(user.toMap());
+      try {
+        await _firestore
+            .collection(_usersCollection)
+            .doc(user.id)
+            .set(user.toMap());
+      } catch (_) {
+        await _rollbackCreatedFirebaseUser(fbUser);
+        throw Exception('No se pudo completar el registro de usuario.');
+      }
       _currentUser = user;
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));

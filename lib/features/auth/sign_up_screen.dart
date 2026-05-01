@@ -17,6 +17,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _displayNameController = TextEditingController();
   final _employeeNumberController = TextEditingController();
 
+  bool _isValidEmail(String email) {
+    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -90,6 +94,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'El número de trabajador es obligatorio'
                       : null,
+                  onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -100,9 +105,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Ingresa tu email'
-                      : null,
+                  validator: (v) {
+                    final email = v?.trim() ?? '';
+                    if (email.isEmpty) return 'Ingresa tu email';
+                    if (!_isValidEmail(email)) {
+                      return 'Ingresa un email válido';
+                    }
+                    return null;
+                  },
+                  onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -167,8 +178,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 const SizedBox(height: 24),
                 Consumer<AuthProvider>(
                   builder: (_, auth, __) {
+                    final email = _emailController.text.trim();
                     final canSubmit =
-                        _emailController.text.trim().isNotEmpty &&
+                        email.isNotEmpty &&
+                        _isValidEmail(email) &&
                         _employeeNumberController.text.trim().isNotEmpty &&
                         _passwordController.text.isNotEmpty &&
                         _passwordController.text ==

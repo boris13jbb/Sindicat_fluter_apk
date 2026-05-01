@@ -38,7 +38,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 | Comando | Resultado | Observación |
 |---|---|---|
 | `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
-| `flutter test --no-pub --reporter expanded` | Correcto | 2 pruebas pasan: smoke de login sin sesión y configuración de columnas de importación. |
+| `flutter test --no-pub --reporter expanded` | Correcto | 3 pruebas pasan: smoke de login sin sesión, configuración de columnas de importación y CSV con comillas/comas internas. |
 | `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run. |
 | Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
 
@@ -98,7 +98,7 @@ Aplicación
 │   └── Importación masiva
 └── Auditoría
     ├── Audit logs
-    └── Events legacy
+    └── Historial de eventos adaptado desde audit_logs
 ```
 
 ### Módulos y dependencias
@@ -114,7 +114,7 @@ Aplicación
 | Asistencia legacy | Registrar asistencias operativas | Asistencia, Evento, Scanner, Registro Manual, Personas, QR, Exportar | Crear eventos, registrar asistencia, importar personas, generar QR, exportar | `eventos`, `personas`, `asistencias`, `members` |
 | Attendance nuevo | Reporte automático de faltas | Reporte de Asistencia | Calcular presentes/faltantes | `attendance_events`, `members` |
 | Socios | Administrar padrón sindical | Socios, Formulario, Importar | Buscar, filtrar, crear, editar, activar/desactivar, importar | `members`, `import_logs`, `audit_logs` |
-| Auditoría | Trazabilidad de acciones | Audit Logs, Historial de Eventos | Consultar y filtrar registros | `audit_logs`, `events` |
+| Auditoría | Trazabilidad de acciones | Audit Logs, Historial de Eventos | Consultar y filtrar registros | `audit_logs`; `events` queda como compatibilidad legacy |
 
 ## 4. Inventario detallado de pantallas
 
@@ -176,15 +176,15 @@ Aplicación
 
 **Estados posibles:** cargando, error, éxito, autenticado, formulario inválido.
 
-**Observaciones técnicas o funcionales:** existe validación de campos obligatorios, pero no validación de formato de email.
+**Observaciones técnicas o funcionales:** existe validación de campos obligatorios y formato de email en login y recuperación de contraseña.
 
-**Problemas encontrados:** el botón `Enviar` del diálogo de recuperación puede quedar deshabilitado si el campo inicia vacío, porque el `TextField` no dispara `setState` ni listener dentro del diálogo.
+**Problemas encontrados:** corregido localmente. El botón `Enviar` del diálogo de recuperación se reevalúa al escribir, se bloquea con email inválido y muestra error local antes de llamar a Firebase. Si Firebase autentica pero no existe `users/{uid}`, el servicio cierra sesión y muestra mensaje claro.
 
-**Huecos o pendientes por corregir:** falta validación de formato email y manejo visible para usuario autenticado sin documento `users`.
+**Huecos o pendientes por corregir:** falta prueba automatizada específica de recuperación y prueba con una cuenta real sin documento `users/{uid}`.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** agregar listener al controlador de recuperación, validar email con regex y mostrar mensajes estandarizados.
+**Recomendación:** mantener reactividad del diálogo, cubrir validación de email con prueba widget y validar manualmente el caso de cuenta sin perfil Firestore.
 
 ### Pantalla: Registro
 
@@ -198,27 +198,28 @@ Aplicación
 
 **Flujo paso a paso:**
 1. El usuario completa datos.
-2. La UI valida número de trabajador, email no vacío, contraseña mínima y confirmación.
+2. La UI valida número de trabajador, formato de email, contraseña mínima y confirmación.
 3. `AuthProvider.signUpWithEmployeeNumber` llama a `AuthService`.
 4. Se crea usuario en Firebase Auth.
-5. Se crea documento en `users/{uid}`.
-6. Se redirige a Home si la sesión queda activa.
+5. `AuthService` valida que el número de trabajador exista en `members` por `workerCode` o `memberNumber` y que el socio esté activo.
+6. Se crea documento en `users/{uid}`.
+7. Se redirige a Home si la sesión queda activa.
 
-**Validaciones esperadas:** número de trabajador obligatorio y único, email válido, contraseña mínima, confirmación igual, rol seguro por defecto.
+**Validaciones esperadas:** número de trabajador obligatorio, existente en padrón activo, email válido, contraseña mínima, confirmación igual, rol seguro por defecto.
 
-**Datos utilizados:** `email`, `displayName`, `employeeNumber`, `role`, Firebase Auth, `users`.
+**Datos utilizados:** `email`, `displayName`, `employeeNumber`, `role`, Firebase Auth, `users`, `members`.
 
 **Estados posibles:** formulario incompleto, cargando, error, éxito.
 
-**Observaciones técnicas o funcionales:** `AuthProvider` usa rol `VOTER` por defecto, mientras `AuthService` tiene default `USER`; en el flujo actual de UI se pasa `VOTER`.
+**Observaciones técnicas o funcionales:** `AuthProvider` y `AuthService` usan rol `VOTER` por defecto en auto-registro; las reglas Firestore también exigen `role == 'VOTER'`.
 
-**Problemas encontrados:** corregido localmente. Las reglas Firestore ahora restringen `create` de `users/{uid}` al propio usuario, con campos permitidos y rol `VOTER`.
+**Problemas encontrados:** corregido localmente. Las reglas Firestore ahora restringen `create` de `users/{uid}` al propio usuario, con campos permitidos y rol `VOTER`; la UI valida formato de email y actualiza el estado del botón al cambiar email/número de trabajador; `AuthService` valida padrón activo antes de escribir el perfil y revierte el usuario Auth si falla.
 
-**Huecos o pendientes por corregir:** falta validación de formato email y unicidad de número de trabajador frente a `members`.
+**Huecos o pendientes por corregir:** falta prueba con Firebase real/emulator para confirmar reglas, lectura de `members` y rollback de cuenta Auth.
 
 **Prioridad de corrección:** Alta.
 
-**Recomendación:** mantener la restricción de rol en reglas, agregar pruebas con Firebase Emulator y validar relación con padrón si el negocio lo requiere.
+**Recomendación:** mantener la restricción de rol en reglas, agregar pruebas con Firebase Emulator y validar el flujo con socios activos/inactivos/no encontrados.
 
 ### Pantalla: Home / Dashboard principal
 
@@ -449,9 +450,9 @@ Aplicación
 
 **Problemas encontrados:** reglas Firestore de actualización parcial usan `request.resource.data.keys().hasOnly(...)`, lo que probablemente bloquea incrementos en documentos existentes porque `request.resource.data` representa el documento completo post-update. Debe usarse `diff(resource.data).affectedKeys()`.
 
-**Huecos o pendientes por corregir:** no hay prueba automatizada de voto con reglas; `showResultsAutomatically` no controla el botón de resultados después de votar.
+**Huecos o pendientes por corregir:** no hay prueba automatizada de voto con reglas; el botón de resultados después de votar ya respeta `showResultsAutomatically` y fin de elección, pero falta prueba widget/integración.
 
-**Prioridad de corrección:** Alta.
+**Prioridad de corrección:** Media.
 
 **Recomendación:** corregir reglas de conteo, probar con Firebase Emulator y decidir política de visibilidad de resultados.
 
@@ -480,44 +481,44 @@ Aplicación
 
 **Observaciones técnicas o funcionales:** el total mostrado se calcula por suma de candidatos, no por `election.totalVotes`.
 
-**Problemas encontrados:** votantes pueden acceder a resultados por ruta o desde pantalla de voto registrado sin validar `showResultsAutomatically`.
+**Problemas encontrados:** corregido localmente. Votantes ya no pueden ver resultados por ruta directa ni desde la pantalla de voto registrado si la elección no terminó o si `showResultsAutomatically` está desactivado.
 
-**Huecos o pendientes por corregir:** falta control de visibilidad de resultados para votantes.
+**Huecos o pendientes por corregir:** falta prueba automatizada para acceso directo por ruta y política de publicación/cierre.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** aplicar regla funcional: resultados visibles solo para admin o al finalizar si `showResultsAutomatically` está activo.
+**Recomendación:** mantener regla funcional: resultados visibles para admin o al finalizar si `showResultsAutomatically` está activo.
 
 ### Pantalla: Historial de Eventos de Voto
 
 **Ruta o ubicación:** `/voto/event_history`.
 
-**Objetivo de la pantalla:** listar eventos legacy de votación desde colección `events`.
+**Objetivo de la pantalla:** listar eventos de auditoría en formato de historial desde `audit_logs`.
 
 **Elementos visibles:** app bar, filtro por entidad, lista de eventos con tipo, descripción, fecha, usuario y error.
 
 **Acciones disponibles:** filtrar, reintentar, volver.
 
 **Flujo paso a paso:**
-1. Escucha `events` ordenado por timestamp.
+1. Escucha `audit_logs` ordenado por timestamp.
 2. Si hay filtro, filtra en cliente por entidad.
 3. Muestra tarjetas o estado vacío.
 
 **Validaciones esperadas:** permisos de lectura, índice por timestamp.
 
-**Datos utilizados:** `events`.
+**Datos utilizados:** `audit_logs`; `events` queda disponible solo para compatibilidad legacy mediante `EventService.logEvent()`.
 
 **Estados posibles:** cargando, vacío, error de permisos, error de índice, offline, con datos.
 
-**Observaciones técnicas o funcionales:** `EventService.logEvent` no aparece usado en el código revisado.
+**Observaciones técnicas o funcionales:** `EventService.getAllEvents()` fue adaptado para mapear `AuditLog` a `VotoEvent`; `EventService.logEvent()` permanece como método legacy para escrituras directas en `events` si algún cliente antiguo lo usa.
 
-**Problemas encontrados:** la pantalla puede quedar siempre vacía si ningún flujo escribe en `events`; la app usa principalmente `audit_logs`.
+**Problemas encontrados:** corregido localmente el riesgo de pantalla vacía por colección `events` sin escrituras activas; falta validar con datos reales de `audit_logs`.
 
-**Huecos o pendientes por corregir:** definir si `events` sigue vigente o migrar a `audit_logs`.
+**Huecos o pendientes por corregir:** definir si `events` se elimina formalmente, se migra o se documenta como compatibilidad legacy.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** consolidar auditoría en una sola colección o escribir ambos registros de forma deliberada.
+**Recomendación:** mantener `audit_logs` como fuente canónica de auditoría, documentar `events` como legado y validar permisos/índices en Firestore real.
 
 ### Pantalla: Control de Asistencia
 
@@ -836,15 +837,15 @@ Aplicación
 
 **Estados posibles:** cargando, vacío, error, generando, éxito.
 
-**Observaciones técnicas o funcionales:** `generateExcelExportStatic` genera CSV en bytes, pero se comparte como `.xlsx`.
+**Observaciones técnicas o funcionales:** `generateExcelExportStatic` genera un XLSX real con `package:excel` y hoja `Asistencias`.
 
-**Problemas encontrados:** posible inconsistencia de formato real del archivo Excel.
+**Problemas encontrados:** corregido localmente el riesgo de archivo CSV compartido como `.xlsx`; queda pendiente validar apertura manual con datos reales.
 
 **Huecos o pendientes por corregir:** falta filtro de exportación por evento/fecha.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** generar XLSX real con librería Excel o renombrar exportación como CSV.
+**Recomendación:** agregar prueba manual/automatizada que verifique que el archivo `.xlsx` generado abre correctamente en Excel/LibreOffice y conserva caracteres especiales.
 
 ### Pantalla: Importar Personas desde Excel
 
@@ -873,13 +874,13 @@ Aplicación
 
 **Observaciones técnicas o funcionales:** aunque permite elegir CSV, el flujo siempre usa `Excel.decodeBytes`.
 
-**Problemas encontrados:** seleccionar CSV puede fallar o no procesarse correctamente; textos de instrucciones son demasiado específicos y no genéricos.
+**Problemas encontrados:** aunque el selector permite `.csv`, el código llama siempre a `Excel.decodeBytes()`: los CSV no son tratados como texto delimitado en esta pantalla (comportamiento distinto a `/members/import`, que usa `ImportService.importFromCsv`).
 
-**Huecos o pendientes por corregir:** falta parser CSV real y mapeo configurable de columnas.
+**Huecos o pendientes por corregir:** ramificar por extensión (CSV con parser de texto robusto vs Excel con `excel`) o reutilizar un importador único documentado para personas legacy.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** separar importador legacy CSV/Excel y mostrar plantilla descargable.
+**Recomendación:** alinear comportamiento entre extensión de archivo y código, o limitar la UI solo a `.xlsx`/`.xls` hasta implementar CSV.
 
 ### Pantalla: Reporte de Asistencia
 
@@ -908,11 +909,11 @@ Aplicación
 
 **Problemas encontrados:** alta probabilidad de error "Evento no encontrado" al abrir desde eventos legacy.
 
-**Huecos o pendientes por corregir:** no hay pantalla de creación para `attendance_events` en rutas revisadas.
+**Huecos o pendientes por corregir:** existe `AttendanceService.createEvent()` en código (escribe `attendance_events`), pero **no hay pantalla ni ruta** que lo invoquen; la ruta `/asistencia/crear_evento` solo persiste eventos legacy en `eventos` vía `AsistenciaService.createEvento()`.
 
 **Prioridad de corrección:** Alta.
 
-**Recomendación:** unificar el módulo de asistencia o adaptar el reporte a `eventos/asistencias`.
+**Recomendación:** exponer UI de alta para `attendance_events` (lugar/convocados) o definir proceso de sincronización/migración desde `eventos` hacia ese modelo hasta que uno quede como canónico.
 
 ### Pantalla: Gestión de Socios
 
@@ -970,15 +971,15 @@ Aplicación
 
 **Estados posibles:** formulario, cargando, error, éxito.
 
-**Observaciones técnicas o funcionales:** valida email opcional y obliga workerCode.
+**Observaciones técnicas o funcionales:** valida obligatorios; en alta y edición se comprueba unicidad contra Firestore para `memberNumber`, `documentId` y `workerCode` antes de persistir (`MembersService`).
 
-**Problemas encontrados:** `MembersService.createMember` valida duplicado por número socio y documento, pero no por `workerCode`.
+**Problemas encontrados:** formato de teléfono y documento sigue siendo permisivo (sin máscaras ni validación estricta homogénea en todos los flujos).
 
-**Huecos o pendientes por corregir:** falta validación de unicidad de workerCode y formato teléfono/documento.
+**Huecos o pendientes por corregir:** reglas de formato acordadas con negocio (teléfono/documento); pruebas automatizadas de duplicados y conflictos en el servicio de socios.
 
-**Prioridad de corrección:** Alta.
+**Prioridad de corrección:** Media.
 
-**Recomendación:** agregar índice lógico/validación de workerCode y test de duplicados.
+**Recomendación:** documentar el formato esperado en UI y validar coherencia entre formulario manual e importación.
 
 ### Pantalla: Importar Socios
 
@@ -996,25 +997,25 @@ Aplicación
 3. Detecta tipo.
 4. Normaliza columnas.
 5. Valida filas.
-6. Verifica duplicados por número socio.
+6. Detecta duplicados en archivo y contra Firestore (número de socio, `workerCode`, documento cuando aplica).
 7. Inserta en batches.
 8. Guarda `import_logs` y `audit_logs`.
 
-**Validaciones esperadas:** columnas obligatorias, email válido, duplicados, auth.
+**Validaciones esperadas:** columnas obligatorias, email válido si viene informado, duplicados, auth.
 
 **Datos utilizados:** archivo local, `members`, `import_logs`, `audit_logs`.
 
 **Estados posibles:** sin archivo, archivo seleccionado, procesando, éxito, éxito parcial, error.
 
-**Observaciones técnicas o funcionales:** la UI dice que `documento` es opcional, pero `ImportService.requiredColumns` exige `documento`.
+**Observaciones técnicas o funcionales:** `ImportService.requiredColumns` es `numero_socio`, `nombres`, `apellidos`; `documento` es opcional (alineado con la pantalla cuando las instrucciones están actualizadas). Existen `columnMappings` y normalización de encabezados para nombres alternativos de columnas (`worker_code`, sinónimos de documento, etc.). `ImportService.parseCsv()` usa `CsvToListConverter`, normaliza saltos CRLF/CR/LF y conserva campos entre comillas con comas internas.
 
-**Problemas encontrados:** inconsistencia funcional entre instrucciones y servicio; parser CSV manual no soporta comillas/comas internas; duplicados por workerCode no se validan.
+**Problemas encontrados:** corregido localmente el riesgo de datos mal partidos en CSV con comillas/comas internas; falta vista previa de filas antes de confirmar escritura masiva.
 
-**Huecos o pendientes por corregir:** falta plantilla descargable y validación previa antes de importar.
+**Huecos o pendientes por corregir:** plantilla descargable desde la app; prevalidación/preview antes de importar; ampliar pruebas con comillas escapadas y saltos de línea dentro de campos.
 
-**Prioridad de corrección:** Alta.
+**Prioridad de corrección:** Media.
 
-**Recomendación:** alinear columnas obligatorias, usar parser CSV robusto y validar workerCode/documentId/memberNumber.
+**Recomendación:** mantener el contrato de columnas y parser CSV cubiertos por tests (`test/import_service_test.dart`) y agregar preview antes de escritura masiva.
 
 ### Pantalla: Registro de Auditoría
 
@@ -1055,28 +1056,30 @@ Aplicación
 **Flujo ideal:**
 1. Usuario abre la app.
 2. Ingresa email y contraseña.
-3. El sistema valida campos obligatorios.
+3. El sistema valida campos obligatorios y formato de email.
 4. Firebase Auth valida credenciales.
 5. Se carga `users/{uid}`.
 6. Se redirige a Home.
 
-**Flujos alternativos:** credenciales inválidas, usuario sin documento Firestore, Firebase no inicializado, red no disponible.
+**Flujos alternativos:** credenciales inválidas, usuario sin documento Firestore (se cierra sesión y muestra mensaje), Firebase no inicializado, red no disponible.
 
 **Errores posibles:** `invalid-email`, `user-not-found`, `wrong-password`, error genérico de conexión.
 
-**Mejoras recomendadas:** validación email, pantalla de recuperación funcional, error claro si falta perfil.
+**Mejoras recomendadas:** prueba automatizada de recuperación, validación con Firebase real y error claro si falta perfil.
 
 ### Flujo: Registro de usuario votante
 
 1. Usuario abre Registro.
 2. Completa nombre, número trabajador, email y contraseña.
 3. Se crea cuenta Firebase Auth.
-4. Se crea documento `users`.
-5. Se asigna rol `VOTER` desde UI.
+4. Se valida número de trabajador contra `members` por `workerCode` o `memberNumber`.
+5. Si no existe o está inactivo, se elimina/cierra la cuenta recién creada y se muestra error.
+6. Si es válido, se crea documento `users`.
+7. Se asigna rol `VOTER` desde UI.
 
-**Riesgo:** reglas actuales no restringen rol en `create`.
+**Riesgo mitigado en reglas locales:** `firestore.rules` restringe `users` create al propietario y exige entre otros campos permitidos que `role == 'VOTER'` (ver bitácora E-002).
 
-**Mejora:** regla `allow create` debe validar `request.resource.data.role == 'VOTER'`.
+**Pendiente:** validar en Firebase Emulator o proyecto real que ningún cliente antiguo o binario compilado antes del despliegue cree roles elevados.
 
 ### Flujo: Crear elección y candidatos
 
@@ -1161,25 +1164,25 @@ Aplicación
 
 | Módulo | Funcionalidad | Descripción | Estado | Observaciones | Prioridad |
 |---|---|---|---|---|---|
-| Login | Iniciar sesión | Acceso por email/password | Parcial | Funciona por diseño, falta validar email y error de perfil faltante | Alta |
-| Login | Recuperar contraseña | Envía correo Firebase | Parcial | Botón puede quedar deshabilitado por falta de listener | Media |
-| Registro | Crear usuario | Crea Firebase Auth y `users` | Parcial | Reglas locales restringen rol `VOTER`; falta prueba con Firebase real/emulator | Media |
+| Login | Iniciar sesión | Acceso por email/password | Funcional/parcial | Validación local de email y error por perfil Firestore faltante implementados; falta prueba manual con usuario real | Alta |
+| Login | Recuperar contraseña | Envía correo Firebase | Funcional/parcial | Botón reacciona al escribir y valida formato de email; falta prueba con Firebase real | Baja |
+| Registro | Crear usuario | Crea Firebase Auth y `users` | Funcional/parcial | Email validado localmente, padrón activo requerido y reglas restringen rol `VOTER`; falta prueba con Firebase real/emulator | Media |
 | Home | Navegación por rol | Muestra módulos según rol | Funcional/parcial | Guard de rutas implementado; falta prueba manual por rol real | Media |
 | Perfil | QR personal | Genera QR desde socio | Parcial | Depende de matching heurístico con `members` | Media |
 | Elecciones | Listar elecciones | Streams Firestore | Funcional/parcial | Votantes filtran `isVisibleToVoters`, `isActive` y rango de fechas; falta prueba con datos reales | Media |
 | Elecciones | Crear/editar | CRUD elección | Funcional | Requiere unificar estados | Media |
 | Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Funcional/parcial | Eliminación bloqueada si el candidato tiene votos; falta test automatizado | Media |
 | Voto | Emitir voto | Batch de voto y contadores | Parcial | Reglas locales compilan y validan voto propio/contadores; falta suite de reglas con emulator | Alta |
-| Resultados | Ver conteos | Ranking en tiempo real | Parcial | Visibilidad para votantes no usa `showResultsAutomatically` | Media |
+| Resultados | Ver conteos | Ranking en tiempo real | Funcional/parcial | Visibilidad para votantes respeta `showResultsAutomatically` y fin de elección; falta test automatizado | Media |
 | Asistencia | Crear evento legacy | Crea `eventos` | Funcional | Modelo distinto a `attendance_events` | Alta |
 | Asistencia | Scanner | QR/código/manual | Funcional/parcial | Usa evento real seleccionado o inicial; falta prueba de cámara/dispositivo | Media |
 | Asistencia | Registro manual | Alta manual con justificación | Parcial | Selector no escala | Media |
-| Asistencia | Exportar | CSV/PDF/Excel | Parcial | Excel puede ser CSV con extensión XLSX | Media |
+| Asistencia | Exportar | CSV/PDF/Excel | Funcional/parcial | XLSX real generado con `package:excel`; falta prueba manual de apertura con datos reales y filtros por evento/fecha | Media |
 | Asistencia | Reporte faltantes | Calcula ausentes | Funcional/parcial | Soporta `attendance_events` y fallback legacy `eventos/asistencias/personas`; falta prueba con datos reales | Media |
 | Socios | CRUD | Crear/editar/activar/desactivar | Funcional/parcial | Unicidad de número, documento y `workerCode` validada en crear/actualizar; falta prueba automatizada con mocks/emulator | Media |
-| Socios | Importación masiva | CSV/Excel a `members` | Funcional/parcial | `documento` ya es opcional y hay control de duplicados en archivo/Firestore; falta parser CSV robusto | Media |
+| Socios | Importación masiva | CSV/Excel a `members` | Funcional/parcial | `documento` ya es opcional, hay control de duplicados y parser CSV con soporte de comillas/comas internas; falta preview y prueba con datos reales | Media |
 | Auditoría | `audit_logs` | Registra acciones críticas | Parcial | Sin paginación, índices pendientes | Media |
-| Auditoría | `events` legacy | Historial de eventos voto | Pendiente | No se encontró uso de `logEvent` | Media |
+| Auditoría | Historial de eventos | Mapea `audit_logs` a eventos visuales | Funcional/parcial | `events` queda como compatibilidad legacy; falta validar con datos reales | Media |
 
 ## 7. Errores, inconsistencias y problemas encontrados
 
@@ -1193,20 +1196,22 @@ Aplicación
 | E-006 | Socios importación | Corregido localmente: documento opcional | `requiredColumns` queda en `numero_socio`, `nombres`, `apellidos`; `documento` no es obligatorio. | Evita rechazos inesperados de importación. | Media | Mantener prueba unitaria del contrato de columnas. |
 | E-007 | Socios | Corregido localmente: unicidad de identificadores | Crear/actualizar validan `memberNumber`, `documentId` y `workerCode`; importación valida duplicados en archivo y Firestore. | Reduce sobrescrituras o socios duplicados. | Media | Agregar pruebas con mocks/emulator para altas y ediciones. |
 | E-008 | Candidatos | Corregido localmente: bloqueo de eliminación con votos | UI y servicio impiden eliminar candidatos con `voteCount > 0` o votos existentes en `votes`. | Reduce inconsistencias en resultados. | Media | Agregar prueba de servicio/UI para candidato con votos. |
-| E-009 | Tests | Corregido localmente: test por defecto reemplazado | La suite actual pasa con smoke real de login sin sesión y test de contrato de importación. | La base de QA vuelve a ser ejecutable. | Media | Ampliar cobertura de login, roles, voto y asistencia. |
-| E-010 | Login | Recuperación de contraseña | Botón Enviar puede no habilitarse al escribir. | Usuario no puede solicitar reset. | Media | Listener/setState en diálogo. |
-| E-011 | `events` | Historial sin escrituras | `EventService.logEvent` no se usa. | Historial de eventos vacío. | Media | Consolidar con `audit_logs`. |
-| E-012 | Exportar asistencia | XLSX no real | Genera CSV bytes con extensión `.xlsx`. | Confusión o error al abrir archivo. | Media | Generar XLSX real o exportar como CSV. |
-| E-013 | CSV import | Parser manual | No soporta comillas/comas internas. | Datos corruptos en importaciones reales. | Media | Usar paquete CSV robusto. |
+| E-009 | Tests | Corregido localmente: test por defecto reemplazado | La suite actual pasa con smoke real de login sin sesión, contrato de importación y parser CSV con comillas/comas internas. | La base de QA vuelve a ser ejecutable. | Media | Ampliar cobertura de login, roles, voto y asistencia. |
+| E-010 | Login | Corregido localmente: recuperación de contraseña reactiva y email válido | El botón Enviar se habilita/deshabilita al escribir, valida formato de email y muestra carga durante envío. | Usuario puede solicitar reset desde diálogo con menor ruido de errores evitables. | Baja | Agregar prueba widget y validación con Firebase real. |
+| E-011 | Historial de eventos | Corregido localmente: consolidación con `audit_logs` | `EventService.getAllEvents()` lee `audit_logs` y adapta `AuditLog` a `VotoEvent`; `events` queda como legacy. | Evita historial vacío por falta de escrituras en `events`. | Media | Validar con registros reales, permisos e índices. |
+| E-012 | Exportar asistencia | Corregido localmente: XLSX real | `generateExcelExportStatic` ahora crea libro XLSX con `package:excel`, hoja y columnas de asistencia. | Reduce confusión/error al abrir el archivo exportado. | Media | Validar apertura manual con Excel/LibreOffice y datos reales. |
+| E-013 | CSV import | Corregido localmente: parser CSV robusto | `parseCsv` usa `CsvToListConverter`, normaliza saltos de línea y respeta campos entre comillas con comas internas. | Reduce corrupción de datos en importaciones reales. | Media | Agregar casos con comillas escapadas, saltos de línea internos y archivos reales. |
 | E-014 | Permisos UI | Corregido localmente: rutas con guard | Las rutas internas se protegen por autenticación y roles; usuarios no autorizados ven "Sin permisos". | UX más clara y menor exposición accidental. | Media | Agregar tests de rutas por rol y validación manual. |
 | E-015 | Performance | Lecturas completas | Members/personas/asistencias se cargan completos en varias pantallas. | Rendimiento bajo en padrones grandes. | Media | Paginación, filtros, índices. |
+| E-016 | Login | Corregido localmente: cuenta sin perfil Firestore | `AuthService.signIn` valida que exista `users/{uid}` después de Firebase Auth; si falta, cierra sesión y devuelve mensaje claro. | Evita sesión fantasma sin navegación ni explicación. | Alta | Probar con cuenta real sin documento `users/{uid}`. |
+| E-017 | Registro | Corregido localmente: email válido, botón reactivo y padrón activo | `SignUpScreen` valida formato de email y `AuthService` exige socio activo en `members` por `workerCode` o `memberNumber`; si falla, revierte/cierra el usuario Auth recién creado. | Reduce rechazos tardíos, usuarios huérfanos y cuentas sin socio asociado. | Media | Agregar prueba widget/emulator con socio activo, inactivo y no encontrado. |
 
 ### Clasificación por tipo
 
-- Errores funcionales: E-010; corregidos localmente: E-001, E-003, E-004, E-005, E-008, E-009.
-- Errores visuales/UX: E-012, mensajes extensos en perfil/importación, falta de filtros.
+- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011 y E-016; pendientes funcionales relevantes: reporte con datos reales, reset con Firebase real y prueba manual de cuenta sin perfil/historial.
+- Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012 queda corregido localmente con pendiente de validación manual.
 - Errores de navegación: E-014 corregido localmente, pendiente validación manual.
-- Errores de validación: E-013; corregidos localmente: E-002, E-006, E-007.
+- Errores de validación: corregidos localmente E-002, E-006, E-007, E-013 y E-017; faltan pruebas con archivos reales y emulator.
 - Errores de permisos: E-001, E-002, E-014 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
 - Errores de rendimiento: E-015.
 - Errores de contenido: instrucciones contradictorias en importación.
@@ -1215,6 +1220,7 @@ Aplicación
 
 | ID | Hueco detectado | Módulo relacionado | Riesgo | Recomendación | Prioridad |
 |---|---|---|---|---|---|
+| H-013 | Alta de eventos del modelo nuevo sin UI dedicada (`attendance_events` vs solo legacy `eventos`) | Asistencia / reporte nuevo | Convocados/metadata nuevos incompletos o reportes sólo pobados por adaptador | Pantalla que llame `AttendanceService.createEvent` o flujo único documentado entre modelos | Alta |
 | H-001 | Falta validación manual/test específico del guard por rol | Navegación | Regresión futura en acceso a pantallas por URL/ruta | Crear pruebas widget por rol y ejecutar con cuentas reales | Media |
 | H-002 | Cobertura baja de login/voto/asistencia | QA | Regresiones no detectadas en flujos críticos | Crear tests de widgets y servicios con mocks/emulator | Alta |
 | H-003 | No hay Firebase Emulator tests para reglas | Seguridad | Reglas rotas en producción | Agregar suite de reglas y Java 21+ local | Alta |
@@ -1224,9 +1230,9 @@ Aplicación
 | H-007 | No hay búsqueda avanzada en registro manual | Asistencia | Difícil operar con muchos socios | Selector searchable | Media |
 | H-008 | Falta accesibilidad formal | UI | Dificultad para usuarios con lectores | Semántica, labels, contrastes, tamaños | Media |
 | H-009 | Falta responsive verificado | Multiplataforma | Layouts pueden romperse | Pruebas visuales Web/Windows/mobile | Media |
-| H-010 | Falta trazabilidad homogénea | Auditoría | Logs duplicados/incompletos | Unificar `events` y `audit_logs` | Media |
-| H-011 | Falta recuperación de usuario sin perfil | Auth | Sesión válida sin datos funcionales | Flujo de reparación/admin | Media |
-| H-012 | Falta control de visibilidad de resultados | Votación | Resultados visibles antes de tiempo | Usar `showResultsAutomatically` | Media |
+| H-010 | Trazabilidad parcialmente consolidada | Auditoría | `events` sigue existiendo como legacy aunque la pantalla ya lee `audit_logs` | Documentar fuente canónica y política de migración/retención | Media |
+| H-011 | Cuenta sin perfil ya bloqueada con mensaje; falta flujo de reparación | Auth | El usuario entiende el problema, pero depende de intervención administrativa | Pantalla/proceso admin para crear o reparar `users/{uid}` | Media |
+| H-012 | Falta test de visibilidad de resultados | Votación | Regresión futura en publicación anticipada | Cubrir ruta directa y pantalla post-voto con tests | Media |
 
 ## 9. Recomendaciones de mejora
 
@@ -1236,10 +1242,10 @@ Aplicación
 | Arquitectura | Asistencia legacy vs nueva mitigada con adaptador de reporte | Definir una fuente canónica o formalizar adaptadores | Menos errores en reportes/elegibilidad | Alta |
 | QA | Cobertura automatizada mínima | Ampliar pruebas reales de autenticación, home, rutas y formularios | Suite útil y confiable | Alta |
 | UX | Rutas administrativas ya guardadas localmente, sin test por rol | Cubrir `_RouteGuard` con pruebas y matriz rol-ruta | Experiencia clara y segura | Media |
-| Datos | WorkerCode corregido localmente, sin test dedicado | Mantener validación en crear/actualizar/importar y agregar prueba de servicio | Evita duplicidad crítica | Media |
+| Datos | WorkerCode cubierto en formulario/import; sin suite amplia dedicada | Mantener validaciones y ampliar pruebas de servicio/mock | Evita duplicidad crítica | Media |
 | Rendimiento | Lecturas completas | Paginación, filtros Firestore, cache | Mejor desempeño con padrones grandes | Media |
-| Importación | CSV manual; contrato de columnas ya alineado | Parser robusto, plantilla y prevalidación | Menos errores operativos | Media |
-| Auditoría | Dos colecciones de auditoría | Consolidar o documentar responsabilidades | Trazabilidad completa | Media |
+| Importación | `ImportService`: CSV socios ya soporta comillas/comas internas; personas legacy siguen Excel-only | Ampliar pruebas con archivos reales, plantilla desde app y preview | Menos errores operativos | Media |
+| Auditoría | `audit_logs` ya alimenta ambas pantallas; `events` sigue legacy | Documentar responsabilidades, migración/retención y permisos | Trazabilidad completa | Media |
 | Accesibilidad | No verificada | Agregar labels, contraste, navegación teclado | Cumplimiento y usabilidad | Media |
 | Documentación | Falta matriz rol-permiso vigente | Documentar roles vs pantallas vs reglas | Mejor alineación producto/desarrollo | Alta |
 
@@ -1247,9 +1253,9 @@ Aplicación
 
 | Ítem | Estado | Observación |
 |---|---|---|
-| Login funcional | Parcial | Flujo implementado, falta validación email y reset presenta riesgo. |
+| Login funcional | Parcial | Flujo implementado con validación de email y control de perfil faltante; falta prueba específica de reset y cuenta real sin perfil. |
 | Registro funcional | Parcial | Implementado; reglas locales restringen rol, falta validar con Firebase real/emulator. |
-| Validaciones de formularios | Parcial | Hay obligatorios, faltan formatos/unicidad en varios módulos. |
+| Validaciones de formularios | Parcial | Hay obligatorios, email en login/registro y unicidad de socios reforzada; faltan formatos estrictos (tel./documento) en algunos puntos. |
 | Manejo de errores | Parcial | Hay mensajes, pero algunos son genéricos o solo `debugPrint`. |
 | Responsive design | Pendiente | No se verificó visualmente; algunos layouts tienen adaptaciones. |
 | Roles y permisos | Parcial | UI y rutas ya incluyen guard; falta validación manual/test por rol real. |
@@ -1258,9 +1264,9 @@ Aplicación
 | Estados vacíos | Completo/parcial | Implementados en listados principales. |
 | Mensajes al usuario | Parcial | Presentes, pero algunos son excesivos o inconsistentes. |
 | Navegación consistente | Parcial | Rutas nombradas claras; guard y adaptación de operador implementados; falta prueba manual. |
-| Auditoría | Parcial | `audit_logs` activo; `events` legacy no conectado. |
-| Exportaciones | Parcial | CSV/PDF; Excel requiere revisión de formato real. |
-| Pruebas automatizadas | Parcial | 2 pruebas pasan; cobertura aún mínima para flujos críticos. |
+| Auditoría | Parcial | `audit_logs` activo; Historial de Eventos ya se alimenta desde `audit_logs`; `events` queda legacy. |
+| Exportaciones | Parcial | CSV/PDF/XLSX real; falta prueba manual de apertura y filtros por evento/fecha. |
+| Pruebas automatizadas | Parcial | 3 pruebas pasan; cobertura aún mínima para flujos críticos. |
 | Análisis estático | Completo/parcial | `flutter analyze --no-pub` sin issues al 2026-05-01. |
 
 ## 11. Casos de prueba sugeridos
@@ -1269,8 +1275,8 @@ Aplicación
 |---|---|---|---|---|
 | TC-001 | Login exitoso | Ingresar email/password válidos | Redirige a Home y muestra rol | Alta |
 | TC-002 | Login inválido | Ingresar credenciales erróneas | Muestra error claro | Alta |
-| TC-003 | Recuperar contraseña | Abrir diálogo, escribir email, enviar | Botón se habilita y muestra éxito/error | Media |
-| TC-004 | Registro votante | Completar registro válido | Crea usuario con rol VOTER | Alta |
+| TC-003 | Recuperar contraseña | Abrir diálogo, escribir email inválido y luego válido, enviar | Email inválido muestra error y bloquea envío; email válido muestra éxito/error Firebase | Media |
+| TC-004 | Registro votante | Probar email inválido, número no registrado, socio inactivo y socio activo | Bloquea email inválido/número inválido/inactivo; socio activo crea usuario con rol VOTER | Alta |
 | TC-005 | Registro rol manipulado | Intentar crear usuario con rol ADMIN desde cliente modificado | Firestore rechaza | Alta |
 | TC-006 | Home por rol VOTER | Entrar como votante | Solo ve Sistema de Voto y Perfil | Alta |
 | TC-007 | Ruta admin directa como VOTER | Abrir `/members` directo | UI bloquea con sin permisos | Alta |
@@ -1292,7 +1298,7 @@ Aplicación
 | TC-023 | Importar socios sin documento | Usar archivo sin documento si UI dice opcional | Comportamiento alineado con especificación | Alta |
 | TC-024 | WorkerCode duplicado | Importar dos filas mismo workerCode | Bloquea duplicado | Alta |
 | TC-025 | Exportar asistencia PDF | Generar PDF con datos | Archivo se comparte sin error | Media |
-| TC-026 | Exportar Excel | Generar Excel | Archivo abre correctamente como XLSX o CSV declarado | Media |
+| TC-026 | Exportar Excel | Generar Excel desde asistencias con caracteres especiales | Archivo abre correctamente como XLSX real y conserva columnas/datos | Media |
 | TC-027 | Auditoría create/update | Crear socio/elección | `audit_logs` registra acción | Media |
 | TC-028 | Filtros auditoría | Aplicar filtros combinados | Lista correcta o índice documentado | Media |
 | TC-029 | Responsive mobile | Probar pantallas principales en ancho pequeño | Sin overflow ni botones cortados | Media |
@@ -1310,7 +1316,7 @@ Prioridades antes de entrega o producción:
 
 1. Validar reglas Firestore con Firebase Emulator y usuarios reales por rol.
 2. Ampliar tests reales de login, rutas, voto, importación y asistencia.
-3. Definir fuente canónica de asistencia o formalizar adaptadores entre modelos.
+3. Definir fuente canónica de asistencia o formalizar adaptadores entre modelos; priorizar pantalla/flujo para `attendance_events` (**H-013**) o documentar uso exclusivo de legacy.
 4. Probar rutas protegidas por rol y documentar matriz rol-permiso.
 5. Validar scanner manual/cámara en dispositivo.
 6. Agregar pruebas de unicidad de socios en alta, edición e importación.
@@ -1367,7 +1373,7 @@ Prioridades antes de entrega o producción:
 | `attendance_events` | Modelo nuevo de eventos de asistencia |
 | `attendance_events/{id}/asistencias` | Asistencias del modelo nuevo |
 | `audit_logs` | Auditoría actual de acciones |
-| `events` | Historial legacy de eventos de voto |
+| `events` | Historial legacy de eventos de voto; la pantalla actual consume `audit_logs` mediante adaptador |
 | `import_logs` | Resultado de importaciones |
 
 ### C. Modelos principales
@@ -1400,8 +1406,8 @@ Resultado actual:
 `flutter test --no-pub --reporter expanded` se ejecutó nuevamente el 2026-05-01 y pasó correctamente:
 
 - `test/widget_test.dart`: valida que se muestre Login cuando no hay sesión activa.
-- `test/import_service_test.dart`: valida contrato de columnas obligatorias y separación de `numero_socio` frente a `worker_code`.
-- Estado: 2 pruebas pasan.
+- `test/import_service_test.dart`: valida contrato de columnas obligatorias, separación de `numero_socio` frente a `worker_code` y CSV con campos entre comillas/comas internas.
+- Estado: 3 pruebas pasan.
 - Acción recomendada: ampliar cobertura de rutas por rol, reglas Firestore, voto, asistencia e importación con datos representativos.
 
 ### F. Validación de reglas Firestore
@@ -1416,14 +1422,21 @@ Resultado actual:
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Actualización editorial del expediente: alineación con `ImportService` (CSV socios, mapeos, duplicados en import), formulario/import vs legacy personas, distinción pantalla crear evento legacy vs modelo `attendance_events`, flujo de registro alineado con reglas y hueco **H-013**. | `expediente_tecnico_aplicacion.md` | Cruzado con código; `flutter test`/`flutter analyze` sin issues | Documentación |
 | 2026-05-01 | Reglas de votos y usuarios reforzadas: `users` restringe rol `VOTER`; votos validan ID propio, elección abierta, candidato existente y contadores exactos. | `firestore.rules` | `firebase deploy --only firestore --dry-run` correcto | Aplicado localmente |
 | 2026-05-01 | Elecciones visibles para votantes filtran `isActive`, visibilidad y rango de fechas. | `lib/services/election_service.dart` | `flutter analyze --no-pub` correcto | Aplicado localmente |
 | 2026-05-01 | Scanner de asistencia usa evento real inicial o seleccionado para habilitar registro. | `lib/features/asistencia/scanner_screen.dart` | `flutter analyze --no-pub` correcto | Aplicado localmente |
 | 2026-05-01 | Importación de socios alinea columnas obligatorias y controla duplicados en archivo/Firestore. | `lib/services/import_service.dart`, `test/import_service_test.dart` | `flutter test --no-pub --reporter expanded` correcto | Aplicado localmente |
+| 2026-05-01 | Parser CSV de socios reemplazado por `CsvToListConverter` con soporte de comillas/comas internas y prueba dedicada. | `lib/services/import_service.dart`, `test/import_service_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos; 3 tests pasan | Aplicado localmente |
 | 2026-05-01 | Alta y edición manual de socios validan unicidad de `memberNumber`, `documentId` y `workerCode`; auditoría registra cambios de identificadores. | `lib/services/members_service.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
 | 2026-05-01 | Eliminación de candidatos con votos queda bloqueada en UI y servicio para preservar resultados. | `lib/features/elections/edit_election_screen.dart`, `lib/services/election_service.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
 | 2026-05-01 | Reporte de asistencia soporta eventos nuevos y fallback legacy desde `eventos/asistencias/personas`. | `lib/services/attendance_service.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
+| 2026-05-01 | Exportación de asistencia genera XLSX real con `package:excel` en lugar de CSV con extensión `.xlsx`. | `lib/services/asistencia_service.dart`, `expediente_tecnico_aplicacion.md` | `dart format`, `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
 | 2026-05-01 | Rutas internas protegidas por autenticación/rol y pantalla de "Sin permisos"; Home muestra Asistencia a `OPERADOR_ASISTENCIA`. | `lib/main.dart`, `lib/features/home/home_screen.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
+| 2026-05-01 | Recuperación de contraseña reacciona al texto ingresado, valida formato de email y visibilidad de resultados respeta `showResultsAutomatically`/fin de elección para votantes. | `lib/features/auth/login_screen.dart`, `lib/features/results/election_results_screen.dart`, `lib/features/voting/voting_screen.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
+| 2026-05-01 | Login valida perfil Firestore después de Firebase Auth; si falta `users/{uid}`, cierra sesión y muestra mensaje claro. | `lib/services/auth_service.dart`, `lib/providers/auth_provider.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos; 3 tests pasan | Aplicado localmente |
+| 2026-05-01 | Historial de Eventos deja de depender de `events` sin escrituras activas y se alimenta desde `audit_logs` mediante adaptador `AuditLog` → `VotoEvent`. | `lib/services/event_service.dart`, `lib/core/models/voto_event.dart`, `lib/features/voto/event_history_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos; 3 tests pasan | Aplicado localmente |
+| 2026-05-01 | Registro valida formato de email, reacciona al cambio de email/número de trabajador y exige socio activo en `members` antes de crear `users/{uid}`. | `lib/features/auth/sign_up_screen.dart`, `lib/services/auth_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos; 3 tests pasan | Aplicado localmente |
 
 ### H. Supuestos utilizados
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:excel/excel.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import '../core/models/asistencia/asistencia.dart';
@@ -922,35 +923,61 @@ class AsistenciaService {
 
   // ---------- Exportación ----------
 
-  /// Genera archivo Excel (CSV) con todas las asistencias
+  /// Genera archivo XLSX real con todas las asistencias.
   static Future<Uint8List> generateExcelExportStatic(
     List<AsistenciaConDatos> asistencias,
   ) async {
-    final sb = StringBuffer();
-    // Encabezados
-    sb.writeln('Evento,Fecha Evento,Persona,Asistió,Fecha Registro,Método');
+    final excel = Excel.createExcel();
+    const sheetName = 'Asistencias';
+    final sheet = excel[sheetName];
+    excel.delete('Sheet1');
 
-    // Datos
+    sheet.appendRow([
+      TextCellValue('Evento'),
+      TextCellValue('Fecha Evento'),
+      TextCellValue('Persona'),
+      TextCellValue('Asistió'),
+      TextCellValue('Fecha Registro'),
+      TextCellValue('Método'),
+    ]);
+
     for (final a in asistencias) {
       final fechaEvento = DateTime.fromMillisecondsSinceEpoch(a.evento.fecha);
       final fechaRegistro = a.asistencia.fechaRegistro != null
           ? DateTime.fromMillisecondsSinceEpoch(a.asistencia.fechaRegistro!)
           : null;
 
-      sb.writeln(
-        '"${a.evento.nombre}",'
-        '"${fechaEvento.day}/${fechaEvento.month}/${fechaEvento.year}",'
-        '"${a.persona.nombreCompleto}",'
-        '${a.asistencia.asistio ? 'Sí' : 'No'},'
-        '"${fechaRegistro != null ? '${fechaRegistro.day}/${fechaRegistro.month}/${fechaRegistro.year} ${fechaRegistro.hour.toString().padLeft(2, '0')}:${fechaRegistro.minute.toString().padLeft(2, '0')}' : ''}",'
-        '"${a.asistencia.metodoRegistro.value}"',
-      );
+      sheet.appendRow([
+        TextCellValue(a.evento.nombre),
+        TextCellValue(
+          '${fechaEvento.day}/${fechaEvento.month}/${fechaEvento.year}',
+        ),
+        TextCellValue(a.persona.nombreCompleto),
+        TextCellValue(a.asistencia.asistio ? 'Sí' : 'No'),
+        TextCellValue(
+          fechaRegistro != null
+              ? '${fechaRegistro.day}/${fechaRegistro.month}/${fechaRegistro.year} ${fechaRegistro.hour.toString().padLeft(2, '0')}:${fechaRegistro.minute.toString().padLeft(2, '0')}'
+              : '',
+        ),
+        TextCellValue(a.asistencia.metodoRegistro.value),
+      ]);
     }
 
-    return Uint8List.fromList(sb.toString().codeUnits);
+    sheet.setColumnWidth(0, 30);
+    sheet.setColumnWidth(1, 18);
+    sheet.setColumnWidth(2, 32);
+    sheet.setColumnWidth(3, 14);
+    sheet.setColumnWidth(4, 24);
+    sheet.setColumnWidth(5, 22);
+
+    final bytes = excel.encode();
+    if (bytes == null) {
+      throw Exception('No se pudo generar el archivo XLSX');
+    }
+    return Uint8List.fromList(bytes);
   }
 
-  /// Genera archivo Excel (CSV) con todas las asistencias
+  /// Genera archivo XLSX real con todas las asistencias.
   Future<Uint8List> generateExcelExport(
     List<AsistenciaConDatos> asistencias,
   ) async {

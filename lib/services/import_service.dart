@@ -1,7 +1,11 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:csv/csv.dart';
+import 'package:excel/excel.dart' hide Border;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:excel/excel.dart' hide Border;
+
 import '../core/models/member.dart';
 import '../core/models/import_log.dart';
 import '../core/models/audit_log.dart';
@@ -161,23 +165,28 @@ class ImportService {
     }
   }
 
-  /// Parsear archivo CSV manualmente
-  List<List<String>> parseCsv(Uint8List bytes, {String delimiter = ','}) {
-    final csvString = String.fromCharCodes(bytes);
-    final rows = <List<String>>[];
-
-    // Dividir por líneas
-    final lines = csvString.split('\n');
-
-    for (final line in lines) {
-      if (line.trim().isEmpty) continue;
-
-      // Dividir por delimitador y limpiar
-      final fields = line.split(delimiter).map((f) => f.trim()).toList();
-      rows.add(fields);
+  /// Parsear archivo CSV con soporte de comillas, separadores y saltos RFC 4180.
+  static List<List<String>> parseCsv(
+    Uint8List bytes, {
+    String delimiter = ',',
+  }) {
+    var csvString = utf8.decode(bytes, allowMalformed: true);
+    if (csvString.startsWith('\uFEFF')) {
+      csvString = csvString.substring(1);
     }
+    csvString = csvString.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
-    return rows;
+    final converter = CsvToListConverter(
+      fieldDelimiter: delimiter,
+      eol: '\n',
+      shouldParseNumbers: false,
+    );
+
+    return converter
+        .convert(csvString)
+        .where((row) => row.any((field) => field.toString().trim().isNotEmpty))
+        .map((row) => row.map((field) => field.toString().trim()).toList())
+        .toList();
   }
 
   /// Validar una fila de datos
@@ -326,7 +335,7 @@ class ImportService {
 
     try {
       // Parsear CSV
-      final rows = parseCsv(fileBytes, delimiter: delimiter);
+      final rows = ImportService.parseCsv(fileBytes, delimiter: delimiter);
       if (rows.isEmpty) {
         throw Exception('El archivo CSV está vacío');
       }

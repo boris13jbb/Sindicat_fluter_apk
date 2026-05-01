@@ -192,6 +192,12 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
         return 'Candidatos';
       case VotoEntityType.vote:
         return 'Votos';
+      case VotoEntityType.member:
+        return 'Socios';
+      case VotoEntityType.attendance:
+        return 'Asistencia';
+      case VotoEntityType.import_:
+        return 'Importaciones';
       case VotoEntityType.system:
         return 'Sistema';
     }

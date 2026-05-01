@@ -55,9 +55,9 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final userRole = context.watch<AuthProvider>().user?.role;
     final isAdmin =
-        context.watch<AuthProvider>().user?.role == UserRole.admin ||
-        context.watch<AuthProvider>().user?.role == UserRole.superadmin;
+        userRole == UserRole.admin || userRole == UserRole.superadmin;
     return Scaffold(
       appBar: ProfessionalAppBar(
         title: 'Resultados en Tiempo Real',
@@ -165,6 +165,9 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
               final election = liveElection.election;
               if (election == null) {
                 return const Center(child: Text('Elección no encontrada'));
+              }
+              if (!isAdmin && !_canVoterViewResults(election)) {
+                return _ResultsLockedCard(election: election);
               }
 
               return StreamBuilder<CandidatesLiveState>(
@@ -332,6 +335,10 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
         },
       ),
     );
+  }
+
+  bool _canVoterViewResults(Election election) {
+    return election.showResultsAutomatically && election.isEnded;
   }
 
   Future<void> _handleExport(BuildContext context, String type) async {
@@ -814,6 +821,69 @@ class _EmptyResultsCard extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ResultsLockedCard extends StatelessWidget {
+  const _ResultsLockedCard({required this.election});
+
+  final Election election;
+
+  @override
+  Widget build(BuildContext context) {
+    final endDate = DateTime.fromMillisecondsSinceEpoch(election.endDate);
+    final endDateText =
+        '${endDate.day.toString().padLeft(2, '0')}/'
+        '${endDate.month.toString().padLeft(2, '0')}/'
+        '${endDate.year} '
+        '${endDate.hour.toString().padLeft(2, '0')}:'
+        '${endDate.minute.toString().padLeft(2, '0')}';
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.lock_clock,
+                    size: 56,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Resultados no disponibles',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    election.showResultsAutomatically
+                        ? 'Los resultados se publicarán automáticamente cuando finalice la elección: $endDateText.'
+                        : 'La publicación automática de resultados está desactivada para esta elección.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Volver'),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -44,7 +44,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     try {
       await _authService.signIn(email, password);
-      _user = await _authService.getCurrentUser();
+      _user = _authService.currentUser ?? await _authService.getCurrentUser();
     } catch (e) {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
     } finally {

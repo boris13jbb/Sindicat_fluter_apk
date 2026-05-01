@@ -12,7 +12,8 @@ enum VotoEventType {
   userLogout('USER_LOGOUT'),
   exportExcel('EXPORT_EXCEL'),
   exportPdf('EXPORT_PDF'),
-  permissionDenied('PERMISSION_DENIED');
+  permissionDenied('PERMISSION_DENIED'),
+  systemAction('SYSTEM_ACTION');
 
   const VotoEventType(this.value);
   final String value;
@@ -52,6 +53,8 @@ enum VotoEventType {
         return 'Exportación PDF';
       case VotoEventType.permissionDenied:
         return 'Acceso denegado';
+      case VotoEventType.systemAction:
+        return 'Evento del sistema';
     }
   }
 }
@@ -62,6 +65,9 @@ enum VotoEntityType {
   election('ELECTION'),
   candidate('CANDIDATE'),
   vote('VOTE'),
+  member('MEMBER'),
+  attendance('ATTENDANCE'),
+  import_('IMPORT'),
   system('SYSTEM');
 
   const VotoEntityType(this.value);
