@@ -131,22 +131,16 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
         ),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Evento creado. ID: $eventId'),
-          action: SnackBarAction(
-            label: 'Reporte',
-            onPressed: () {
-              Navigator.pushNamed(
-                context,
-                '/attendance/report',
-                arguments: eventId,
-              );
-            },
-          ),
-        ),
-      );
-      Navigator.pop(context, eventId);
+      final navigator = Navigator.of(context);
+      // Cierra esta ruta con el nuevo id (`Future` del `pushNamed` que abrió la pantalla).
+      navigator.pop(eventId);
+      // Abre detalle después del frame actual para mantener orden de rutas válido.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigator.pushNamed(
+          '/asistencia/attendance_event_detail',
+          arguments: eventId,
+        );
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

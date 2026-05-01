@@ -4,6 +4,7 @@ import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
 import '../../services/members_service.dart';
+import 'route_args.dart';
 
 class EventoDetailScreen extends StatefulWidget {
   const EventoDetailScreen({super.key, required this.evento});
@@ -511,7 +512,8 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
             onPressed: () => Navigator.pushNamed(
               context,
               '/asistencia/registro_manual',
-              arguments: _currentEvento,
+              arguments:
+                  AsistenciaEventRouteArgs.legacy(_currentEvento),
             ),
             child: const Icon(Icons.person_add),
           ),
@@ -521,7 +523,8 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
             onPressed: () => Navigator.pushNamed(
               context,
               '/asistencia/scanner',
-              arguments: _currentEvento,
+              arguments:
+                  AsistenciaEventRouteArgs.legacy(_currentEvento),
             ),
             child: const Icon(Icons.qr_code_scanner),
           ),

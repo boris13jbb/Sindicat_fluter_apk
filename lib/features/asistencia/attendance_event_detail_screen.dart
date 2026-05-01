@@ -24,6 +24,19 @@ class AttendanceEventDetailScreen extends StatelessWidget {
       appBar: ProfessionalAppBar(
         title: 'Evento reporte',
         onNavigateBack: () => Navigator.pop(context),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.view_list_rounded),
+            tooltip: 'Ir al listado de asistencia',
+            onPressed: () {
+              Navigator.popUntil(
+                context,
+                (route) =>
+                    route.settings.name == '/asistencia' || route.isFirst,
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
