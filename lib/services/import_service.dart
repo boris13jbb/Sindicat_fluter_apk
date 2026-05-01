@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -47,17 +46,37 @@ class ImportService {
   ];
 
   /// Columnas obligatorias
-  static const requiredColumns = ['numero_socio', 'nombres', 'apellidos', 'documento'];
+  static const requiredColumns = ['numero_socio', 'nombres', 'apellidos'];
 
   /// Mapeo de columnas alternativas a columnas estándar
   static const Map<String, List<String>> columnMappings = {
-    'numero_socio': ['numero_socio', 'codigo', 'codigo_socio', 'id', 'num_socio', 'worker_code'],
+    'numero_socio': [
+      'numero_socio',
+      'codigo',
+      'codigo_socio',
+      'id',
+      'num_socio',
+    ],
     'nombres': ['nombres', 'nombre', 'primer_nombre', 'nombres_completos'],
     'apellidos': ['apellidos', 'apellido', 'apellidos_completos'],
-    'documento': ['documento', 'cedula', 'cedula_ciudadania', 'identificacion', 'dni'],
+    'documento': [
+      'documento',
+      'cedula',
+      'cedula_ciudadania',
+      'identificacion',
+      'dni',
+    ],
     'email': ['email', 'correo', 'email_address', 'correo_electronico'],
     'telefono': ['telefono', 'celular', 'phone', 'movil', 'telefono_celular'],
-    'worker_code': ['worker_code', 'codigo_trabajador', 'numero_trabajador', 'employee_number', 'no_empleado', 'legajo', 'trabajador'],
+    'worker_code': [
+      'worker_code',
+      'codigo_trabajador',
+      'numero_trabajador',
+      'employee_number',
+      'no_empleado',
+      'legajo',
+      'trabajador',
+    ],
     'departamento': ['departamento', 'depto', 'area', 'seccion'],
     'nivel': ['nivel', 'grado', 'categoria', 'cargo'],
     'mod': ['mod', 'modulo', 'modalidad'],
@@ -65,7 +84,11 @@ class ImportService {
 
   /// Columnas que contienen nombre completo (se separará automáticamente en nombres y apellidos)
   /// IMPORTANTE: 'trabajador' removido de aquí porque ahora es worker_code
-  static const fullNameColumns = ['nombre_completo', 'fullname', 'nombre_apellido'];
+  static const fullNameColumns = [
+    'nombre_completo',
+    'fullname',
+    'nombre_apellido',
+  ];
 
   /// Columnas adicionales opcionales que se almacenan en el modelo
   static const optionalColumns = ['departamento', 'nivel', 'mod'];
@@ -73,10 +96,9 @@ class ImportService {
   /// Normalizar headers: mapea columnas alternativas a nombres estándar
   List<String> normalizeHeaders(List<String> headers) {
     final normalized = <String>[];
-    bool hasFullNameColumn = false;
     bool hasNames = false;
     bool hasLastNames = false;
-    
+
     // Primera pasada: detectar si tenemos nombres y apellidos separados
     for (final header in headers) {
       final headerLower = header.trim().toLowerCase();
@@ -89,12 +111,12 @@ class ImportService {
         }
       }
     }
-    
+
     // Segunda pasada: normalizar headers
     for (final header in headers) {
       final headerLower = header.trim().toLowerCase();
       String? mappedColumn;
-      
+
       // Buscar en el mapeo
       for (final entry in columnMappings.entries) {
         if (entry.value.contains(headerLower)) {
@@ -102,29 +124,28 @@ class ImportService {
           break;
         }
       }
-      
+
       // Si no se encontró mapeo y es una columna de nombre completo, intentar mapear
       if (mappedColumn == null && fullNameColumns.contains(headerLower)) {
         if (!hasNames && !hasLastNames) {
           // No tenemos nombres ni apellidos separados, usar esta columna para ambos
           mappedColumn = 'nombres'; // Mapear a nombres, separaremos después
-          hasFullNameColumn = true;
         }
       }
-      
+
       normalized.add(mappedColumn ?? headerLower);
     }
-    
+
     debugPrint('📊 Headers originales: $headers');
     debugPrint('📊 Headers normalizados: $normalized');
-    
+
     return normalized;
   }
 
   /// Separar nombre completo en nombres y apellidos
   Map<String, String> splitFullName(String fullName) {
     final parts = fullName.trim().split(RegExp(r'\s+'));
-    
+
     if (parts.length == 1) {
       // Solo una palabra, asumir que es nombre
       return {'nombres': parts[0], 'apellidos': ''};
@@ -190,7 +211,9 @@ class ImportService {
         final split = splitFullName(fullName);
         data['nombres'] = split['nombres'];
         data['apellidos'] = split['apellidos'];
-        debugPrint('📝 Fila $rowIndex: Separado "$fullName" → nombres: "${split['nombres']}", apellidos: "${split['apellidos']}"');
+        debugPrint(
+          '📝 Fila $rowIndex: Separado "$fullName" → nombres: "${split['nombres']}", apellidos: "${split['apellidos']}"',
+        );
       }
     }
 
@@ -237,7 +260,7 @@ class ImportService {
 
     // Firestore tiene un límite de 30 elementos en whereIn
     const batchSize = 30;
-    
+
     // Dividir en lotes de máximo 30 elementos
     for (int i = 0; i < memberNumbers.length; i += batchSize) {
       final end = (i + batchSize < memberNumbers.length)
@@ -245,7 +268,9 @@ class ImportService {
           : memberNumbers.length;
       final batch = memberNumbers.sublist(i, end);
 
-      debugPrint('🔍 Verificando duplicados: lote ${i ~/ batchSize + 1} (${batch.length} elementos)');
+      debugPrint(
+        '🔍 Verificando duplicados: lote ${i ~/ batchSize + 1} (${batch.length} elementos)',
+      );
 
       try {
         final snapshot = await _firestore
@@ -261,13 +286,27 @@ class ImportService {
           }
         }
       } catch (e) {
-        debugPrint('❌ Error verificando duplicados en lote ${i ~/ batchSize + 1}: $e');
+        debugPrint(
+          '❌ Error verificando duplicados en lote ${i ~/ batchSize + 1}: $e',
+        );
       }
     }
 
-    debugPrint('✅ Duplicados encontrados: ${result.length} de ${memberNumbers.length} verificados');
+    debugPrint(
+      '✅ Duplicados encontrados: ${result.length} de ${memberNumbers.length} verificados',
+    );
 
     return result;
+  }
+
+  Future<bool> valueExists(String field, String value) async {
+    if (value.trim().isEmpty) return false;
+    final snapshot = await _firestore
+        .collection('members')
+        .where(field, isEqualTo: value.trim())
+        .limit(1)
+        .get();
+    return snapshot.docs.isNotEmpty;
   }
 
   /// Importar socios desde CSV
@@ -351,6 +390,8 @@ class ImportService {
       int errorsCount = 0;
       final errorDetails = <String>[];
       final duplicateNumbers = <String>[];
+      final workerCodesInFile = <String>{};
+      final documentIdsInFile = <String>{};
 
       // Procesar en batches de 500 (límite de Firestore)
       final validRows = <Map<String, dynamic>>[];
@@ -384,44 +425,92 @@ class ImportService {
         // Crear objeto Member con ambos campos: workerCode y documentId
         // Lógica de fallback inteligente:
         // 1. Si existe worker_code explícito, usarlo
-        // 2. Si no, usar numero_socio (que puede venir de worker_code mapeado)
+        // 2. Si no, usar numero_socio como identificador interno
         // 3. Si ninguno existe, intentar con documento
         String? workerCode = validation.data['worker_code'] as String?;
-        
+
         // Si worker_code está vacío pero tenemos memberNumber, usar memberNumber como workerCode
-        if ((workerCode == null || workerCode.isEmpty) && memberNumber.isNotEmpty) {
+        if ((workerCode == null || workerCode.isEmpty) &&
+            memberNumber.isNotEmpty) {
           workerCode = memberNumber;
-          debugPrint('   🔄 Fila ${i + 2}: Usando memberNumber ($memberNumber) como workerCode');
+          debugPrint(
+            '   🔄 Fila ${i + 2}: Usando memberNumber ($memberNumber) como workerCode',
+          );
         }
-        
+
         final documentId = validation.data['documento'] as String?;
-        
+
         // Validar que al menos uno de los identificadores exista
-        if ((workerCode == null || workerCode.isEmpty) && 
+        if ((workerCode == null || workerCode.isEmpty) &&
             (documentId == null || documentId.isEmpty)) {
           errorsCount++;
-          errorDetails.add('Fila ${i + 2}: Se requiere worker_code, numero_socio O cédula');
+          errorDetails.add(
+            'Fila ${i + 2}: Se requiere worker_code, numero_socio O cédula',
+          );
           continue;
         }
-        
+
+        if (workerCode != null && workerCode.isNotEmpty) {
+          if (!workerCodesInFile.add(workerCode)) {
+            duplicatesCount++;
+            duplicateNumbers.add(workerCode);
+            errorDetails.add(
+              'Fila ${i + 2}: Código de trabajador duplicado en el archivo: $workerCode',
+            );
+            continue;
+          }
+
+          if (await valueExists('workerCode', workerCode)) {
+            duplicatesCount++;
+            duplicateNumbers.add(workerCode);
+            errorDetails.add(
+              'Fila ${i + 2}: Ya existe un socio con código de trabajador $workerCode',
+            );
+            continue;
+          }
+        }
+
+        if (documentId != null && documentId.isNotEmpty) {
+          if (!documentIdsInFile.add(documentId)) {
+            duplicatesCount++;
+            duplicateNumbers.add(documentId);
+            errorDetails.add(
+              'Fila ${i + 2}: Documento duplicado en el archivo: $documentId',
+            );
+            continue;
+          }
+
+          if (await valueExists('documentId', documentId)) {
+            duplicatesCount++;
+            duplicateNumbers.add(documentId);
+            errorDetails.add(
+              'Fila ${i + 2}: Ya existe un socio con documento $documentId',
+            );
+            continue;
+          }
+        }
+
         final additionalData = <String, dynamic>{};
-        
+
         // Capturar columnas opcionales si existen
-        if (validation.data.containsKey('departamento') && 
+        if (validation.data.containsKey('departamento') &&
             (validation.data['departamento'] as String).isNotEmpty) {
           additionalData['departamento'] = validation.data['departamento'];
         }
-        if (validation.data.containsKey('nivel') && 
+        if (validation.data.containsKey('nivel') &&
             (validation.data['nivel'] as String).isNotEmpty) {
           additionalData['nivel'] = validation.data['nivel'];
         }
-        if (validation.data.containsKey('mod') && 
+        if (validation.data.containsKey('mod') &&
             (validation.data['mod'] as String).isNotEmpty) {
           additionalData['mod'] = validation.data['mod'];
         }
 
         // Generar ID único combinando workerCode y documentId
-        final memberId = workerCode ?? documentId ?? DateTime.now().millisecondsSinceEpoch.toString();
+        final memberId =
+            workerCode ??
+            documentId ??
+            DateTime.now().millisecondsSinceEpoch.toString();
 
         final member = Member(
           id: memberId,
@@ -448,7 +537,10 @@ class ImportService {
         if (validRows.length >= 500) {
           final batch = _firestore.batch();
           for (final row in validRows) {
-            final docId = row['workerCode'] as String? ?? row['documentId'] as String? ?? '';
+            final docId =
+                row['workerCode'] as String? ??
+                row['documentId'] as String? ??
+                '';
             final docRef = _firestore.collection('members').doc(docId);
             batch.set(docRef, row);
           }
@@ -463,7 +555,10 @@ class ImportService {
         final batch = _firestore.batch();
         for (final row in validRows) {
           // CORRECCIÓN: Usar workerCode o documentId como ID del documento
-          final docId = row['workerCode'] as String? ?? row['documentId'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString();
+          final docId =
+              row['workerCode'] as String? ??
+              row['documentId'] as String? ??
+              DateTime.now().millisecondsSinceEpoch.toString();
           final docRef = _firestore.collection('members').doc(docId);
           batch.set(docRef, row);
         }
@@ -539,14 +634,14 @@ class ImportService {
     try {
       // Parsear Excel usando el paquete excel
       final excel = Excel.decodeBytes(fileBytes);
-      
+
       if (excel.tables.isEmpty) {
         throw Exception('El archivo Excel no contiene hojas de cálculo');
       }
 
       // Obtener primera hoja
       final sheet = excel.tables.values.first;
-      
+
       if (sheet.rows.isEmpty) {
         throw Exception('La hoja de cálculo está vacía');
       }
@@ -582,12 +677,15 @@ class ImportService {
 
       // Datos de las filas (sin header)
       final dataRows = sheet.rows.sublist(1);
-      
+
       // Filtrar filas vacías
       final validDataRows = dataRows.where((row) {
-        return row.any((cell) => cell?.value != null && cell!.value.toString().trim().isNotEmpty);
+        return row.any(
+          (cell) =>
+              cell?.value != null && cell!.value.toString().trim().isNotEmpty,
+        );
       }).toList();
-      
+
       importLog.copyWith(totalRows: validDataRows.length, fileName: fileName);
 
       debugPrint('📊 Total de filas a procesar: ${validDataRows.length}');
@@ -602,7 +700,7 @@ class ImportService {
         final stringRow = row
             .map((cell) => (cell?.value?.toString().trim()) ?? '')
             .toList();
-        
+
         final validation = validateRow(
           stringRow,
           headers,
@@ -629,6 +727,8 @@ class ImportService {
       int errorsCount = 0;
       final errorDetails = <String>[];
       final duplicateNumbers = <String>[];
+      final workerCodesInFile = <String>{};
+      final documentIdsInFile = <String>{};
 
       // Procesar en batches de 500 (límite de Firestore)
       final validRows = <Map<String, dynamic>>[];
@@ -662,44 +762,92 @@ class ImportService {
         // Crear objeto Member con ambos campos: workerCode y documentId
         // Lógica de fallback inteligente:
         // 1. Si existe worker_code explícito, usarlo
-        // 2. Si no, usar memberNumber (que puede venir de worker_code mapeado)
+        // 2. Si no, usar memberNumber como identificador interno
         // 3. Si ninguno existe, intentar con documento
         String? workerCode = validation.data['worker_code'] as String?;
-        
+
         // Si worker_code está vacío pero tenemos memberNumber, usar memberNumber como workerCode
-        if ((workerCode == null || workerCode.isEmpty) && memberNumber.isNotEmpty) {
+        if ((workerCode == null || workerCode.isEmpty) &&
+            memberNumber.isNotEmpty) {
           workerCode = memberNumber;
-          debugPrint('   🔄 Fila ${i + 2}: Usando memberNumber ($memberNumber) como workerCode');
+          debugPrint(
+            '   🔄 Fila ${i + 2}: Usando memberNumber ($memberNumber) como workerCode',
+          );
         }
-        
+
         final documentId = validation.data['documento'] as String?;
-        
+
         // Validar que al menos uno de los identificadores exista
-        if ((workerCode == null || workerCode.isEmpty) && 
+        if ((workerCode == null || workerCode.isEmpty) &&
             (documentId == null || documentId.isEmpty)) {
           errorsCount++;
-          errorDetails.add('Fila ${i + 2}: Se requiere worker_code, numero_socio O cédula');
+          errorDetails.add(
+            'Fila ${i + 2}: Se requiere worker_code, numero_socio O cédula',
+          );
           continue;
         }
-        
+
+        if (workerCode != null && workerCode.isNotEmpty) {
+          if (!workerCodesInFile.add(workerCode)) {
+            duplicatesCount++;
+            duplicateNumbers.add(workerCode);
+            errorDetails.add(
+              'Fila ${i + 2}: Código de trabajador duplicado en el archivo: $workerCode',
+            );
+            continue;
+          }
+
+          if (await valueExists('workerCode', workerCode)) {
+            duplicatesCount++;
+            duplicateNumbers.add(workerCode);
+            errorDetails.add(
+              'Fila ${i + 2}: Ya existe un socio con código de trabajador $workerCode',
+            );
+            continue;
+          }
+        }
+
+        if (documentId != null && documentId.isNotEmpty) {
+          if (!documentIdsInFile.add(documentId)) {
+            duplicatesCount++;
+            duplicateNumbers.add(documentId);
+            errorDetails.add(
+              'Fila ${i + 2}: Documento duplicado en el archivo: $documentId',
+            );
+            continue;
+          }
+
+          if (await valueExists('documentId', documentId)) {
+            duplicatesCount++;
+            duplicateNumbers.add(documentId);
+            errorDetails.add(
+              'Fila ${i + 2}: Ya existe un socio con documento $documentId',
+            );
+            continue;
+          }
+        }
+
         final additionalData = <String, dynamic>{};
-        
+
         // Capturar columnas opcionales si existen
-        if (validation.data.containsKey('departamento') && 
+        if (validation.data.containsKey('departamento') &&
             (validation.data['departamento'] as String).isNotEmpty) {
           additionalData['departamento'] = validation.data['departamento'];
         }
-        if (validation.data.containsKey('nivel') && 
+        if (validation.data.containsKey('nivel') &&
             (validation.data['nivel'] as String).isNotEmpty) {
           additionalData['nivel'] = validation.data['nivel'];
         }
-        if (validation.data.containsKey('mod') && 
+        if (validation.data.containsKey('mod') &&
             (validation.data['mod'] as String).isNotEmpty) {
           additionalData['mod'] = validation.data['mod'];
         }
 
         // Generar ID único combinando workerCode y documentId
-        final memberId = workerCode ?? documentId ?? DateTime.now().millisecondsSinceEpoch.toString();
+        final memberId =
+            workerCode ??
+            documentId ??
+            DateTime.now().millisecondsSinceEpoch.toString();
 
         final member = Member(
           id: memberId,
@@ -726,7 +874,11 @@ class ImportService {
         if (validRows.length >= 500) {
           final batch = _firestore.batch();
           for (final row in validRows) {
-            final docRef = _firestore.collection('members').doc();
+            final docId =
+                row['workerCode'] as String? ??
+                row['documentId'] as String? ??
+                '';
+            final docRef = _firestore.collection('members').doc(docId);
             batch.set(docRef, row);
           }
           await batch.commit();
@@ -740,7 +892,10 @@ class ImportService {
         final batch = _firestore.batch();
         for (final row in validRows) {
           // CORRECCIÓN: Usar workerCode o documentId como ID del documento
-          final docId = row['workerCode'] as String? ?? row['documentId'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString();
+          final docId =
+              row['workerCode'] as String? ??
+              row['documentId'] as String? ??
+              DateTime.now().millisecondsSinceEpoch.toString();
           final docRef = _firestore.collection('members').doc(docId);
           batch.set(docRef, row);
         }
@@ -776,13 +931,15 @@ class ImportService {
         platform: 'flutter',
       );
 
-      debugPrint('✅ Importación Excel completada: $successful socios importados');
+      debugPrint(
+        '✅ Importación Excel completada: $successful socios importados',
+      );
 
       return finalLog;
     } catch (e, stackTrace) {
       debugPrint('❌ Error en importación Excel: $e');
       debugPrint('Stack trace: $stackTrace');
-      
+
       // Registrar error
       final errorLog = importLog.copyWith(
         errors: 1,

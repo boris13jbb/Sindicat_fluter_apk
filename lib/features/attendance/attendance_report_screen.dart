@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/attendance_service.dart';
 
@@ -239,9 +238,9 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Column(
         children: [
@@ -258,7 +257,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
           const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(fontSize: 12, color: color.withOpacity(0.8)),
+            style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.8)),
           ),
         ],
       ),

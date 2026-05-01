@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -69,9 +68,16 @@ class _QRCodesScreenState extends State<QRCodesScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                          const Icon(
+                            Icons.error_outline,
+                            size: 64,
+                            color: Colors.red,
+                          ),
                           const SizedBox(height: 16),
-                          Text('Error: ${snap.error}', textAlign: TextAlign.center),
+                          Text(
+                            'Error: ${snap.error}',
+                            textAlign: TextAlign.center,
+                          ),
                           const SizedBox(height: 24),
                           ElevatedButton.icon(
                             onPressed: () => setState(() {}),
@@ -143,15 +149,16 @@ class _QRCodesScreenState extends State<QRCodesScreen> {
     final result = <Map<String, dynamic>>[];
     final identificadoresVistos = <String>{};
 
-    debugPrint('🔄 QR Screen: Combinando ${members.length} members con personas legacy...');
+    debugPrint(
+      '🔄 QR Screen: Combinando ${members.length} members con personas legacy...',
+    );
 
     try {
       // 1. Agregar Members
       for (final member in members) {
-        final identificador =
-            member.workerCode?.isNotEmpty == true
-                ? member.workerCode!
-                : (member.documentId ?? '');
+        final identificador = member.workerCode?.isNotEmpty == true
+            ? member.workerCode!
+            : (member.documentId ?? '');
 
         if (identificador.isEmpty) continue;
 
@@ -177,7 +184,9 @@ class _QRCodesScreenState extends State<QRCodesScreen> {
             .collection('personas')
             .get();
 
-        debugPrint('   📊 Encontradas ${personasSnapshot.docs.length} personas legacy');
+        debugPrint(
+          '   📊 Encontradas ${personasSnapshot.docs.length} personas legacy',
+        );
 
         int personasAgregadas = 0;
         for (final doc in personasSnapshot.docs) {
@@ -199,12 +208,17 @@ class _QRCodesScreenState extends State<QRCodesScreen> {
               final query = _searchQuery.toLowerCase();
               final matches =
                   persona.nombreCompleto.toLowerCase().contains(query) ||
-                  (persona.identificador?.toLowerCase().contains(query) ?? false);
+                  (persona.identificador?.toLowerCase().contains(query) ??
+                      false);
 
               if (!matches) continue;
             }
 
-            result.add({'id': persona.id, 'data': persona, 'source': 'persona'});
+            result.add({
+              'id': persona.id,
+              'data': persona,
+              'source': 'persona',
+            });
             personasAgregadas++;
           } catch (e) {
             debugPrint('   ❌ Error procesando persona ${doc.id}: $e');
@@ -321,7 +335,10 @@ class _MemberQRCardState extends State<_MemberQRCard> {
                     const SizedBox(height: 2),
                     Text(
                       'Código: ${widget.member.workerCode}',
-                      style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ],
                   if (widget.member.workerCode == null ||
@@ -348,7 +365,10 @@ class _MemberQRCardState extends State<_MemberQRCard> {
                   tooltip: 'Copiar datos',
                   color: Colors.green,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
                 IconButton(
                   onPressed: () => _compartirQRMiembro(),
@@ -356,7 +376,10 @@ class _MemberQRCardState extends State<_MemberQRCard> {
                   tooltip: 'Compartir QR',
                   color: Colors.blue,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                 ),
               ],
             ),
@@ -383,8 +406,8 @@ class _MemberQRCardState extends State<_MemberQRCard> {
 
   Future<void> _compartirQRMiembro() async {
     try {
-      final boundary = _qrKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
+      final boundary =
+          _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) throw Exception('No se pudo capturar el QR');
 
       final image = await boundary.toImage(pixelRatio: 3.0);
@@ -417,10 +440,7 @@ class _MemberQRCardState extends State<_MemberQRCard> {
       debugPrint('❌ Error al compartir: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -429,10 +449,7 @@ class _MemberQRCardState extends State<_MemberQRCard> {
 
 /// Tarjeta con código QR de una persona legacy
 class _PersonaQRCard extends StatefulWidget {
-  const _PersonaQRCard({
-    required this.persona,
-    required this.onDelete,
-  });
+  const _PersonaQRCard({required this.persona, required this.onDelete});
 
   final PersonaAsistencia persona;
   final VoidCallback onDelete;
@@ -500,10 +517,7 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
       debugPrint('❌ Error al compartir: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -532,29 +546,26 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
       ),
     );
 
-    if (confirmar == true) {
-      try {
-        await _service.deletePersona(widget.persona.id);
-        if (mounted) {
-          widget.onDelete();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ ${widget.persona.nombreCompleto} eliminado'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ Error: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
+    if (!context.mounted || confirmar != true) return;
+
+    try {
+      await _service.deletePersona(widget.persona.id);
+      if (!context.mounted) return;
+
+      widget.onDelete();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ ${widget.persona.nombreCompleto} eliminado'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.red),
+      );
     }
   }
 
@@ -602,10 +613,7 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                   const SizedBox(height: 4),
                   Text(
                     'N°: ${widget.persona.identificador ?? 'Sin número'}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 12),
                   Wrap(
@@ -619,8 +627,10 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                         tooltip: 'Copiar datos',
                         color: Colors.green,
                         padding: EdgeInsets.zero,
-                        constraints:
-                            const BoxConstraints(minWidth: 32, minHeight: 32),
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       ),
                       IconButton(
                         onPressed: _compartirQR,
@@ -628,8 +638,10 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                         tooltip: 'Compartir QR',
                         color: Colors.blue,
                         padding: EdgeInsets.zero,
-                        constraints:
-                            const BoxConstraints(minWidth: 32, minHeight: 32),
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       ),
                       IconButton(
                         onPressed: () => _eliminarPersona(context),
@@ -637,8 +649,10 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                         tooltip: 'Eliminar',
                         color: Colors.red,
                         padding: EdgeInsets.zero,
-                        constraints:
-                            const BoxConstraints(minWidth: 32, minHeight: 32),
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
                       ),
                     ],
                   ),

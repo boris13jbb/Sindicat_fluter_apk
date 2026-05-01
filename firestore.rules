@@ -10,6 +10,14 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null && request.auth.uid != null;
     }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
     
     // Obtener rol del usuario (maneja caso donde documento no existe)
     function getUserRole() {
@@ -38,19 +46,40 @@ service cloud.firestore {
     
     match /users/{userId} {
       // Leer: usuario autenticado puede leer su propio documento
-      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isOwner(userId);
       
-      // Crear: cualquier usuario autenticado puede crear su propio documento (auto-registro)
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      // Crear: auto-registro solo como votante, sin escalación de privilegios
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasOnly([
+          'email',
+          'displayName',
+          'role',
+          'employeeNumber',
+          'createdAt',
+          'updatedAt',
+          'isActive',
+        ])
+        && request.resource.data.keys().hasAll(['email', 'role'])
+        && request.resource.data.email is string
+        && request.resource.data.role == 'VOTER'
+        && (!('displayName' in request.resource.data) ||
+          request.resource.data.displayName == null ||
+          request.resource.data.displayName is string)
+        && (!('employeeNumber' in request.resource.data) ||
+          request.resource.data.employeeNumber == null ||
+          request.resource.data.employeeNumber is string);
       
       // Actualizar: superadmin puede actualizar cualquier usuario, o el usuario puede actualizar su propio perfil
       // IMPORTANTE: No permitir que usuarios cambien su propio rol (escalación de privilegios)
       allow update: if isSuperAdmin() || (
-        isAuthenticated() && 
-        request.auth.uid == userId &&
-        // Bloquear cambios en campo 'role'
-        !('role' in request.resource.data) ||
-        request.resource.data.role == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        isOwner(userId) &&
+        request.resource.data.role == resource.data.role &&
+        changedKeys().hasOnly([
+          'email',
+          'displayName',
+          'employeeNumber',
+          'updatedAt',
+        ])
       );
       
       // Eliminar: solo superadmin
@@ -76,9 +105,9 @@ service cloud.firestore {
       // Esto permite que usuarios VOTER incrementen totalVotes sin poder modificar otros campos
       allow update: if isAdmin() || (
         isAuthenticated() && 
-        request.resource.data.keys().hasOnly(['totalVotes', 'updatedAt']) &&
+        changedKeys().hasOnly(['totalVotes', 'updatedAt']) &&
         request.resource.data.totalVotes is number &&
-        request.resource.data.totalVotes >= resource.data.totalVotes
+        request.resource.data.totalVotes == resource.data.totalVotes + 1
       );
       
       allow delete: if isSuperAdmin();
@@ -92,9 +121,9 @@ service cloud.firestore {
         // Esto permite que usuarios VOTER incrementen voteCount sin poder modificar otros campos
         allow update: if isAdmin() || (
           isAuthenticated() && 
-          request.resource.data.keys().hasOnly(['voteCount']) &&
+          changedKeys().hasOnly(['voteCount']) &&
           request.resource.data.voteCount is number &&
-          request.resource.data.voteCount >= resource.data.voteCount
+          request.resource.data.voteCount == resource.data.voteCount + 1
         );
         
         allow delete: if isSuperAdmin();
@@ -104,8 +133,18 @@ service cloud.firestore {
       match /votes/{voteId} {
         // Cualquier usuario autenticado puede verificar si ya votó (leer su propio voto)
         // Admin/superadmin pueden leer todos los votos para reportes
-        allow read: if isAdmin() || isAuthenticated();
+        allow read: if isAdmin() || (
+          isAuthenticated() &&
+          resource.data.userId == request.auth.uid
+        );
         allow create: if isAuthenticated()
+                && request.resource.data.keys().hasOnly([
+                  'electionId',
+                  'userId',
+                  'candidateId',
+                  'votedAt',
+                ])
+                && request.resource.data.electionId == electionId
                 && request.resource.data.userId == request.auth.uid
                 && voteId == request.resource.data.electionId + '_' + request.resource.data.userId;
         allow update, delete: if false; // Los votos son inmutables

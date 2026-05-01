@@ -22,7 +22,9 @@ enum Modalidad {
   D('D'),
   E('E'),
   N('N'),
+  // ignore: constant_identifier_names
   N1('N1'),
+  // ignore: constant_identifier_names
   N2('N2'),
   X('X'),
   Y('Y'),

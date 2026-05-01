@@ -137,7 +137,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
             children: [
               // Filtro por acción
               DropdownButtonFormField<AuditAction?>(
-                value: _actionFilter,
+                initialValue: _actionFilter,
                 decoration: const InputDecoration(
                   labelText: 'Tipo de Acción',
                   border: OutlineInputBorder(),
@@ -157,7 +157,7 @@ class _AuditLogsScreenState extends State<AuditLogsScreen> {
 
               // Filtro por tipo de entidad
               DropdownButtonFormField<AuditEntityType?>(
-                value: _entityTypeFilter,
+                initialValue: _entityTypeFilter,
                 decoration: const InputDecoration(
                   labelText: 'Tipo de Entidad',
                   border: OutlineInputBorder(),

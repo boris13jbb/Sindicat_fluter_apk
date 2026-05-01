@@ -118,12 +118,7 @@ class AttendanceService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
-              .map(
-                (doc) => AttendanceEvent.fromMap(
-                  doc.data() as Map<String, dynamic>,
-                  doc.id,
-                ),
-              )
+              .map((doc) => AttendanceEvent.fromMap(doc.data(), doc.id))
               .toList(),
         );
   }
@@ -136,10 +131,7 @@ class AttendanceService {
           .doc(eventId)
           .get();
       if (!doc.exists) return null;
-      return AttendanceEvent.fromMap(
-        doc.data() as Map<String, dynamic>,
-        doc.id,
-      );
+      return AttendanceEvent.fromMap(doc.data()!, doc.id);
     } catch (e) {
       debugPrint('Error obteniendo evento: $e');
       return null;
@@ -277,12 +269,7 @@ class AttendanceService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
-              .map(
-                (doc) => AsistenciaRegistro.fromMap(
-                  doc.data() as Map<String, dynamic>,
-                  doc.id,
-                ),
-              )
+              .map((doc) => AsistenciaRegistro.fromMap(doc.data(), doc.id))
               .toList(),
         );
   }
@@ -308,9 +295,7 @@ class AttendanceService {
             .get();
 
         for (final doc in membersSnapshot.docs) {
-          membersConvoked.add(
-            Member.fromMap(doc.data() as Map<String, dynamic>, doc.id),
-          );
+          membersConvoked.add(Member.fromMap(doc.data(), doc.id));
         }
       } else {
         // Si no hay miembros específicos, tomar todos los activos
@@ -320,9 +305,7 @@ class AttendanceService {
             .get();
 
         for (final doc in allMembersSnapshot.docs) {
-          membersConvoked.add(
-            Member.fromMap(doc.data() as Map<String, dynamic>, doc.id),
-          );
+          membersConvoked.add(Member.fromMap(doc.data(), doc.id));
         }
       }
 
@@ -334,12 +317,7 @@ class AttendanceService {
           .get();
 
       final attendances = attendancesSnapshot.docs
-          .map(
-            (doc) => AsistenciaRegistro.fromMap(
-              doc.data() as Map<String, dynamic>,
-              doc.id,
-            ),
-          )
+          .map((doc) => AsistenciaRegistro.fromMap(doc.data(), doc.id))
           .toList();
 
       // 4. Calcular presentes y faltantes

@@ -93,7 +93,7 @@ class AuthService {
     required String password,
     String? employeeNumber,
     String? displayName,
-    String role = 'USER',
+    String role = 'VOTER',
   }) async {
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
@@ -108,7 +108,9 @@ class AuthService {
         email: fbUser.email ?? email,
         displayName: displayName ?? fbUser.displayName,
         role: UserRole.fromString(role),
-        employeeNumber: employeeNumber?.trim().isEmpty ?? true ? null : employeeNumber,
+        employeeNumber: employeeNumber?.trim().isEmpty ?? true
+            ? null
+            : employeeNumber,
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
       await _firestore

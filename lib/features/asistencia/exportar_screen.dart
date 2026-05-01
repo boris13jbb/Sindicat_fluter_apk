@@ -127,8 +127,8 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
       showDialog(
         context: dialogContext,
         barrierDismissible: false,
-        builder: (dialogContext) => WillPopScope(
-          onWillPop: () async => false,
+        builder: (dialogContext) => PopScope(
+          canPop: false,
           child: Center(
             child: Card(
               child: Padding(

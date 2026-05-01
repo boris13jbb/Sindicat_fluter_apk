@@ -126,24 +126,28 @@ class _CrearEventoAsistenciaScreenState
                       children: [
                         Text(
                           'Modalidad de Turno:',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: DropdownButtonFormField<Modalidad>(
-                            value: _modalidad,
+                            initialValue: _modalidad,
                             decoration: const InputDecoration(
                               border: OutlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
                             hint: const Text('Seleccionar modalidad'),
                             items: Modalidad.values.map((modalidad) {
                               return DropdownMenuItem(
                                 value: modalidad,
                                 child: Text(
-                                  JustificacionHelper.obtenerDescripcionModalidad(modalidad),
+                                  JustificacionHelper.obtenerDescripcionModalidad(
+                                    modalidad,
+                                  ),
                                 ),
                               );
                             }).toList(),
@@ -166,15 +170,22 @@ class _CrearEventoAsistenciaScreenState
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                            const Icon(
+                              Icons.info_outline,
+                              size: 16,
+                              color: Colors.blue,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                JustificacionHelper.obtenerJustificacion(_modalidad!),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Colors.blue.shade800,
-                                  fontStyle: FontStyle.italic,
+                                JustificacionHelper.obtenerJustificacion(
+                                  _modalidad!,
                                 ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Colors.blue.shade800,
+                                      fontStyle: FontStyle.italic,
+                                    ),
                               ),
                             ),
                           ],

@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import '../core/models/asistencia/asistencia.dart';
-import '../core/models/asistencia/evento.dart';
 import '../core/models/member.dart';
 import '../core/reports/attendance_report_generator.dart';
 import '../core/utils/qr_encoding_helper.dart';
@@ -83,7 +82,9 @@ class AsistenciaService {
     });
 
     // 2. Generar justificación automática basada en la modalidad
-    final justificacion = JustificacionHelper.obtenerJustificacion(nuevaModalidad);
+    final justificacion = JustificacionHelper.obtenerJustificacion(
+      nuevaModalidad,
+    );
 
     // 3. Actualizar todas las asistencias del evento con la nueva justificación
     final asistenciasSnap = await _firestore
@@ -92,9 +93,7 @@ class AsistenciaService {
         .get();
 
     for (final doc in asistenciasSnap.docs) {
-      await doc.reference.update({
-        'justificacion': justificacion,
-      });
+      await doc.reference.update({'justificacion': justificacion});
     }
 
     // 4. Actualizar también en subcolecciones si existen
@@ -105,9 +104,7 @@ class AsistenciaService {
         .get();
 
     for (final doc in subColeccionSnap.docs) {
-      await doc.reference.update({
-        'justificacion': justificacion,
-      });
+      await doc.reference.update({'justificacion': justificacion});
     }
   }
 
@@ -377,10 +374,10 @@ class AsistenciaService {
     debugPrint('📱 Código escaneado: "$codigoEscaneado"');
     debugPrint('📱 Evento ID: $eventoId');
     debugPrint('📱 Método: ${metodo.value}');
-    
+
     // Parsear código QR para extraer identificador
     final personaData = parseQRCode(codigoEscaneado);
-    
+
     debugPrint('🔍 DATOS PARSEADOS DEL QR:');
     if (personaData != null) {
       debugPrint('   - Nombres: "${personaData.nombres}"');
@@ -389,14 +386,19 @@ class AsistenciaService {
     } else {
       debugPrint('   ⚠️ No se pudieron parsear datos del QR');
     }
-    
+
     // PRIORIDAD 1: Buscar en members collection por workerCode (si hay identificador)
     Member? memberEncontrado;
-    if (personaData?.identificador != null && personaData!.identificador!.isNotEmpty) {
+    if (personaData?.identificador != null &&
+        personaData!.identificador!.isNotEmpty) {
       debugPrint('🔍 BUSQUEDA EN MEMBERS:');
-      debugPrint('   🔍 Buscando miembro por workerCode: "${personaData.identificador}"');
-      memberEncontrado = await _membersService.getMemberByWorkerCode(personaData.identificador!);
-      
+      debugPrint(
+        '   🔍 Buscando miembro por workerCode: "${personaData.identificador}"',
+      );
+      memberEncontrado = await _membersService.getMemberByWorkerCode(
+        personaData.identificador!,
+      );
+
       if (memberEncontrado != null) {
         debugPrint('   ✅ MIEMBRO ENCONTRADO:');
         debugPrint('      - ID: ${memberEncontrado.id}');
@@ -407,70 +409,92 @@ class AsistenciaService {
         debugPrint('      - documentId: "${memberEncontrado.documentId}"');
         debugPrint('      - memberNumber: "${memberEncontrado.memberNumber}"');
       } else {
-        debugPrint('   ❌ No se encontró miembro con workerCode: "${personaData.identificador}"');
+        debugPrint(
+          '   ❌ No se encontró miembro con workerCode: "${personaData.identificador}"',
+        );
       }
     }
-    
+
     // Si encontramos el miembro, asegurar que exista en collection personas con datos correctos
     PersonaAsistencia? persona;
     if (memberEncontrado != null) {
       // Usar workerCode como identificador principal
-      final identificador = memberEncontrado.workerCode?.isNotEmpty == true 
-          ? memberEncontrado.workerCode! 
+      final identificador = memberEncontrado.workerCode?.isNotEmpty == true
+          ? memberEncontrado.workerCode!
           : memberEncontrado.documentId ?? '';
-      
+
       debugPrint('🔍 PROCESAMIENTO DE MIEMBRO:');
       debugPrint('   📌 Identificador a usar: "$identificador"');
       debugPrint('   📌 Nombres del miembro: "${memberEncontrado.firstName}"');
       debugPrint('   📌 Apellidos del miembro: "${memberEncontrado.lastName}"');
-      
+
       if (identificador.isNotEmpty) {
         // Buscar persona existente por identificador
         persona = await getPersonaPorIdentificador(identificador);
-        
+
         // Si no existe, crearla con datos del miembro
         if (persona == null) {
           debugPrint('   🆕 Persona no existe, creando desde miembro...');
-          
+
           // 🔍 VALIDACIÓN CRÍTICA: Asegurar que los nombres no estén vacíos
-          final nombresValidos = memberEncontrado.firstName.isNotEmpty && 
-                                 memberEncontrado.firstName != 'Sin nombre';
-          final apellidosValidos = memberEncontrado.lastName.isNotEmpty && 
-                                   memberEncontrado.lastName != 'Sin apellido';
-          
+          final nombresValidos =
+              memberEncontrado.firstName.isNotEmpty &&
+              memberEncontrado.firstName != 'Sin nombre';
+          final apellidosValidos =
+              memberEncontrado.lastName.isNotEmpty &&
+              memberEncontrado.lastName != 'Sin apellido';
+
           debugPrint('   🔎 VALIDACIÓN DE DATOS DEL MIEMBRO:');
-          debugPrint('      - firstName válido: $nombresValidos ("${memberEncontrado.firstName}")');
-          debugPrint('      - lastName válido: $apellidosValidos ("${memberEncontrado.lastName}")');
-          
+          debugPrint(
+            '      - firstName válido: $nombresValidos ("${memberEncontrado.firstName}")',
+          );
+          debugPrint(
+            '      - lastName válido: $apellidosValidos ("${memberEncontrado.lastName}")',
+          );
+
           if (!nombresValidos || !apellidosValidos) {
             debugPrint('   ⚠️ ADVERTENCIA: Datos del miembro incompletos');
-            debugPrint('      - Usando fallback: fullName="${memberEncontrado.fullName}"');
+            debugPrint(
+              '      - Usando fallback: fullName="${memberEncontrado.fullName}"',
+            );
           }
-          
+
           final nuevaPersona = PersonaAsistencia(
             id: '',
-            nombres: nombresValidos ? memberEncontrado.firstName : (memberEncontrado.fullName.isNotEmpty ? memberEncontrado.fullName.split(' ').first : 'Sin nombre'),
-            apellidos: apellidosValidos ? memberEncontrado.lastName : (memberEncontrado.fullName.isNotEmpty ? memberEncontrado.fullName.split(' ').skip(1).join(' ') : 'Sin apellido'),
+            nombres: nombresValidos
+                ? memberEncontrado.firstName
+                : (memberEncontrado.fullName.isNotEmpty
+                      ? memberEncontrado.fullName.split(' ').first
+                      : 'Sin nombre'),
+            apellidos: apellidosValidos
+                ? memberEncontrado.lastName
+                : (memberEncontrado.fullName.isNotEmpty
+                      ? memberEncontrado.fullName.split(' ').skip(1).join(' ')
+                      : 'Sin apellido'),
             identificador: identificador,
             codigoQR: codigoEscaneado,
           );
-          
+
           debugPrint('   📝 Datos de nueva persona:');
           debugPrint('      - nombres: "${nuevaPersona.nombres}"');
           debugPrint('      - apellidos: "${nuevaPersona.apellidos}"');
           debugPrint('      - identificador: "${nuevaPersona.identificador}"');
-          debugPrint('      - nombreCompleto resultante: "${nuevaPersona.nombreCompleto}"');
-          
+          debugPrint(
+            '      - nombreCompleto resultante: "${nuevaPersona.nombreCompleto}"',
+          );
+
           final id = await createPersona(nuevaPersona);
           persona = await getPersonaById(id);
-          
+
           if (persona != null) {
             debugPrint('   ✅ Persona creada exitosamente:');
             debugPrint('      - ID: $id');
             debugPrint('      - nombreCompleto: "${persona.nombreCompleto}"');
             debugPrint('      - identificador: "${persona.identificador}"');
           } else {
-            debugPrint('   ❌ ERROR: No se pudo recuperar la persona recién creada');
+            debugPrint(
+              '   ❌ ERROR: No se pudo recuperar la persona recién creada',
+            );
           }
         } else {
           debugPrint('   📋 Persona ya existe en colección personas:');
@@ -478,26 +502,40 @@ class AsistenciaService {
           debugPrint('      - nombres: "${persona.nombres}"');
           debugPrint('      - apellidos: "${persona.apellidos}"');
           debugPrint('      - identificador: "${persona.identificador}"');
-          
+
           // 🔍 CRÍTICO: Verificar si los datos están vacíos o son incorrectos y actualizarlos
-          final tieneDatosVacios = persona.nombres.isEmpty || persona.nombres == 'Sin nombre' ||
-                                  persona.apellidos.isEmpty || persona.apellidos == 'Sin apellido';
-          final nombresDiferentes = persona.nombres != memberEncontrado.firstName ||
-                                   persona.apellidos != memberEncontrado.lastName;
-          
+          final tieneDatosVacios =
+              persona.nombres.isEmpty ||
+              persona.nombres == 'Sin nombre' ||
+              persona.apellidos.isEmpty ||
+              persona.apellidos == 'Sin apellido';
+          final nombresDiferentes =
+              persona.nombres != memberEncontrado.firstName ||
+              persona.apellidos != memberEncontrado.lastName;
+
           debugPrint('   🔎 VERIFICACIÓN DE DATOS EXISTENTES:');
           debugPrint('      - ¿Datos vacíos?: $tieneDatosVacios');
           debugPrint('      - ¿Datos diferentes?: $nombresDiferentes');
-          debugPrint('      - Persona actual: "${persona.nombres} ${persona.apellidos}"');
-          debugPrint('      - Miembro esperado: "${memberEncontrado.firstName} ${memberEncontrado.lastName}"');
-          debugPrint('      - Identificador actual: "${persona.identificador}"');
+          debugPrint(
+            '      - Persona actual: "${persona.nombres} ${persona.apellidos}"',
+          );
+          debugPrint(
+            '      - Miembro esperado: "${memberEncontrado.firstName} ${memberEncontrado.lastName}"',
+          );
+          debugPrint(
+            '      - Identificador actual: "${persona.identificador}"',
+          );
           debugPrint('      - Identificador esperado: "$identificador"');
-          
+
           if (tieneDatosVacios || nombresDiferentes) {
             debugPrint('   🔄 ACTUALIZANDO DATOS DE PERSONA:');
-            debugPrint('      - Antes: "${persona.nombres} ${persona.apellidos}"');
-            debugPrint('      - Después: "${memberEncontrado.firstName} ${memberEncontrado.lastName}"');
-            
+            debugPrint(
+              '      - Antes: "${persona.nombres} ${persona.apellidos}"',
+            );
+            debugPrint(
+              '      - Después: "${memberEncontrado.firstName} ${memberEncontrado.lastName}"',
+            );
+
             final personaActualizada = PersonaAsistencia(
               id: persona.id,
               nombres: memberEncontrado.firstName,
@@ -507,9 +545,13 @@ class AsistenciaService {
             );
             await updatePersona(personaActualizada);
             persona = personaActualizada;
-            debugPrint('   ✅ Persona actualizada: "${persona.nombreCompleto}" (ID: ${persona.identificador})');
+            debugPrint(
+              '   ✅ Persona actualizada: "${persona.nombreCompleto}" (ID: ${persona.identificador})',
+            );
           } else {
-            debugPrint('   ✅ Datos de persona están correctos, no se necesita actualización');
+            debugPrint(
+              '   ✅ Datos de persona están correctos, no se necesita actualización',
+            );
           }
         }
       } else {
@@ -518,41 +560,51 @@ class AsistenciaService {
     } else {
       debugPrint('   ⚠️ No se encontró miembro en colección members');
     }
-    
+
     // PRIORIDAD 2: Si no es miembro o no se encontró, buscar por código QR exacto
     if (persona == null) {
       persona = await getPersonaPorQR(codigoEscaneado);
       if (persona != null) {
-        debugPrint('   ✅ Persona encontrada por código QR exacto: ${persona.nombreCompleto}');
+        debugPrint(
+          '   ✅ Persona encontrada por código QR exacto: ${persona.nombreCompleto}',
+        );
       }
     }
-    
+
     // PRIORIDAD 3: Buscar por identificador del QR parseado
-    if (persona == null && personaData?.identificador != null && personaData!.identificador!.isNotEmpty) {
-      debugPrint('   🔍 Buscando por identificador (fallback): ${personaData.identificador}');
+    if (persona == null &&
+        personaData?.identificador != null &&
+        personaData!.identificador!.isNotEmpty) {
+      debugPrint(
+        '   🔍 Buscando por identificador (fallback): ${personaData.identificador}',
+      );
       persona = await getPersonaPorIdentificador(personaData.identificador!);
       if (persona != null) {
-        debugPrint('   ✅ Persona encontrada por identificador: ${persona.nombreCompleto}');
+        debugPrint(
+          '   ✅ Persona encontrada por identificador: ${persona.nombreCompleto}',
+        );
       }
     }
-    
+
     // PRIORIDAD 4: Si aún no se encuentra, crear nueva persona
     if (persona == null) {
       debugPrint('🆍 CREANDO NUEVA PERSONA (no es miembro):');
       final nombres = personaData?.nombres ?? '';
       final apellidos = personaData?.apellidos ?? '';
       final identificador = personaData?.identificador ?? '';
-      
+
       debugPrint('   📝 Datos del QR parseado:');
       debugPrint('      - Nombres: "$nombres"');
       debugPrint('      - Apellidos: "$apellidos"');
       debugPrint('      - Identificador: "$identificador"');
-      
+
       if (nombres.isEmpty && apellidos.isEmpty && identificador.isEmpty) {
         debugPrint('   ❌ ERROR: QR vacío o sin datos válidos');
-        throw Exception('El código QR no contiene datos válidos. Asegúrate de usar el formato: {"nombres":"...","apellidos":"...","identificador":"..."}');
+        throw Exception(
+          'El código QR no contiene datos válidos. Asegúrate de usar el formato: {"nombres":"...","apellidos":"...","identificador":"..."}',
+        );
       }
-      
+
       final nuevaPersona = PersonaAsistencia(
         id: '',
         nombres: nombres.isNotEmpty ? nombres : 'Sin nombre',
@@ -560,32 +612,37 @@ class AsistenciaService {
         identificador: identificador,
         codigoQR: codigoEscaneado,
       );
-      
+
       debugPrint('   📝 Creando persona con datos:');
       debugPrint('      - nombres: "${nuevaPersona.nombres}"');
       debugPrint('      - apellidos: "${nuevaPersona.apellidos}"');
       debugPrint('      - identificador: "${nuevaPersona.identificador}"');
-      
+
       final id = await createPersona(nuevaPersona);
       persona = await getPersonaById(id);
-      
+
       if (persona != null) {
-        debugPrint('   ✅ Nueva persona creada: "${persona.nombreCompleto}" (ID: $id, Identificador: ${persona.identificador})');
+        debugPrint(
+          '   ✅ Nueva persona creada: "${persona.nombreCompleto}" (ID: $id, Identificador: ${persona.identificador})',
+        );
       }
     }
-    
+
     if (persona == null) {
       debugPrint('   ❌ ERROR: No se pudo crear/encontrar persona');
       return null;
     }
-    
+
     // Verificar duplicado de asistencia
-    final existente = await getAsistenciaPorEventoYPersona(eventoId, persona.id);
+    final existente = await getAsistenciaPorEventoYPersona(
+      eventoId,
+      persona.id,
+    );
     if (existente != null) {
       debugPrint('   ⚠️ Ya existe asistencia para esta persona en este evento');
       return null;
     }
-    
+
     // Crear registro de asistencia
     debugPrint('   ✅ Registrando asistencia...');
     final asistenciaId = await createAsistencia(
@@ -597,21 +654,23 @@ class AsistenciaService {
       ),
       persona.id,
     );
-    
+
     debugPrint('   ✅ Asistencia registrada exitosamente! ID: $asistenciaId');
-    debugPrint('   📋 Datos registrados - Nombre: ${persona.nombreCompleto}, Identificador: ${persona.identificador}');
+    debugPrint(
+      '   📋 Datos registrados - Nombre: ${persona.nombreCompleto}, Identificador: ${persona.identificador}',
+    );
     debugPrint('📱 ========== RESUMEN FINAL ==========');
     debugPrint('   📊 Persona final:');
-    debugPrint('      - ID: ${persona?.id ?? "null"}');
-    debugPrint('      - nombres: "${persona?.nombres ?? "null"}"');
-    debugPrint('      - apellidos: "${persona?.apellidos ?? "null"}"');
-    debugPrint('      - identificador: "${persona?.identificador ?? "null"}"');
-    debugPrint('      - nombreCompleto: "${persona?.nombreCompleto ?? "null"}"');
+    debugPrint('      - ID: ${persona.id}');
+    debugPrint('      - nombres: "${persona.nombres}"');
+    debugPrint('      - apellidos: "${persona.apellidos}"');
+    debugPrint('      - identificador: "${persona.identificador}"');
+    debugPrint('      - nombreCompleto: "${persona.nombreCompleto}"');
     debugPrint('   📊 Registro de asistencia:');
     debugPrint('      - eventoId: $eventoId');
     debugPrint('      - metodoRegistro: ${metodo.value}');
     debugPrint('=========================================\n');
-    
+
     return asistenciaId;
   }
 
@@ -626,7 +685,7 @@ class AsistenciaService {
     if (personaId.isEmpty) {
       throw Exception('ID de persona no proporcionado');
     }
-    
+
     // Obtener persona existente
     final persona = await getPersonaById(personaId);
     if (persona == null) {
@@ -663,68 +722,92 @@ class AsistenciaService {
 
   /// Sincroniza automáticamente todos los miembros de la colección 'members'
   /// hacia la colección legacy 'personas' para compatibilidad con el módulo de asistencia.
-  /// 
+  ///
   /// Este método asegura que:
   /// 1. Los miembros importados estén disponibles en las listas de selección de asistencia
   /// 2. El escáner pueda reconocer sus códigos QR
   /// 3. No se requiera exportación/importación manual entre módulos
   Future<Map<String, int>> sincronizarMiembrosConPersonas() async {
     try {
-      debugPrint('🔄 Iniciando sincronización automática members → personas...');
-      
+      debugPrint(
+        '🔄 Iniciando sincronización automática members → personas...',
+      );
+
       int sincronizados = 0;
       int omitidos = 0;
       int errores = 0;
-      
+
       // Obtener todos los miembros activos
       final snapshot = await _firestore
           .collection('members')
           .where('status', isEqualTo: 'active')
           .get();
-      
+
       debugPrint('   📊 Encontrados ${snapshot.docs.length} miembros activos');
-      
+
       for (final doc in snapshot.docs) {
         try {
           final member = Member.fromMap(doc.data(), doc.id);
-          
+
           // Usar workerCode como identificador principal, fallback a documentId
-          final identificador = member.workerCode?.isNotEmpty == true 
-              ? member.workerCode! 
-              : (member.documentId?.isNotEmpty == true ? member.documentId! : null);
-          
+          final identificador = member.workerCode?.isNotEmpty == true
+              ? member.workerCode!
+              : (member.documentId?.isNotEmpty == true
+                    ? member.documentId!
+                    : null);
+
           if (identificador == null || identificador.isEmpty) {
-            debugPrint('   ⚠️ Omitido: ${member.fullName} no tiene workerCode ni documentId');
+            debugPrint(
+              '   ⚠️ Omitido: ${member.fullName} no tiene workerCode ni documentId',
+            );
             omitidos++;
             continue;
           }
-          
+
           // Verificar si ya existe en collection personas
-          final personaExistente = await getPersonaPorIdentificador(identificador);
-          
+          final personaExistente = await getPersonaPorIdentificador(
+            identificador,
+          );
+
           if (personaExistente != null) {
             // Actualizar datos si hay cambios
-            final necesitaActualizacion = 
+            final necesitaActualizacion =
                 personaExistente.nombres != member.firstName ||
                 personaExistente.apellidos != member.lastName ||
                 personaExistente.identificador != identificador;
-            
+
             debugPrint('   🔎 VERIFICANDO SINCRONIZACIÓN:');
-            debugPrint('      - Persona actual: "${personaExistente.nombres} ${personaExistente.apellidos}" ($identificador)');
-            debugPrint('      - Miembro esperado: "${member.firstName} ${member.lastName}" ($identificador)');
-            debugPrint('      - ¿Necesita actualización?: $necesitaActualizacion');
-            
+            debugPrint(
+              '      - Persona actual: "${personaExistente.nombres} ${personaExistente.apellidos}" ($identificador)',
+            );
+            debugPrint(
+              '      - Miembro esperado: "${member.firstName} ${member.lastName}" ($identificador)',
+            );
+            debugPrint(
+              '      - ¿Necesita actualización?: $necesitaActualizacion',
+            );
+
             if (necesitaActualizacion) {
               final personaActualizada = PersonaAsistencia(
                 id: personaExistente.id,
-                nombres: member.firstName.isNotEmpty ? member.firstName : (member.fullName.isNotEmpty ? member.fullName.split(' ').first : 'Sin nombre'),
-                apellidos: member.lastName.isNotEmpty ? member.lastName : (member.fullName.isNotEmpty ? member.fullName.split(' ').skip(1).join(' ') : 'Sin apellido'),
+                nombres: member.firstName.isNotEmpty
+                    ? member.firstName
+                    : (member.fullName.isNotEmpty
+                          ? member.fullName.split(' ').first
+                          : 'Sin nombre'),
+                apellidos: member.lastName.isNotEmpty
+                    ? member.lastName
+                    : (member.fullName.isNotEmpty
+                          ? member.fullName.split(' ').skip(1).join(' ')
+                          : 'Sin apellido'),
                 identificador: identificador,
                 codigoQR: QREncodingHelper.generateMemberQRCode(member),
               );
-              
+
               await updatePersona(personaActualizada);
-              debugPrint('   ✏️ Actualizado: ${personaActualizada.nombreCompleto} ($identificador)');
+              debugPrint(
+                '   ✏️ Actualizado: ${personaActualizada.nombreCompleto} ($identificador)',
+              );
               sincronizados++;
             } else {
               omitidos++; // Ya está sincronizado y actualizado
@@ -734,18 +817,30 @@ class AsistenciaService {
             debugPrint('   🆕 Creando nueva persona desde miembro...');
             final nuevaPersona = PersonaAsistencia(
               id: '',
-              nombres: member.firstName.isNotEmpty ? member.firstName : (member.fullName.isNotEmpty ? member.fullName.split(' ').first : 'Sin nombre'),
-              apellidos: member.lastName.isNotEmpty ? member.lastName : (member.fullName.isNotEmpty ? member.fullName.split(' ').skip(1).join(' ') : 'Sin apellido'),
+              nombres: member.firstName.isNotEmpty
+                  ? member.firstName
+                  : (member.fullName.isNotEmpty
+                        ? member.fullName.split(' ').first
+                        : 'Sin nombre'),
+              apellidos: member.lastName.isNotEmpty
+                  ? member.lastName
+                  : (member.fullName.isNotEmpty
+                        ? member.fullName.split(' ').skip(1).join(' ')
+                        : 'Sin apellido'),
               identificador: identificador,
               codigoQR: QREncodingHelper.generateMemberQRCode(member),
             );
-            
+
             debugPrint('      - Nombres: "${nuevaPersona.nombres}"');
             debugPrint('      - Apellidos: "${nuevaPersona.apellidos}"');
-            debugPrint('      - Identificador: "${nuevaPersona.identificador}"');
-            
+            debugPrint(
+              '      - Identificador: "${nuevaPersona.identificador}"',
+            );
+
             await createPersona(nuevaPersona);
-            debugPrint('   ✅ Creado: ${nuevaPersona.nombreCompleto} ($identificador)');
+            debugPrint(
+              '   ✅ Creado: ${nuevaPersona.nombreCompleto} ($identificador)',
+            );
             sincronizados++;
           }
         } catch (e) {
@@ -753,16 +848,16 @@ class AsistenciaService {
           errores++;
         }
       }
-      
+
       final resultado = {
         'sincronizados': sincronizados,
         'omitidos': omitidos,
         'errores': errores,
         'total_procesados': snapshot.docs.length,
       };
-      
+
       debugPrint('✅ Sincronización completada: $resultado');
-      
+
       return resultado;
     } catch (e) {
       debugPrint('❌ Error en sincronización: $e');
@@ -773,34 +868,33 @@ class AsistenciaService {
   /// Escucha cambios en la colección 'members' y sincroniza automáticamente
   /// con 'personas' en tiempo real.
   Stream<Map<String, int>> watchAndSyncMembers() {
-    return _firestore
-        .collection('members')
-        .snapshots()
-        .asyncMap((snapshot) async {
-          debugPrint('🔄 Cambio detectado en members, sincronizando...');
-          return await sincronizarMiembrosConPersonas();
-        });
+    return _firestore.collection('members').snapshots().asyncMap((
+      snapshot,
+    ) async {
+      debugPrint('🔄 Cambio detectado en members, sincronizando...');
+      return await sincronizarMiembrosConPersonas();
+    });
   }
 
   static PersonaData? parseQRCode(String codigo) {
     if (codigo.trim().isEmpty) return null;
-    
+
     final limpio = codigo.trim();
-    
+
     // Intentar parsear como JSON
     if (limpio.startsWith('{')) {
       try {
         final Map<String, dynamic> jsonMap = jsonDecode(limpio);
-        
+
         final nombres = jsonMap['nombres']?.toString() ?? '';
         final apellidos = jsonMap['apellidos']?.toString() ?? '';
         final identificador = jsonMap['identificador']?.toString() ?? '';
-        
+
         debugPrint('✅ QR parseado exitosamente:');
         debugPrint('   Nombres: $nombres');
         debugPrint('   Apellidos: $apellidos');
         debugPrint('   Identificador: $identificador');
-        
+
         return PersonaData(
           nombres: nombres,
           apellidos: apellidos,
@@ -811,7 +905,7 @@ class AsistenciaService {
         debugPrint('   Código: $limpio');
       }
     }
-    
+
     // Formato CSV: Juan,Pérez,12345
     final partes = limpio.split(',');
     if (partes.length >= 3) {
@@ -821,7 +915,7 @@ class AsistenciaService {
         identificador: partes[2].trim(),
       );
     }
-    
+
     // Solo identificador: 12345
     return PersonaData(identificador: limpio);
   }

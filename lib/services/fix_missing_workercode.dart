@@ -1,9 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
 /// Script para actualizar miembros que no tienen workerCode
-/// 
+///
 /// PROBLEMA: Socios creados manualmente desde la app no tienen el campo
 /// workerCode, lo cual es necesario para:
 /// - Generación de códigos QR
@@ -28,7 +27,9 @@ class FixMissingWorkerCodeScript {
       // 1. Obtener todos los miembros
       debugPrint('\n📊 Paso 1: Obteniendo todos los miembros...');
       final membersSnapshot = await _firestore.collection('members').get();
-      debugPrint('   Total miembros encontrados: ${membersSnapshot.docs.length}');
+      debugPrint(
+        '   Total miembros encontrados: ${membersSnapshot.docs.length}',
+      );
 
       if (membersSnapshot.docs.isEmpty) {
         debugPrint('   ⚠️ No hay miembros en la base de datos');
@@ -48,7 +49,7 @@ class FixMissingWorkerCodeScript {
         if (workerCode == null || workerCode.toString().isEmpty) {
           debugPrint('   ❌ SIN WORKERCODE: $fullName (${doc.id})');
           debugPrint('      memberNumber: $memberNumber');
-          
+
           // Preparar actualización
           membersToUpdate.add({
             'id': doc.id,
@@ -57,7 +58,9 @@ class FixMissingWorkerCodeScript {
             'memberNumber': memberNumber,
           });
         } else {
-          debugPrint('   ✅ CON WORKERCODE: $fullName - workerCode: $workerCode');
+          debugPrint(
+            '   ✅ CON WORKERCODE: $fullName - workerCode: $workerCode',
+          );
         }
       }
 
@@ -96,13 +99,17 @@ class FixMissingWorkerCodeScript {
       }
 
       // 4. Resumen final
-      debugPrint('\n' + '=' * 60);
+      debugPrint('\n${'=' * 60}');
       debugPrint('📊 RESUMEN DE EJECUCIÓN');
       debugPrint('=' * 60);
-      debugPrint('   Total miembros procesados: ${membersSnapshot.docs.length}');
+      debugPrint(
+        '   Total miembros procesados: ${membersSnapshot.docs.length}',
+      );
       debugPrint('   Miembros actualizados: $successCount');
       debugPrint('   Errores: $errorCount');
-      debugPrint('   Miembros ya correctos: ${membersSnapshot.docs.length - membersToUpdate.length}');
+      debugPrint(
+        '   Miembros ya correctos: ${membersSnapshot.docs.length - membersToUpdate.length}',
+      );
       debugPrint('=' * 60);
 
       if (errorCount > 0) {
@@ -122,7 +129,7 @@ class FixMissingWorkerCodeScript {
 
     try {
       final doc = await _firestore.collection('members').doc(memberId).get();
-      
+
       if (!doc.exists) {
         debugPrint('   ❌ Miembro no encontrado');
         return;

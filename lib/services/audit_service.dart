@@ -121,12 +121,7 @@ class AuditService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
-              .map(
-                (doc) => AuditLog.fromMap(
-                  doc.data() as Map<String, dynamic>,
-                  doc.id,
-                ),
-              )
+              .map((doc) => AuditLog.fromMap(doc.data(), doc.id))
               .toList(),
         );
   }
@@ -144,12 +139,7 @@ class AuditService {
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
-              .map(
-                (doc) => AuditLog.fromMap(
-                  doc.data() as Map<String, dynamic>,
-                  doc.id,
-                ),
-              )
+              .map((doc) => AuditLog.fromMap(doc.data(), doc.id))
               .toList(),
         );
   }

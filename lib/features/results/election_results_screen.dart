@@ -55,7 +55,8 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = context.watch<AuthProvider>().user?.role == UserRole.admin ||
+    final isAdmin =
+        context.watch<AuthProvider>().user?.role == UserRole.admin ||
         context.watch<AuthProvider>().user?.role == UserRole.superadmin;
     return Scaffold(
       appBar: ProfessionalAppBar(
@@ -236,7 +237,7 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
                               color: Theme.of(context).colorScheme.surface,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
+                                  color: Colors.black.withValues(alpha: 0.05),
                                   blurRadius: 10,
                                   offset: const Offset(0, -2),
                                 ),
@@ -792,7 +793,9 @@ class _EmptyResultsCard extends StatelessWidget {
             Icon(
               Icons.how_to_vote_outlined,
               size: 80,
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 24),
             Text(

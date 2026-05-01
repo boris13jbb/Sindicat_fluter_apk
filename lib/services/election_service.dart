@@ -13,7 +13,9 @@ import 'dart:async';
 
 /// Modo de elegibilidad para votación
 enum EligibilityMode {
+  // ignore: constant_identifier_names
   all_active_members('Todos los socios activos'),
+  // ignore: constant_identifier_names
   only_attendees('Solo asistentes a evento');
 
   const EligibilityMode(this.displayName);
@@ -94,7 +96,9 @@ class ElectionService {
           final now = DateTime.now().millisecondsSinceEpoch;
           return snap.docs
               .map((d) => Election.fromMap(d.data(), d.id))
-              .where((e) => e.startDate <= now && e.endDate >= now)
+              .where(
+                (e) => e.isActive && e.startDate <= now && e.endDate >= now,
+              )
               .toList();
         });
   }
@@ -266,7 +270,8 @@ class ElectionService {
         action: AuditAction.create,
         entityType: AuditEntityType.candidate,
         entityId: ref.id,
-        description: 'Candidato creado: ${candidate.name} (Elección: ${candidate.electionId})',
+        description:
+            'Candidato creado: ${candidate.name} (Elección: ${candidate.electionId})',
         platform: 'flutter',
       );
     } catch (e) {
@@ -314,7 +319,8 @@ class ElectionService {
       action: AuditAction.delete,
       entityType: AuditEntityType.candidate,
       entityId: candidateId,
-      description: 'Candidato eliminado: ${candidateDoc.data()?['name'] ?? candidateId}',
+      description:
+          'Candidato eliminado: ${candidateDoc.data()?['name'] ?? candidateId}',
       platform: 'flutter',
     );
   }
@@ -417,7 +423,7 @@ class VoteService {
       // ESTRATEGIA DE BÚSQUEDA INTELIGENTE:
       // Intentar múltiples identificadores (workerCode, email, userId)
       // Similar a isUserRegisteredInEvent en asistencia_service.dart
-      
+
       // 1. Obtener datos completos del usuario para tener su número de empleado
       final fullUser = await AuthService().getCurrentUser();
       final employeeNum = fullUser?.employeeNumber;
@@ -426,23 +432,25 @@ class VoteService {
       // Lista de posibles identificadores del usuario
       // PRIORIDAD: employeeNumber (workerCode) primero, luego memberId, luego userId
       final idsParaProbar = <String>[];
-      
+
       if (employeeNum != null && employeeNum.isNotEmpty) {
         idsParaProbar.add(employeeNum);
         debugPrint('   📋 Agregado employeeNumber: $employeeNum');
       }
-      
+
       if (memberId.isNotEmpty && !idsParaProbar.contains(memberId)) {
         idsParaProbar.add(memberId);
         debugPrint('   📋 Agregado memberId: $memberId');
       }
-      
+
       if (userId.isNotEmpty && !idsParaProbar.contains(userId)) {
         idsParaProbar.add(userId);
         debugPrint('   📋 Agregado userId: $userId');
       }
-      
-      if (userEmail != null && userEmail.isNotEmpty && !idsParaProbar.contains(userEmail)) {
+
+      if (userEmail != null &&
+          userEmail.isNotEmpty &&
+          !idsParaProbar.contains(userEmail)) {
         idsParaProbar.add(userEmail);
         debugPrint('   📋 Agregado email: $userEmail');
       }
@@ -452,49 +460,58 @@ class VoteService {
         return false;
       }
 
-      debugPrint('   🔍 Identificadores a probar (${idsParaProbar.length}): ${idsParaProbar.join(", ")}');
+      debugPrint(
+        '   🔍 Identificadores a probar (${idsParaProbar.length}): ${idsParaProbar.join(", ")}',
+      );
 
       // 2. Buscar en miembros (members) por cada identificador
       final membersService = MembersService();
       for (final identifier in idsParaProbar) {
         debugPrint('   \n   🔎 Probando identifier: "$identifier"');
-        
+
         final member = await membersService.getMemberByWorkerCode(identifier);
         if (member != null) {
           debugPrint('   ✅ Miembro encontrado:');
           debugPrint('      - workerCode: ${member.workerCode}');
           debugPrint('      - Nombre: ${member.fullName}');
           debugPrint('      - Status: ${member.status.displayName}');
-          
+
           // Verificar estado activo
           if (member.status != MemberStatus.active) {
-            debugPrint('      ⚠️ Miembro no está activo (status: ${member.status.displayName})');
+            debugPrint(
+              '      ⚠️ Miembro no está activo (status: ${member.status.displayName})',
+            );
             continue;
           }
-          
+
           // Verificar si este miembro tiene asistencia registrada en el evento
           final asistenciaService = AsistenciaService();
           final persona = await asistenciaService.getPersonaPorIdentificador(
             member.workerCode!,
           );
           if (persona != null) {
-            debugPrint('      👤 Persona encontrada en sistema de asistencia: ${persona.id}');
-            final asistencia =
-                await asistenciaService.getAsistenciaPorEventoYPersona(
-              eventoAsistenciaId,
-              persona.id,
+            debugPrint(
+              '      👤 Persona encontrada en sistema de asistencia: ${persona.id}',
             );
+            final asistencia = await asistenciaService
+                .getAsistenciaPorEventoYPersona(eventoAsistenciaId, persona.id);
             if (asistencia != null && asistencia.asistio == true) {
               debugPrint('      ✅ ASISTENCIA ENCONTRADA - Usuario ELEGIBLE');
               return true;
             } else {
-              debugPrint('      ❌ No tiene asistencia registrada en este evento');
+              debugPrint(
+                '      ❌ No tiene asistencia registrada en este evento',
+              );
             }
           } else {
-            debugPrint('      ⚠️ Persona no encontrada en sistema de asistencia con workerCode: ${member.workerCode}');
+            debugPrint(
+              '      ⚠️ Persona no encontrada en sistema de asistencia con workerCode: ${member.workerCode}',
+            );
           }
         } else {
-          debugPrint('   ❌ No se encontró miembro con identifier: "$identifier"');
+          debugPrint(
+            '   ❌ No se encontró miembro con identifier: "$identifier"',
+          );
         }
       }
 
@@ -516,7 +533,9 @@ class VoteService {
         debugPrint('   🎉 Usuario ELEGIBLE para votar');
       } else {
         debugPrint('   ❌ No se encontró asistencia por búsqueda directa');
-        debugPrint('   💡 Sugerencia: Verificar que el socio tenga registro de asistencia en el evento $eventoAsistenciaId');
+        debugPrint(
+          '   💡 Sugerencia: Verificar que el socio tenga registro de asistencia en el evento $eventoAsistenciaId',
+        );
       }
 
       return hasAttendance;
@@ -562,7 +581,9 @@ class VoteService {
         rethrow;
       }
     } else {
-      debugPrint('   ⚠️ MemberId no proporcionado - omitiendo validación de elegibilidad');
+      debugPrint(
+        '   ⚠️ MemberId no proporcionado - omitiendo validación de elegibilidad',
+      );
     }
 
     final batch = _firestore.batch();
@@ -598,10 +619,14 @@ class VoteService {
     try {
       debugPrint('   💾 Ejecutando commit del batch...');
       debugPrint('   📊 Detalles del batch:');
-      debugPrint('      - Vote Ref: elections/$electionId/votes/${_voteId(electionId, userId)}');
-      debugPrint('      - Candidate Ref: elections/$electionId/candidates/$candidateId');
+      debugPrint(
+        '      - Vote Ref: elections/$electionId/votes/${_voteId(electionId, userId)}',
+      );
+      debugPrint(
+        '      - Candidate Ref: elections/$electionId/candidates/$candidateId',
+      );
       debugPrint('      - Election Ref: elections/$electionId');
-      
+
       await batch.commit();
       debugPrint('   ✅ Batch commit exitoso');
 
@@ -619,21 +644,27 @@ class VoteService {
     } catch (e, stackTrace) {
       debugPrint('   ❌ Error al ejecutar batch: $e');
       debugPrint('   Stack trace: $stackTrace');
-      
+
       // Clasificar el tipo de error
       final errorMsg = e.toString().toLowerCase();
-      if (errorMsg.contains('permission-denied') || errorMsg.contains('permission')) {
+      if (errorMsg.contains('permission-denied') ||
+          errorMsg.contains('permission')) {
         debugPrint('   🔒 ERROR DE PERMISOS - Verifica firestore.rules');
-        debugPrint('   💡 Posible causa: Las reglas no permiten esta operación');
-      } else if (errorMsg.contains('not-found') || errorMsg.contains('does not exist')) {
-        debugPrint('   🔍 DOCUMENTO NO ENCONTRADO - Verifica que la elección y candidato existan');
+        debugPrint(
+          '   💡 Posible causa: Las reglas no permiten esta operación',
+        );
+      } else if (errorMsg.contains('not-found') ||
+          errorMsg.contains('does not exist')) {
+        debugPrint(
+          '   🔍 DOCUMENTO NO ENCONTRADO - Verifica que la elección y candidato existan',
+        );
         debugPrint('   💡 Posible causa: electionId o candidateId incorrectos');
       } else if (errorMsg.contains('already') || errorMsg.contains('exists')) {
         debugPrint('   ⚠️ El voto ya existe - tratando como éxito');
         debugPrint('🗳️ === VOTO YA REGISTRADO (DUPLICADO) ===\n');
         return; // No relanzar, tratar como éxito
       }
-      
+
       debugPrint('🗳️ === ERROR EN VOTACIÓN ===\n');
       rethrow;
     }

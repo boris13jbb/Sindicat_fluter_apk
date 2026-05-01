@@ -1,11 +1,13 @@
-/// Script de utilidad para actualizar miembros existentes en Firestore
-/// que no tienen el campo workerCode, copiando memberNumber como fallback.
-/// 
-/// Uso: dart run scripts/update_missing_worker_codes.dart
+// ignore_for_file: avoid_print
+
+// Script de utilidad para actualizar miembros existentes en Firestore
+// que no tienen el campo workerCode, copiando memberNumber como fallback.
+//
+// Uso: dart run scripts/update_missing_worker_codes.dart
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
-import '../lib/firebase_options.dart';
+import 'package:fluter_apk/firebase_options.dart';
 
 Future<void> main() async {
   print('🚀 Iniciando actualización de workerCode faltantes...\n');
@@ -32,7 +34,9 @@ Future<void> main() async {
 
     if (totalMembers == 0) {
       print('⚠️ No hay miembros en la base de datos.');
-      print('   Importa socios primero usando la función de importación CSV/Excel.\n');
+      print(
+        '   Importa socios primero usando la función de importación CSV/Excel.\n',
+      );
       return;
     }
 
@@ -75,7 +79,7 @@ Future<void> main() async {
     }
 
     // Mostrar resumen
-    print('\n' + '=' * 60);
+    print('\n${'=' * 60}');
     print('📊 RESUMEN DE ACTUALIZACIÓN');
     print('=' * 60);
     print('   Total de miembros procesados: $totalMembers');

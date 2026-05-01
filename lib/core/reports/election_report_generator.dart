@@ -20,7 +20,6 @@ class ElectionReportGenerator {
   // Colores corporativos
   static final _primaryColor = PdfColor.fromInt(0xFF6750A4);
   static final _secondaryColor = PdfColor.fromInt(0xFF625B71);
-  static final _accentColor = PdfColor.fromInt(0xFFFFD700);
   static final _successColor = PdfColor.fromInt(0xFF4CAF50);
   static final _lightGray = PdfColor.fromInt(0xFFF5F5F5);
   static final _mediumGray = PdfColor.fromInt(0xFFE0E0E0);

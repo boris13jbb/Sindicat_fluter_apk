@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import '../../core/models/asistencia/evento.dart';
 import '../../core/models/asistencia/asistencia.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
@@ -22,29 +21,34 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   final _service = AsistenciaService();
   bool _loading = false;
   String? _mensaje;
-  String? _eventoIdSeleccionado; // Cambiado a String (ID) para evitar duplicados en Dropdown
-  
+  String?
+  _eventoIdSeleccionado; // Cambiado a String (ID) para evitar duplicados en Dropdown
+
   @override
   void initState() {
     super.initState();
     // Sincronizar members → personas al cargar la pantalla para asegurar consistencia
     _sincronizarMiembros();
   }
-  
+
   Future<void> _sincronizarMiembros() async {
     try {
-      debugPrint('🔄 Ejecutando sincronización members → personas desde scanner...');
+      debugPrint(
+        '🔄 Ejecutando sincronización members → personas desde scanner...',
+      );
       final resultado = await _service.sincronizarMiembrosConPersonas();
       debugPrint('✅ Sincronización completada: $resultado');
-      
+
       if (mounted) {
         final total = resultado['total_procesados'] ?? 0;
         final sincronizados = resultado['sincronizados'] ?? 0;
-        
+
         if (sincronizados > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✅ Se sincronizaron $sincronizados de $total miembros'),
+              content: Text(
+                '✅ Se sincronizaron $sincronizados de $total miembros',
+              ),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 2),
             ),
@@ -56,22 +60,8 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
     }
   }
 
-  EventoAsistencia? get _evento {
-    // Buscar evento por ID en lugar de almacenar objeto
-    return widget.evento ?? 
-        (_eventoIdSeleccionado != null 
-            ? _getEventoFromId(_eventoIdSeleccionado!)
-            : null);
-  }
-
-  // Helper para buscar evento por ID en una lista temporal
-  EventoAsistencia? _getEventoFromId(String id) {
-    // Este método se llamará después de cargar el stream
-    return null; // Se sobrescribe con _eventoSeleccionadoObj
-  }
-  
   EventoAsistencia? _eventoSeleccionadoObj;
-  
+
   EventoAsistencia? get _eventoReal => widget.evento ?? _eventoSeleccionadoObj;
 
   @override
@@ -101,17 +91,17 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
             ),
-            
+
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-            
+
             // Opción manual
             Text(
               'O ingresa manualmente:',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 8),
             // Selector de evento
@@ -135,7 +125,7 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                     _eventoIdSeleccionado = eventos.first.id;
                     _eventoSeleccionadoObj = eventos.first;
                   }
-                  
+
                   // Actualizar _eventoSeleccionadoObj si el evento seleccionado cambió
                   final currentEvento = eventos.firstWhere(
                     (e) => e.id == _eventoIdSeleccionado,
@@ -143,9 +133,9 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                   );
                   _eventoSeleccionadoObj = currentEvento;
                   _eventoIdSeleccionado = currentEvento.id;
-                  
+
                   return DropdownButtonFormField<String>(
-                    value: _eventoIdSeleccionado,
+                    initialValue: _eventoIdSeleccionado,
                     decoration: const InputDecoration(labelText: 'Evento'),
                     items: eventos
                         .map(
@@ -209,9 +199,9 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
               const Center(child: CircularProgressIndicator())
             else
               FilledButton(
-                onPressed: _evento != null ? _registrar : null,
+                onPressed: _eventoReal != null ? _registrar : null,
                 child: Text(
-                  _evento == null
+                  _eventoReal == null
                       ? 'Selecciona un evento'
                       : 'Registrar asistencia',
                 ),
@@ -265,7 +255,7 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
       if (mounted) setState(() => _loading = false);
     }
   }
-  
+
   /// Iniciar escaneo con cámara - Modo continuo
   Future<void> _iniciarEscaneo() async {
     final evento = _eventoReal;
@@ -273,7 +263,7 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
       setState(() => _mensaje = '⚠️ Selecciona un evento primero');
       return;
     }
-    
+
     // Abrir escáner en modo continuo
     await Navigator.push(
       context,
@@ -285,13 +275,13 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
             final metodo = codigo.startsWith('{')
                 ? MetodoRegistro.escaneoQr
                 : MetodoRegistro.escaneoBarcode;
-            
+
             final id = await _service.registrarAsistenciaDesdeEscaneo(
               codigo,
               evento.id,
               metodo,
             );
-            
+
             if (id == null) {
               throw Exception('Ya registrado');
             }
@@ -320,7 +310,6 @@ class ScannerQRScreen extends StatefulWidget {
 class _ScannerQRScreenState extends State<ScannerQRScreen> {
   MobileScannerController cameraController = MobileScannerController();
   bool _escaneando = true;
-  String? _ultimoCodigo;
   String? _mensaje;
   bool _exito = false;
   DateTime? _ultimoEscaneo;
@@ -330,23 +319,23 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
     cameraController.dispose();
     super.dispose();
   }
-  
+
   /// Manejar código escaneado
   Future<void> _procesarCodigo(String codigo) async {
     if (!_escaneando) return;
-    
+
     // Evitar escaneos duplicados muy rápidos (mínimo 2 segundos entre escaneos)
     if (_ultimoEscaneo != null &&
-        DateTime.now().difference(_ultimoEscaneo!) < const Duration(seconds: 2)) {
+        DateTime.now().difference(_ultimoEscaneo!) <
+            const Duration(seconds: 2)) {
       return;
     }
-    
+
     setState(() {
       _escaneando = false;
-      _ultimoCodigo = codigo;
       _ultimoEscaneo = DateTime.now();
     });
-    
+
     try {
       // Registrar asistencia
       if (widget.onRegistroExitoso != null) {
@@ -362,7 +351,7 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
           _mensaje = 'Código: $codigo';
         });
       }
-      
+
       // Auto-reset después de 1.5 segundos para permitir siguiente escaneo
       Future.delayed(const Duration(milliseconds: 1500), () {
         if (mounted) {
@@ -370,7 +359,6 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
             _escaneando = true;
             _mensaje = null;
             _exito = false;
-            _ultimoCodigo = null;
           });
         }
       });
@@ -417,17 +405,17 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
             controller: cameraController,
             onDetect: (BarcodeCapture capture) {
               if (!_escaneando) return;
-              
+
               final List<Barcode> barcodes = capture.barcodes;
               if (barcodes.isEmpty) return;
-              
+
               final String? code = barcodes.first.rawValue;
               if (code != null && code.isNotEmpty) {
                 _procesarCodigo(code);
               }
             },
           ),
-          
+
           // Overlay con marco de escaneo
           Center(
             child: AnimatedContainer(
@@ -444,13 +432,13 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
                 borderRadius: BorderRadius.circular(12),
                 color: _mensaje != null
                     ? (_exito
-                        ? Colors.green.withValues(alpha: 0.3)
-                        : Colors.red.withValues(alpha: 0.3))
+                          ? Colors.green.withValues(alpha: 0.3)
+                          : Colors.red.withValues(alpha: 0.3))
                     : Colors.transparent,
               ),
             ),
           ),
-          
+
           // Indicador de estado
           if (_mensaje != null)
             Positioned(
@@ -476,7 +464,7 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
                 ),
               ),
             ),
-          
+
           // Instrucciones
           if (_mensaje == null)
             Positioned(
@@ -500,23 +488,19 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
                 ),
               ),
             ),
-          
+
           // Botón para alternar linterna
           Positioned(
             bottom: 50,
             right: 20,
             child: IconButton(
-              icon: const Icon(
-                Icons.flash_on,
-                color: Colors.white,
-                size: 32,
-              ),
+              icon: const Icon(Icons.flash_on, color: Colors.white, size: 32),
               onPressed: () async {
                 await cameraController.toggleTorch();
               },
             ),
           ),
-          
+
           // Indicador de escaneos consecutivos
           Positioned(
             bottom: 50,
@@ -534,10 +518,7 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
                   SizedBox(width: 8),
                   Text(
                     'Escaneo continuo',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(color: Colors.white, fontSize: 14),
                   ),
                 ],
               ),

@@ -28,7 +28,6 @@ import 'features/asistencia/importar_personas_screen.dart';
 import 'features/asistencia/qr_codes_screen.dart';
 // 🆕 Nuevas pantallas de gestión sindical
 import 'features/members/members_list_screen.dart';
-import 'features/members/member_form_screen.dart';
 import 'features/members/import_members_screen.dart';
 import 'features/attendance/attendance_report_screen.dart';
 import 'features/audit/audit_logs_screen.dart';
@@ -156,7 +155,8 @@ class MyApp extends StatelessWidget {
                 ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
             return ScannerAsistenciaScreen(evento: evento);
           },
-          '/asistencia/importar_personas': (_) => const ImportarPersonasScreen(),
+          '/asistencia/importar_personas': (_) =>
+              const ImportarPersonasScreen(),
           '/asistencia/qr_codes': (_) => const QRCodesScreen(),
           // 🆕 Rutas de gestión sindical
           '/members': (_) => const MembersListScreen(),

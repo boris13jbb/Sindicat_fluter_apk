@@ -1,14 +1,16 @@
-/// Script de utilidad para actualizar campos workerCode faltantes en Firestore
-/// 
-/// Este script recorre todos los miembros en la colección 'members' y:
-/// 1. Si falta workerCode pero existe documentId, copia documentId a workerCode
-/// 2. Si ambos existen, mantiene los valores actuales
-/// 3. Registra estadísticas de actualización
-/// 
-/// USO:
-/// - Ejecutar este script desde la consola con: dart update_worker_codes.dart
-/// - Requiere Firebase CLI configurado y acceso al proyecto
-/// - IMPORTANTE: Hacer backup de Firestore antes de ejecutar
+// ignore_for_file: avoid_print
+
+// Script de utilidad para actualizar campos workerCode faltantes en Firestore.
+//
+// Este script recorre todos los miembros en la colección 'members' y:
+// 1. Si falta workerCode pero existe documentId, copia documentId a workerCode.
+// 2. Si ambos existen, mantiene los valores actuales.
+// 3. Registra estadísticas de actualización.
+//
+// USO:
+// - Ejecutar este script desde la consola con: dart update_worker_codes.dart.
+// - Requiere Firebase CLI configurado y acceso al proyecto.
+// - IMPORTANTE: Hacer backup de Firestore antes de ejecutar.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -25,12 +27,12 @@ void main() async {
     print('✅ Firebase inicializado correctamente\n');
 
     final firestore = FirebaseFirestore.instance;
-    
+
     // Obtener todos los miembros
     print('📊 Obteniendo todos los miembros de Firestore...');
     final snapshot = await firestore.collection('members').get();
     final members = snapshot.docs;
-    
+
     print('   Total de miembros encontrados: ${members.length}\n');
 
     if (members.isEmpty) {
@@ -48,7 +50,7 @@ void main() async {
     for (final doc in members) {
       final data = doc.data();
       final docId = doc.id;
-      
+
       final workerCode = data['workerCode'] as String?;
       final documentId = data['documentId'] as String?;
       final memberNumber = data['memberNumber'] as String?;
@@ -62,20 +64,23 @@ void main() async {
 
         // Caso 2: No tiene workerCode pero sí documentId - copiar
         if (documentId != null && documentId.isNotEmpty) {
-          print('🔄 Actualizando miembro $docId (Nº $memberNumber): '
-                'workerCode = "$documentId" (desde documentId)');
-          
+          print(
+            '🔄 Actualizando miembro $docId (Nº $memberNumber): '
+            'workerCode = "$documentId" (desde documentId)',
+          );
+
           await doc.reference.update({
             'workerCode': documentId,
             'updatedAt': FieldValue.serverTimestamp(),
           });
-          
+
           updatedCount++;
         } else {
           // Caso 3: No tiene ni workerCode ni documentId - error
           errorCount++;
-          final errorMsg = '❌ Miembro $docId (Nº $memberNumber): '
-                          'No tiene workerCode ni documentId';
+          final errorMsg =
+              '❌ Miembro $docId (Nº $memberNumber): '
+              'No tiene workerCode ni documentId';
           print(errorMsg);
           errors.add(errorMsg);
         }
@@ -88,7 +93,7 @@ void main() async {
     }
 
     // Resumen final
-    print('\n' + '=' * 60);
+    print('\n${'=' * 60}');
     print('📋 RESUMEN DE ACTUALIZACIÓN');
     print('=' * 60);
     print('   ✅ Actualizados: $updatedCount miembros');
@@ -114,7 +119,6 @@ void main() async {
       print('\n⚠️  La actualización tuvo errores.');
       print('   Revise los mensajes de error arriba.');
     }
-
   } catch (e, stackTrace) {
     print('\n❌ ERROR CRÍTICO: $e');
     print('Stack trace: $stackTrace');

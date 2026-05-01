@@ -108,6 +108,7 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
             _buildBulletPoint('numero_socio (obligatorio)'),
             _buildBulletPoint('nombres (obligatorio)'),
             _buildBulletPoint('apellidos (obligatorio)'),
+            _buildBulletPoint('worker_code (recomendado para QR/votación)'),
             _buildBulletPoint('documento (opcional)'),
             _buildBulletPoint('email (opcional)'),
             _buildBulletPoint('telefono (opcional)'),
@@ -337,10 +338,10 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
-        
+
         // Intentar obtener bytes directamente
         Uint8List? fileBytes = file.bytes;
-        
+
         // Si bytes es null, leer desde path
         if (fileBytes == null && file.path != null) {
           debugPrint('⚠️ file.bytes es null, leyendo desde path...');
@@ -353,19 +354,21 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
             debugPrint('❌ Error al leer archivo: $e');
           }
         }
-        
+
         if (fileBytes == null || fileBytes.isEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('❌ No se pudo leer el archivo. Intenta con otro.'),
+                content: Text(
+                  '❌ No se pudo leer el archivo. Intenta con otro.',
+                ),
                 backgroundColor: Colors.red,
               ),
             );
           }
           return;
         }
-        
+
         // Detectar tipo de archivo
         String? fileType;
         final extension = file.name.split('.').last.toLowerCase();
@@ -374,7 +377,7 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
         } else if (extension == 'xlsx' || extension == 'xls') {
           fileType = 'excel';
         }
-        
+
         setState(() {
           _selectedFileName = file.name;
           _selectedFileBytes = fileBytes;
@@ -401,7 +404,7 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
 
     try {
       ImportLog log;
-      
+
       if (_selectedFileType == 'csv') {
         log = await _service.importFromCsv(
           fileBytes: _selectedFileBytes!,

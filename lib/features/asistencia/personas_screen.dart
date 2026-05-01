@@ -1,12 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'dart:io';
-import 'dart:ui' as ui;
-import 'package:flutter/rendering.dart';
 import '../../core/models/member.dart';
 import '../../core/models/asistencia/persona.dart';
 import '../../core/utils/qr_encoding_helper.dart';
@@ -59,9 +52,16 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                          const Icon(
+                            Icons.error_outline,
+                            size: 64,
+                            color: Colors.red,
+                          ),
                           const SizedBox(height: 16),
-                          Text('Error: ${snap.error}', textAlign: TextAlign.center),
+                          Text(
+                            'Error: ${snap.error}',
+                            textAlign: TextAlign.center,
+                          ),
                           const SizedBox(height: 24),
                           ElevatedButton.icon(
                             onPressed: () => setState(() {}),
@@ -86,7 +86,11 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.people_outline, size: 64, color: Colors.grey.shade400),
+                          Icon(
+                            Icons.people_outline,
+                            size: 64,
+                            color: Colors.grey.shade400,
+                          ),
                           const SizedBox(height: 16),
                           Text(
                             _busqueda.isNotEmpty
@@ -106,11 +110,13 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                   itemBuilder: (context, i) {
                     final item = list[i];
                     final source = item['source'] as String;
-                    
+
                     if (source == 'member') {
                       return _MemberQRCard(member: item['data'] as Member);
                     } else {
-                      return _PersonaQRCard(persona: item['data'] as PersonaAsistencia);
+                      return _PersonaQRCard(
+                        persona: item['data'] as PersonaAsistencia,
+                      );
                     }
                   },
                 );
@@ -134,14 +140,15 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
     final result = <Map<String, dynamic>>[];
     final identificadoresVistos = <String>{};
 
-    debugPrint('🔄 Combinando ${members.length} members con personas legacy...');
+    debugPrint(
+      '🔄 Combinando ${members.length} members con personas legacy...',
+    );
 
     try {
       for (final member in members) {
-        final identificador =
-            member.workerCode?.isNotEmpty == true
-                ? member.workerCode!
-                : (member.documentId ?? '');
+        final identificador = member.workerCode?.isNotEmpty == true
+            ? member.workerCode!
+            : (member.documentId ?? '');
 
         if (identificador.isEmpty) continue;
 
@@ -166,7 +173,9 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
             .collection('personas')
             .get();
 
-        debugPrint('   📊 Encontradas ${personasSnapshot.docs.length} personas legacy');
+        debugPrint(
+          '   📊 Encontradas ${personasSnapshot.docs.length} personas legacy',
+        );
 
         int personasAgregadas = 0;
         for (final doc in personasSnapshot.docs) {
@@ -188,12 +197,17 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
               final query = _busqueda.toLowerCase();
               final matches =
                   persona.nombreCompleto.toLowerCase().contains(query) ||
-                  (persona.identificador?.toLowerCase().contains(query) ?? false);
+                  (persona.identificador?.toLowerCase().contains(query) ??
+                      false);
 
               if (!matches) continue;
             }
 
-            result.add({'id': persona.id, 'data': persona, 'source': 'persona'});
+            result.add({
+              'id': persona.id,
+              'data': persona,
+              'source': 'persona',
+            });
             personasAgregadas++;
           } catch (e) {
             debugPrint('   ❌ Error procesando persona ${doc.id}: $e');
@@ -259,7 +273,9 @@ class _MemberQRCardState extends State<_MemberQRCard> {
     // FIX CRÍTICO: Generar QR de manera segura con fallback
     final qrData = widget.member.workerCode?.isNotEmpty == true
         ? QREncodingHelper.generateMemberQRCode(widget.member)
-        : widget.member.id; // Fallback: usar ID del documento si no tiene workerCode
+        : widget
+              .member
+              .id; // Fallback: usar ID del documento si no tiene workerCode
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -308,7 +324,10 @@ class _MemberQRCardState extends State<_MemberQRCard> {
                     const SizedBox(height: 2),
                     Text(
                       'Código: ${widget.member.workerCode}',
-                      style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ],
                   if (widget.member.documentId != null &&
@@ -316,7 +335,10 @@ class _MemberQRCardState extends State<_MemberQRCard> {
                     const SizedBox(height: 2),
                     Text(
                       'Cédula: ${widget.member.documentId}',
-                      style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   ],
                   // Advertencia visual si no tiene workerCode
@@ -401,7 +423,10 @@ class _PersonaQRCardState extends State<_PersonaQRCard> {
                       widget.persona.identificador!.isNotEmpty)
                     Text(
                       'ID: ${widget.persona.identificador}',
-                      style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
                   Text(
                     '(Persona Legacy)',

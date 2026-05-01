@@ -33,41 +33,54 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
         allowedExtensions: ['xlsx', 'xls', 'csv'],
       );
 
-      debugPrint('🔵 [IMPORTAR] Resultado: ${result == null ? "null" : "archivo seleccionado"}');
-      
+      debugPrint(
+        '🔵 [IMPORTAR] Resultado: ${result == null ? "null" : "archivo seleccionado"}',
+      );
+
       if (result == null || result.files.isEmpty) {
         debugPrint('⚠️ [IMPORTAR] Usuario canceló o no seleccionó archivo');
         return;
       }
 
       final file = result.files.first;
-      debugPrint('🔵 [IMPORTAR] Archivo: ${file.name}, tamaño: ${file.size} bytes');
+      debugPrint(
+        '🔵 [IMPORTAR] Archivo: ${file.name}, tamaño: ${file.size} bytes',
+      );
       debugPrint('🔵 [IMPORTAR] Ruta: ${file.path}');
-      
+
       // Leer bytes manualmente si son null
       List<int>? fileBytes = file.bytes;
-      
+
       if (fileBytes == null && file.path != null) {
-        debugPrint('⚠️ [IMPORTAR] file.bytes es null, intentando leer desde path...');
+        debugPrint(
+          '⚠️ [IMPORTAR] file.bytes es null, intentando leer desde path...',
+        );
         try {
           final fileFile = File(file.path!);
           if (await fileFile.exists()) {
-            fileBytes = await fileFile.readAsBytes();
-            debugPrint('✅ [IMPORTAR] Archivo leído correctamente: ${fileBytes!.length} bytes');
+            final bytes = await fileFile.readAsBytes();
+            fileBytes = bytes;
+            debugPrint(
+              '✅ [IMPORTAR] Archivo leído correctamente: ${bytes.length} bytes',
+            );
           } else {
-            debugPrint('❌ [IMPORTAR] El archivo no existe en la ruta especificada');
+            debugPrint(
+              '❌ [IMPORTAR] El archivo no existe en la ruta especificada',
+            );
           }
         } catch (e) {
           debugPrint('❌ [IMPORTAR] Error al leer archivo: $e');
         }
       }
-      
+
       if (fileBytes == null || fileBytes.isEmpty) {
         debugPrint('❌ [IMPORTAR] No se pudieron obtener los bytes del archivo');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('❌ Error: No se pudo leer el contenido del archivo. Intenta con otro archivo.'),
+              content: Text(
+                '❌ Error: No se pudo leer el contenido del archivo. Intenta con otro archivo.',
+              ),
               backgroundColor: Colors.red,
             ),
           );
@@ -86,7 +99,7 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
       debugPrint('🔵 [IMPORTAR] Decodificando Excel...');
       // Procesar archivo
       final excel = Excel.decodeBytes(fileBytes);
-      
+
       if (excel.tables.isEmpty) {
         debugPrint('❌ [IMPORTAR] No hay hojas en el Excel');
         setState(() {
@@ -108,19 +121,21 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
       // Debug: Mostrar estructura del Excel
       debugPrint('📊 Total de filas: ${sheet.rows.length}');
       if (sheet.rows.isNotEmpty) {
-        debugPrint('📊 Primera fila: ${sheet.rows[0].map((c) => c?.value?.toString()).toList()}');
+        debugPrint(
+          '📊 Primera fila: ${sheet.rows[0].map((c) => c?.value?.toString()).toList()}',
+        );
       }
 
       // Recorrer filas (empezando desde fila 0)
       for (var i = 0; i < sheet.rows.length; i++) {
         final row = sheet.rows[i];
-        
+
         // Debug: Ver cada fila
         debugPrint('📝 Fila $i: ${row.length} columnas');
         for (var j = 0; j < row.length && j < 3; j++) {
           debugPrint('   Columna $j: "${row[j]?.value?.toString()}"');
         }
-        
+
         // Si hay menos de 3 columnas, saltar (necesitamos: nombre, apellido, identificador)
         if (row.length < 3) {
           debugPrint('⚠️ Fila $i saltada: menos de 3 columnas');
@@ -131,12 +146,12 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
         final cell0 = row[0];
         final cell1 = row[1];
         final cell2 = row[2];
-        
+
         // Extraer texto correctamente
         String? nombres;
         String? apellidos;
         String? identificador;
-        
+
         // Manejar diferentes tipos de celdas
         if (cell0 != null) {
           nombres = cell0.value?.toString().trim();
@@ -172,8 +187,10 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
         }
 
         // Verificar si ya existe persona con ese identificador
-        final personaExistente = await _service.getPersonaPorIdentificador(identificador);
-        
+        final personaExistente = await _service.getPersonaPorIdentificador(
+          identificador,
+        );
+
         if (personaExistente != null) {
           debugPrint('⚠️ Fila $i: Persona ya existe (ID: $identificador)');
           duplicadas++;
@@ -203,7 +220,8 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
       bool exitoFinal;
 
       if (importadas > 0 && duplicadas > 0) {
-        mensajeFinal = '✅ Importación completada\n'
+        mensajeFinal =
+            '✅ Importación completada\n'
             '• $importadas persona(s) creada(s)\n'
             '• $duplicadas persona(s) omitida(s) (ya existían)';
         exitoFinal = true;
@@ -211,7 +229,8 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
         mensajeFinal = '✅ $importadas persona(s) importada(s) exitosamente';
         exitoFinal = true;
       } else if (duplicadas > 0) {
-        mensajeFinal = '⚠️ No se importaron personas nuevas\n'
+        mensajeFinal =
+            '⚠️ No se importaron personas nuevas\n'
             '• $duplicadas persona(s) ya existían en el sistema';
         exitoFinal = false;
       } else {
@@ -279,7 +298,10 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                     SizedBox(height: 12),
                     Text(
                       'Al importar, se generarán automáticamente QRs con este formato:',
-                      style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
                     SizedBox(height: 8),
                     Container(
@@ -344,12 +366,12 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: _exito
-                      ? Colors.green.shade50
-                      : Colors.orange.shade50,
+                  color: _exito ? Colors.green.shade50 : Colors.orange.shade50,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _exito ? Colors.green.shade200 : Colors.orange.shade200,
+                    color: _exito
+                        ? Colors.green.shade200
+                        : Colors.orange.shade200,
                     width: 2,
                   ),
                 ),
@@ -360,8 +382,12 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                     Row(
                       children: [
                         Icon(
-                          _exito ? Icons.check_circle : Icons.warning_amber_rounded,
-                          color: _exito ? Colors.green.shade700 : Colors.orange.shade700,
+                          _exito
+                              ? Icons.check_circle
+                              : Icons.warning_amber_rounded,
+                          color: _exito
+                              ? Colors.green.shade700
+                              : Colors.orange.shade700,
                           size: 28,
                         ),
                         const SizedBox(width: 12),
@@ -371,7 +397,9 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: _exito ? Colors.green.shade800 : Colors.orange.shade800,
+                              color: _exito
+                                  ? Colors.green.shade800
+                                  : Colors.orange.shade800,
                             ),
                           ),
                         ),
@@ -402,13 +430,19 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      ..._errores.take(10).map(
+                      ..._errores
+                          .take(10)
+                          .map(
                             (e) => Padding(
                               padding: const EdgeInsets.only(bottom: 4),
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.error_outline, size: 16, color: Colors.red),
+                                  const Icon(
+                                    Icons.error_outline,
+                                    size: 16,
+                                    color: Colors.red,
+                                  ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
@@ -428,7 +462,10 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             '... y ${_errores.length - 10} errores más',
-                            style: const TextStyle(fontSize: 12, color: Colors.red),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.red,
+                            ),
                           ),
                         ),
                     ],
@@ -466,9 +503,24 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildFilaEjemplo(context, 'Juan Gabriel', 'Burbano Bonifaz', '37325'),
-                          _buildFilaEjemplo(context, 'Mayra', 'Bonifaz', '21548'),
-                          _buildFilaEjemplo(context, 'Carla', 'Valenzuela', '69875'),
+                          _buildFilaEjemplo(
+                            context,
+                            'Juan Gabriel',
+                            'Burbano Bonifaz',
+                            '37325',
+                          ),
+                          _buildFilaEjemplo(
+                            context,
+                            'Mayra',
+                            'Bonifaz',
+                            '21548',
+                          ),
+                          _buildFilaEjemplo(
+                            context,
+                            'Carla',
+                            'Valenzuela',
+                            '69875',
+                          ),
                         ],
                       ),
                     ),
@@ -522,39 +574,12 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
     );
   }
 
-  Widget _buildEjemploColumna(BuildContext context, String columna, String descripcion) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 80,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              columna,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            descripcion,
-            style: const TextStyle(fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilaEjemplo(BuildContext context, String nombre, String apellido, String numero) {
+  Widget _buildFilaEjemplo(
+    BuildContext context,
+    String nombre,
+    String apellido,
+    String numero,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
