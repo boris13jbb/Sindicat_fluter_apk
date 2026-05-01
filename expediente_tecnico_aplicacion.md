@@ -712,11 +712,11 @@ Aplicación
 
 **Problemas encontrados:** usa `firstOrNull`; compila con Flutter actual, pero conviene asegurar compatibilidad mínima real del SDK.
 
-**Huecos o pendientes por corregir:** falta búsqueda dentro del dropdown si hay muchos socios.
+**Huecos o pendientes por corregir:** corregido localmente: lista con **búsqueda en modal inferior** (`_PersonaPickSheet`) en lugar de dropdown largo. Sigue recomendable **paginación o carga lazy** si el padrón supera cómodamente el millar de filas combinadas members+personas.
 
-**Prioridad de corrección:** Media.
+**Prioridad de corrección:** Baja/Media según tamaño real del padrón.
 
-**Recomendación:** reemplazar dropdown simple por buscador/paginación para padrones grandes.
+**Recomendación:** medir tamaño típico; si crece, limitar sincronización o cache local.
 
 ### Pantalla: Personas de Asistencia
 
@@ -874,13 +874,13 @@ Aplicación
 
 **Observaciones técnicas o funcionales:** aunque permite elegir CSV, el flujo siempre usa `Excel.decodeBytes`.
 
-**Problemas encontrados:** aunque el selector permite `.csv`, el código llama siempre a `Excel.decodeBytes()`: los CSV no son tratados como texto delimitado en esta pantalla (comportamiento distinto a `/members/import`, que usa `ImportService.importFromCsv`).
+**Problemas encontrados:** corregido localmente. Si la extensión es `.csv` se usa `ImportService.parseCsv` (RFC 4180/comillas); si es `.xlsx`/`.xls` sigue `Excel.decodeBytes`. Se detecta fila de encabezados típicos para omitirla.
 
-**Huecos o pendientes por corregir:** ramificar por extensión (CSV con parser de texto robusto vs Excel con `excel`) o reutilizar un importador único documentado para personas legacy.
+**Huecos o pendientes por corregir:** vista previa de filas antes de insertar y plantilla descargable; prueba manual en Web/Android con archivo real.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** alinear comportamiento entre extensión de archivo y código, o limitar la UI solo a `.xlsx`/`.xls` hasta implementar CSV.
+**Recomendación:** ampliar pruebas con CSV con BOM, separador `;` regional y archivos grandes.
 
 ### Pantalla: Reporte de Asistencia
 
@@ -909,11 +909,11 @@ Aplicación
 
 **Problemas encontrados:** alta probabilidad de error "Evento no encontrado" al abrir desde eventos legacy.
 
-**Huecos o pendientes por corregir:** existe `AttendanceService.createEvent()` en código (escribe `attendance_events`), pero **no hay pantalla ni ruta** que lo invoquen; la ruta `/asistencia/crear_evento` solo persiste eventos legacy en `eventos` vía `AsistenciaService.createEvento()`.
+**Huecos o pendientes por corregir:** la pantalla **`/asistencia/crear_attendance_event`** permite convocatoria «todos los activos» o lista personalizada (IDs en `miembrosConvocados`). Sigue pendiente **alinear scanner/registro manual** para escribir en `attendance_events/{id}/asistencias` cuando el evento sea del modelo nuevo; hoy el flujo operativo típico sigue en **`eventos`** legacy.
 
-**Prioridad de corrección:** Alta.
+**Prioridad de corrección:** Media.
 
-**Recomendación:** exponer UI de alta para `attendance_events` (lugar/convocados) o definir proceso de sincronización/migración desde `eventos` hacia ese modelo hasta que uno quede como canónico.
+**Recomendación:** matriz técnica evento nuevo vs legacy y decisión única por pantalla (`evento_detail` → reporte ya unifica lectura).
 
 ### Pantalla: Gestión de Socios
 
@@ -1176,7 +1176,7 @@ Aplicación
 | Resultados | Ver conteos | Ranking en tiempo real | Funcional/parcial | Visibilidad para votantes respeta `showResultsAutomatically` y fin de elección; falta test automatizado | Media |
 | Asistencia | Crear evento legacy | Crea `eventos` | Funcional | Modelo distinto a `attendance_events` | Alta |
 | Asistencia | Scanner | QR/código/manual | Funcional/parcial | Usa evento real seleccionado o inicial; falta prueba de cámara/dispositivo | Media |
-| Asistencia | Registro manual | Alta manual con justificación | Parcial | Selector no escala | Media |
+| Asistencia | Registro manual | Alta manual con justificación | Funcional/parcial | Buscador en hoja inferior; combinación streams sigue cara con padrón enorme | Media |
 | Asistencia | Exportar | CSV/PDF/Excel | Funcional/parcial | XLSX real generado con `package:excel`; falta prueba manual de apertura con datos reales y filtros por evento/fecha | Media |
 | Asistencia | Reporte faltantes | Calcula ausentes | Funcional/parcial | Soporta `attendance_events` y fallback legacy `eventos/asistencias/personas`; falta prueba con datos reales | Media |
 | Socios | CRUD | Crear/editar/activar/desactivar | Funcional/parcial | Unicidad de número, documento y `workerCode` validada en crear/actualizar; falta prueba automatizada con mocks/emulator | Media |
@@ -1220,14 +1220,14 @@ Aplicación
 
 | ID | Hueco detectado | Módulo relacionado | Riesgo | Recomendación | Prioridad |
 |---|---|---|---|---|---|
-| H-013 | Alta de eventos del modelo nuevo sin UI dedicada (`attendance_events` vs solo legacy `eventos`) | Asistencia / reporte nuevo | Convocados/metadata nuevos incompletos o reportes sólo pobados por adaptador | Pantalla que llame `AttendanceService.createEvent` o flujo único documentado entre modelos | Alta |
+| H-013 | Cerrado en UI local 2026-05-01: convocatoria «todos activos» o selector múltiple con búsqueda (`crear_attendance_event_screen`). Pendiente decisión/flujo escritura asistencia → modelo nuevo | Asistencia / reporte nuevo | Operadores pueden omitir modelo nuevo si solo usan legacy | Documentar uso y opcional enlazar scanner a `attendance_events` | Media |
 | H-001 | Falta validación manual/test específico del guard por rol | Navegación | Regresión futura en acceso a pantallas por URL/ruta | Crear pruebas widget por rol y ejecutar con cuentas reales | Media |
 | H-002 | Cobertura baja de login/voto/asistencia | QA | Regresiones no detectadas en flujos críticos | Crear tests de widgets y servicios con mocks/emulator | Alta |
 | H-003 | No hay Firebase Emulator tests para reglas | Seguridad | Reglas rotas en producción | Agregar suite de reglas y Java 21+ local | Alta |
 | H-004 | Dos modelos de asistencia coexistiendo | Asistencia | Divergencias futuras en reportes/elegibilidad si no se formaliza el adaptador | Definir fuente canónica o contrato de sincronización | Alta |
 | H-005 | No hay paginación | Socios/asistencia/auditoría | Lentitud con muchos datos | Implementar paginación | Media |
 | H-006 | No hay confirmación para algunas acciones sensibles | Exportaciones/estado | Acciones accidentales | Revisar UX de confirmaciones | Baja |
-| H-007 | No hay búsqueda avanzada en registro manual | Asistencia | Difícil operar con muchos socios | Selector searchable | Media |
+| H-007 | Mitigado 2026-05-01: buscador en modal de personas | Asistencia | Listas muy grandes cargan todas en cliente | Paginación o virtual scrolling con backend | Media |
 | H-008 | Falta accesibilidad formal | UI | Dificultad para usuarios con lectores | Semántica, labels, contrastes, tamaños | Media |
 | H-009 | Falta responsive verificado | Multiplataforma | Layouts pueden romperse | Pruebas visuales Web/Windows/mobile | Media |
 | H-010 | Trazabilidad parcialmente consolidada | Auditoría | `events` sigue existiendo como legacy aunque la pantalla ya lee `audit_logs` | Documentar fuente canónica y política de migración/retención | Media |
@@ -1244,7 +1244,7 @@ Aplicación
 | UX | Rutas administrativas ya guardadas localmente, sin test por rol | Cubrir `_RouteGuard` con pruebas y matriz rol-ruta | Experiencia clara y segura | Media |
 | Datos | WorkerCode cubierto en formulario/import; sin suite amplia dedicada | Mantener validaciones y ampliar pruebas de servicio/mock | Evita duplicidad crítica | Media |
 | Rendimiento | Lecturas completas | Paginación, filtros Firestore, cache | Mejor desempeño con padrones grandes | Media |
-| Importación | `ImportService`: CSV socios ya soporta comillas/comas internas; personas legacy siguen Excel-only | Ampliar pruebas con archivos reales, plantilla desde app y preview | Menos errores operativos | Media |
+| Importación | `ImportService`/personas legacy: CSV y Excel cubiertos para socios/personas; falta preview y plantillas descargables | Preview y plantilla desde la app | Menos errores operativos | Media |
 | Auditoría | `audit_logs` ya alimenta ambas pantallas; `events` sigue legacy | Documentar responsabilidades, migración/retención y permisos | Trazabilidad completa | Media |
 | Accesibilidad | No verificada | Agregar labels, contraste, navegación teclado | Cumplimiento y usabilidad | Media |
 | Documentación | Falta matriz rol-permiso vigente | Documentar roles vs pantallas vs reglas | Mejor alineación producto/desarrollo | Alta |
@@ -1316,7 +1316,7 @@ Prioridades antes de entrega o producción:
 
 1. Validar reglas Firestore con Firebase Emulator y usuarios reales por rol.
 2. Ampliar tests reales de login, rutas, voto, importación y asistencia.
-3. Definir fuente canónica de asistencia o formalizar adaptadores entre modelos; priorizar pantalla/flujo para `attendance_events` (**H-013**) o documentar uso exclusivo de legacy.
+3. Definir fuente canónica de asistencia o formalizar adaptadores entre modelos; **selector de convocados y política vacío=todos los activos** ya en pantalla nueva; cerrar ciclo cuando registro NFC/QR escriba en el mismo modelo.
 4. Probar rutas protegidas por rol y documentar matriz rol-permiso.
 5. Validar scanner manual/cámara en dispositivo.
 6. Agregar pruebas de unicidad de socios en alta, edición e importación.
@@ -1342,6 +1342,7 @@ Prioridades antes de entrega o producción:
 | Historial eventos voto | `/voto/event_history` |
 | Asistencia Home | `/asistencia` |
 | Crear evento asistencia | `/asistencia/crear_evento` |
+| Crear evento reporte (`attendance_events`) | `/asistencia/crear_attendance_event` |
 | Detalle evento | `/asistencia/evento_detail` |
 | Registro manual | `/asistencia/registro_manual` |
 | Scanner | `/asistencia/scanner` |
@@ -1412,16 +1413,21 @@ Resultado actual:
 
 ### F. Validación de reglas Firestore
 
-`firebase deploy --only firestore --dry-run` se ejecutó el 2026-05-01:
-
-- Estado: correcto.
-- Resultado: `firestore.rules` compila correctamente.
-- Limitación: no sustituye pruebas de comportamiento con Firebase Emulator; se requiere Java 21+ local para ejecutar la suite de reglas.
+- `firebase deploy --only firestore --dry-run` se ejecutó el 2026-05-01: correcto (compilación local).
+- `firebase deploy --only firestore` (sin dry-run) al proyecto **`sistema-integrado-sindicato`** el mismo día: **deploy complete** según ejecución en entorno de desarrollo; conviene repetir después de cada cambio de `firestore.rules`.
+- Limitación: no sustituye pruebas con Firebase Emulator; para emuladores suele hacer falta Java 21+ local.
 
 ### G. Bitácora de correcciones
 
+_Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
+
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Evento reporte (`attendance_events`): convocatoria «todos los socios activos» o selección múltiple de convocados con búsqueda y acciones rápidas sobre lista filtrada; validación si lista personalizada queda vacía. | `lib/features/asistencia/crear_attendance_event_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub` OK | Aplicado localmente |
+| 2026-05-01 | Registro manual asistencia: sustituye dropdown masivo por hoja inferior con filtro textual y selección táctil (`_PersonaPickSheet`). | `lib/features/asistencia/registro_manual_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub` OK | Aplicado localmente |
+| 2026-05-01 | Despliegue producción Firebase: `firebase deploy --only firestore` al proyecto configurado (`sistema-integrado-sindicato`). | `firestore.rules` | Deploy CLI completo (`released rules`) | Producción |
+| 2026-05-01 | UI `attendance_events`: ruta `/asistencia/crear_attendance_event`, acceso desde asistencia; reglas permiten crear con `isOperator()` igual que flujo práctico de operadores. | `main.dart`, `crear_attendance_event_screen.dart`, `asistencia_home_screen.dart`, `firestore.rules` | `flutter analyze`; `firebase deploy --only firestore --dry-run` OK | Aplicado localmente |
+| 2026-05-01 | Import personas legacy: CSV con mismo parser robusto que socios; omitir cabecera heurística. | `importar_personas_screen.dart` | `flutter analyze` | Aplicado localmente |
 | 2026-05-01 | Actualización editorial del expediente: alineación con `ImportService` (CSV socios, mapeos, duplicados en import), formulario/import vs legacy personas, distinción pantalla crear evento legacy vs modelo `attendance_events`, flujo de registro alineado con reglas y hueco **H-013**. | `expediente_tecnico_aplicacion.md` | Cruzado con código; `flutter test`/`flutter analyze` sin issues | Documentación |
 | 2026-05-01 | Reglas de votos y usuarios reforzadas: `users` restringe rol `VOTER`; votos validan ID propio, elección abierta, candidato existente y contadores exactos. | `firestore.rules` | `firebase deploy --only firestore --dry-run` correcto | Aplicado localmente |
 | 2026-05-01 | Elecciones visibles para votantes filtran `isActive`, visibilidad y rango de fechas. | `lib/services/election_service.dart` | `flutter analyze --no-pub` correcto | Aplicado localmente |

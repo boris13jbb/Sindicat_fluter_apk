@@ -3,9 +3,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:excel/excel.dart' hide Border;
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import '../../core/models/asistencia/persona.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
+import '../../services/import_service.dart';
 
 /// Pantalla para importar personas desde Excel y generar códigos QR
 class ImportarPersonasScreen extends StatefulWidget {
@@ -22,6 +24,82 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
   bool _exito = false;
   int _personasImportadas = 0;
   List<String> _errores = [];
+
+  /// Primera fila de plantilla típica (nombre / apellido / identificador).
+  bool _looksLikePersonasHeader(List<String> row) {
+    if (row.length < 3) return false;
+    final h0 = row[0].toLowerCase().trim();
+    final h2 = row[2].toLowerCase().trim();
+    return h0.contains('nombre') ||
+        h0 == 'nombres' ||
+        h2.contains('ident') ||
+        h2.contains('trab') ||
+        h2.contains('nº') ||
+        h2.contains('n°');
+  }
+
+  Future<({int importadas, int duplicadas, List<String> errores})>
+  _procesarFilasPersonas(List<List<String>> filasDatos, int primeraFila) async {
+    int importadas = 0;
+    int duplicadas = 0;
+    final errores = <String>[];
+
+    for (var offset = 0; offset < filasDatos.length; offset++) {
+      final row = filasDatos[offset];
+      final i = primeraFila + offset;
+
+      if (row.length < 3) {
+        debugPrint('⚠️ Fila $i saltada: menos de 3 columnas');
+        continue;
+      }
+
+      final nombres = row[0].trim();
+      final apellidos = row[1].trim();
+      final identificador = row[2].trim();
+
+      if (nombres.isEmpty) {
+        errores.add('Fila ${i + 1}: Nombre vacío');
+        continue;
+      }
+      if (apellidos.isEmpty) {
+        errores.add('Fila ${i + 1}: Apellido vacío');
+        continue;
+      }
+      if (identificador.isEmpty) {
+        errores.add('Fila ${i + 1}: Número de trabajador vacío');
+        continue;
+      }
+
+      final personaExistente = await _service.getPersonaPorIdentificador(
+        identificador,
+      );
+
+      if (personaExistente != null) {
+        debugPrint(
+          '⚠️ Fila $i: Persona ya existe (ID: $identificador)',
+        );
+        duplicadas++;
+        continue;
+      }
+
+      final nuevaPersona = PersonaAsistencia(
+        id: '',
+        nombres: nombres,
+        apellidos: apellidos,
+        identificador: identificador,
+        codigoQR: jsonEncode({
+          'nombres': nombres,
+          'apellidos': apellidos,
+          'identificador': identificador,
+        }),
+      );
+
+      await _service.createPersona(nuevaPersona);
+      importadas++;
+    }
+
+    return (importadas: importadas, duplicadas: duplicadas, errores: errores);
+  }
 
   Future<void> _importarDesdeExcel() async {
     debugPrint('🔵 [IMPORTAR] Función llamada');
@@ -96,123 +174,101 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
         _errores = [];
       });
 
-      debugPrint('🔵 [IMPORTAR] Decodificando Excel...');
-      // Procesar archivo
-      final excel = Excel.decodeBytes(fileBytes);
+      final nameLower = file.name.toLowerCase();
+      late final int importadas;
+      late final int duplicadas;
+      late final List<String> errores;
 
-      if (excel.tables.isEmpty) {
-        debugPrint('❌ [IMPORTAR] No hay hojas en el Excel');
-        setState(() {
-          _cargando = false;
-          _mensaje = '❌ El archivo no contiene hojas de cálculo';
-          _exito = false;
-        });
-        return;
-      }
+      if (nameLower.endsWith('.csv')) {
+        debugPrint('🔵 [IMPORTAR] CSV: usando ImportService.parseCsv');
+        final raw = ImportService.parseCsv(Uint8List.fromList(fileBytes));
+        if (raw.isEmpty) {
+          setState(() {
+            _cargando = false;
+            _mensaje = '❌ El CSV no contiene filas válidas';
+            _exito = false;
+          });
+          return;
+        }
+        var startIndex = 0;
+        final dataRows = <List<String>>[];
+        if (_looksLikePersonasHeader(raw.first)) {
+          startIndex = 1;
+        }
+        for (var i = startIndex; i < raw.length; i++) {
+          dataRows.add(raw[i]);
+        }
+        if (dataRows.isEmpty) {
+          setState(() {
+            _cargando = false;
+            _mensaje =
+                '❌ No hay datos: solo encontramos encabezados o filas vacías';
+            _exito = false;
+          });
+          return;
+        }
+        final r = await _procesarFilasPersonas(dataRows, startIndex);
+        importadas = r.importadas;
+        duplicadas = r.duplicadas;
+        errores = r.errores;
+      } else {
+        debugPrint('🔵 [IMPORTAR] Decodificando Excel...');
+        final excel = Excel.decodeBytes(fileBytes);
 
-      debugPrint('🔵 [IMPORTAR] Hojas encontradas: ${excel.tables.keys}');
-
-      // Obtener primera hoja
-      final sheet = excel.tables.values.first;
-      int importadas = 0;
-      int duplicadas = 0;
-      final errores = <String>[];
-
-      // Debug: Mostrar estructura del Excel
-      debugPrint('📊 Total de filas: ${sheet.rows.length}');
-      if (sheet.rows.isNotEmpty) {
-        debugPrint(
-          '📊 Primera fila: ${sheet.rows[0].map((c) => c?.value?.toString()).toList()}',
-        );
-      }
-
-      // Recorrer filas (empezando desde fila 0)
-      for (var i = 0; i < sheet.rows.length; i++) {
-        final row = sheet.rows[i];
-
-        // Debug: Ver cada fila
-        debugPrint('📝 Fila $i: ${row.length} columnas');
-        for (var j = 0; j < row.length && j < 3; j++) {
-          debugPrint('   Columna $j: "${row[j]?.value?.toString()}"');
+        if (excel.tables.isEmpty) {
+          debugPrint('❌ [IMPORTAR] No hay hojas en el Excel');
+          setState(() {
+            _cargando = false;
+            _mensaje = '❌ El archivo no contiene hojas de cálculo';
+            _exito = false;
+          });
+          return;
         }
 
-        // Si hay menos de 3 columnas, saltar (necesitamos: nombre, apellido, identificador)
-        if (row.length < 3) {
-          debugPrint('⚠️ Fila $i saltada: menos de 3 columnas');
-          continue;
+        debugPrint('🔵 [IMPORTAR] Hojas encontradas: ${excel.tables.keys}');
+
+        final sheet = excel.tables.values.first;
+        final dataRows = <List<String>>[];
+        debugPrint('📊 Total de filas: ${sheet.rows.length}');
+        if (sheet.rows.isNotEmpty) {
+          debugPrint(
+            '📊 Primera fila: ${sheet.rows[0].map((c) => c?.value?.toString()).toList()}',
+          );
         }
 
-        // Obtener valores de cada columna
-        final cell0 = row[0];
-        final cell1 = row[1];
-        final cell2 = row[2];
-
-        // Extraer texto correctamente
-        String? nombres;
-        String? apellidos;
-        String? identificador;
-
-        // Manejar diferentes tipos de celdas
-        if (cell0 != null) {
-          nombres = cell0.value?.toString().trim();
-        }
-        if (cell1 != null) {
-          apellidos = cell1.value?.toString().trim();
-        }
-        if (cell2 != null) {
-          identificador = cell2.value?.toString().trim();
+        var startIdx = 0;
+        if (sheet.rows.isNotEmpty) {
+          final firstCells = sheet.rows.first
+              .map((c) => c?.value?.toString().trim() ?? '')
+              .toList();
+          while (firstCells.isNotEmpty && firstCells.last.isEmpty) {
+            firstCells.removeLast();
+          }
+          if (_looksLikePersonasHeader(firstCells)) {
+            startIdx = 1;
+          }
         }
 
-        // Debug: Mostrar datos extraídos
-        debugPrint('📋 Datos extraídos Fila $i:');
-        debugPrint('   Nombres: "$nombres"');
-        debugPrint('   Apellidos: "$apellidos"');
-        debugPrint('   Identificador: "$identificador"');
-
-        // Validar datos
-        if (nombres == null || nombres.isEmpty) {
-          errores.add('Fila ${i + 1}: Nombre vacío');
-          debugPrint('❌ Error Fila $i: Nombre vacío');
-          continue;
+        for (var i = startIdx; i < sheet.rows.length; i++) {
+          final row = sheet.rows[i];
+          dataRows.add(
+            row.map((c) => c?.value?.toString().trim() ?? '').toList(),
+          );
         }
-        if (apellidos == null || apellidos.isEmpty) {
-          errores.add('Fila ${i + 1}: Apellido vacío');
-          debugPrint('❌ Error Fila $i: Apellido vacío');
-          continue;
-        }
-        if (identificador == null || identificador.isEmpty) {
-          errores.add('Fila ${i + 1}: Número de trabajador vacío');
-          debugPrint('❌ Error Fila $i: Identificador vacío');
-          continue;
+        if (dataRows.isEmpty) {
+          setState(() {
+            _cargando = false;
+            _mensaje =
+                '❌ No hay datos: solo encontramos encabezados o filas vacías';
+            _exito = false;
+          });
+          return;
         }
 
-        // Verificar si ya existe persona con ese identificador
-        final personaExistente = await _service.getPersonaPorIdentificador(
-          identificador,
-        );
-
-        if (personaExistente != null) {
-          debugPrint('⚠️ Fila $i: Persona ya existe (ID: $identificador)');
-          duplicadas++;
-          continue;
-        }
-
-        // Crear nueva persona
-        debugPrint('✅ Creando persona: $nombres $apellidos ($identificador)');
-        final nuevaPersona = PersonaAsistencia(
-          id: '',
-          nombres: nombres,
-          apellidos: apellidos,
-          identificador: identificador,
-          codigoQR: jsonEncode({
-            'nombres': nombres,
-            'apellidos': apellidos,
-            'identificador': identificador,
-          }),
-        );
-
-        await _service.createPersona(nuevaPersona);
-        importadas++;
+        final r = await _procesarFilasPersonas(dataRows, startIdx);
+        importadas = r.importadas;
+        duplicadas = r.duplicadas;
+        errores = r.errores;
       }
 
       // Construir mensaje de resultado
@@ -260,7 +316,7 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: ProfessionalAppBar(
-        title: 'Importar desde Excel',
+        title: 'Importar personas',
         onNavigateBack: () => Navigator.pop(context),
       ),
       body: SingleChildScrollView(
@@ -280,7 +336,7 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '📋 IMPORTANTE: Tu Excel está perfecto!',
+                      '📋 Formato esperado (.xlsx, .xls o .csv)',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -346,7 +402,7 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                     )
                   : const Icon(Icons.upload_file),
               label: Text(
-                _cargando ? 'Procesando...' : 'Seleccionar archivo Excel',
+                _cargando ? 'Procesando...' : 'Seleccionar archivo',
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,

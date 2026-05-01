@@ -18,6 +18,7 @@ import 'features/results/election_results_screen.dart';
 import 'features/voto/event_history_screen.dart';
 import 'features/asistencia/asistencia_home_screen.dart';
 import 'features/asistencia/crear_evento_screen.dart';
+import 'features/asistencia/crear_attendance_event_screen.dart';
 import 'features/asistencia/evento_detail_screen.dart';
 import 'features/asistencia/personas_screen.dart';
 import 'features/asistencia/registro_manual_screen.dart';
@@ -152,6 +153,10 @@ class MyApp extends StatelessWidget {
               _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles),
           '/asistencia/crear_evento': (_) =>
               _roleGuard(const CrearEventoAsistenciaScreen(), _attendanceRoles),
+          '/asistencia/crear_attendance_event': (_) => _roleGuard(
+                const CrearAttendanceEventScreen(),
+                _attendanceRoles,
+              ),
           '/asistencia/evento_detail': (ctx) {
             final evento =
                 ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;

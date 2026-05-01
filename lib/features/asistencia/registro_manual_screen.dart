@@ -444,58 +444,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                         }
                       }
                       
-                      return DropdownButtonFormField<String>(
-                        initialValue: _personaIdSeleccionada,
-                        decoration: InputDecoration(
-                          labelText: 'Seleccionar Persona *',
-                          hintText: 'Busque y seleccione una persona',
-                          prefixIcon: const Icon(Icons.person_search),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                        ),
-                        items: personas
-                            .map(
-                              (item) {
-                                final p = item['persona'] as PersonaAsistencia;
-                                final source = item['source'] as String;
-                                return DropdownMenuItem(
-                                  value: p.id,
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          p.nombreCompleto,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                      if (source == 'member')
-                                        Icon(
-                                          Icons.verified_user,
-                                          size: 16,
-                                          color: Colors.green,
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            )
-                            .toList(),
-                        onChanged: (id) => setState(() {
-                          _personaIdSeleccionada = id;
-                          final found = personas.where(
-                            (p) => p['id'] == id,
-                          ).firstOrNull;
-                          
-                          if (found != null) {
-                            _personaObj = found['persona'] as PersonaAsistencia;
-                          }
-                        }),
-                        isExpanded: true,
-                      );
+                      return _selectorPersonaBuscable(context, personas);
                     },
                   ),
                 const SizedBox(height: 24),
@@ -801,5 +750,175 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<void> _abrirBuscadorPersona(List<Map<String, dynamic>> personas) async {
+    final id = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) {
+        final height = MediaQuery.sizeOf(ctx).height * 0.88;
+        return SizedBox(
+          height: height,
+          child: _PersonaPickSheet(
+            entries: personas,
+            selectedId: _personaIdSeleccionada,
+          ),
+        );
+      },
+    );
+    if (!mounted || id == null) return;
+    setState(() {
+      _personaIdSeleccionada = id;
+      Map<String, dynamic>? found;
+      for (final row in personas) {
+        if (row['id'] == id) {
+          found = row;
+          break;
+        }
+      }
+      _personaObj = found != null
+          ? found['persona'] as PersonaAsistencia
+          : null;
+    });
+  }
+
+  Widget _selectorPersonaBuscable(
+    BuildContext context,
+    List<Map<String, dynamic>> personas,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _abrirBuscadorPersona(personas),
+        borderRadius: BorderRadius.circular(12),
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: 'Seleccionar persona *',
+            hintText: 'Toca para buscar',
+            prefixIcon: const Icon(Icons.person_search),
+            suffixIcon: const Icon(Icons.keyboard_arrow_down),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            filled: true,
+          ),
+          child: Text(
+            _personaObj?.nombreCompleto ?? 'Buscar persona…',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight:
+                  _personaObj != null ? FontWeight.w600 : FontWeight.normal,
+              color: _personaObj == null
+                  ? Theme.of(context).hintColor
+                  : null,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonaPickSheet extends StatefulWidget {
+  const _PersonaPickSheet({
+    required this.entries,
+    required this.selectedId,
+  });
+
+  final List<Map<String, dynamic>> entries;
+  final String? selectedId;
+
+  @override
+  State<_PersonaPickSheet> createState() => _PersonaPickSheetState();
+}
+
+class _PersonaPickSheetState extends State<_PersonaPickSheet> {
+  final TextEditingController _filter = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _filter.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _filtradas {
+    final q = _filter.text.trim().toLowerCase();
+    if (q.isEmpty) return widget.entries;
+    return widget.entries.where((item) {
+      final p = item['persona'] as PersonaAsistencia;
+      final idStr = '${item['id']}'.toLowerCase();
+      return p.nombreCompleto.toLowerCase().contains(q) ||
+          (p.identificador?.toLowerCase().contains(q) ?? false) ||
+          idStr.contains(q);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        AppBar(
+          title: const Text('Buscar persona'),
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: TextField(
+            controller: _filter,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: 'Nombre, identificador, id…',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _filtradas.length,
+            itemBuilder: (ctx, i) {
+              final item = _filtradas[i];
+              final p = item['persona'] as PersonaAsistencia;
+              final src = item['source'] as String;
+              final id = item['id'] as String;
+              final seleccionado = widget.selectedId == id;
+              return ListTile(
+                leading: Icon(
+                  seleccionado
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: Text(p.nombreCompleto),
+                subtitle: Text(
+                  p.identificador?.isNotEmpty == true
+                      ? p.identificador!
+                      : id,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: src == 'member'
+                    ? Icon(Icons.verified_user, color: Colors.green.shade700)
+                    : null,
+                onTap: () => Navigator.pop(context, id),
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 }

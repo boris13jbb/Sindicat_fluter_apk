@@ -89,6 +89,32 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
                       children: [
                         Expanded(
                           child: _QuickAction(
+                            icon: Icons.insert_chart_outlined,
+                            label: 'Evento reporte',
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/asistencia/crear_attendance_event',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _QuickAction(
+                            icon: Icons.history_edu_outlined,
+                            label: 'Evento clásico',
+                            onTap: () => Navigator.pushNamed(
+                              context,
+                              '/asistencia/crear_evento',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _QuickAction(
                             icon: Icons.people,
                             label: 'Personas',
                             onTap: () => Navigator.pushNamed(
