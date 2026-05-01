@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/models/asistencia/evento.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/attendance_service.dart';
 
@@ -178,6 +179,21 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                 Text(event.tipo.toUpperCase()),
               ],
             ),
+            if (event.modalidadesNoConvocadas.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: event.modalidadesNoConvocadas
+                    .map(
+                      (m) => Chip(
+                        avatar: const Icon(Icons.do_not_disturb, size: 16),
+                        label: Text('No convocada: Modalidad $m'),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
           ],
         ),
       ),
@@ -228,6 +244,15 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                 ),
               ],
             ),
+            if (_report!.totalNotConvoked > 0) ...[
+              const SizedBox(height: 12),
+              _buildStatBox(
+                'No convocados',
+                '${_report!.totalNotConvoked}',
+                Colors.grey,
+                Icons.do_not_disturb_on_outlined,
+              ),
+            ],
           ],
         ),
       ),
@@ -321,7 +346,9 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
   Widget _buildMembersList() {
     final membersToShow = _showAbsentees
         ? _report!.absentMembers
-        : _report!.presentMembers + _report!.absentMembers;
+        : _report!.presentMembers +
+              _report!.absentMembers +
+              _report!.notConvokedMembers;
 
     if (membersToShow.isEmpty) {
       return Card(
@@ -371,10 +398,18 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
             itemBuilder: (context, index) {
               final member = membersToShow[index];
               final isAbsent = _report!.absentMembers.contains(member);
+              final isNotConvoked = _report!.notConvokedMembers.contains(
+                member,
+              );
+              final modalidad = member.modalidad == null
+                  ? ''
+                  : ' · ${JustificacionHelper.etiquetaModalidad(member.modalidad!)}';
 
               return ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: isAbsent ? Colors.red : Colors.green,
+                  backgroundColor: isNotConvoked
+                      ? Colors.grey
+                      : (isAbsent ? Colors.red : Colors.green),
                   child: Text(
                     member.firstName.isNotEmpty
                         ? member.firstName[0].toUpperCase()
@@ -386,11 +421,22 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                   member.fullName,
                   style: TextStyle(
                     fontWeight: FontWeight.w500,
-                    color: isAbsent ? Colors.red[700] : null,
+                    color: isNotConvoked
+                        ? Colors.grey[700]
+                        : (isAbsent ? Colors.red[700] : null),
                   ),
                 ),
-                subtitle: Text('N° Socio: ${member.memberNumber}'),
-                trailing: isAbsent
+                subtitle: Text(
+                  isNotConvoked
+                      ? 'N° Socio: ${member.memberNumber}$modalidad · No convocado · Justificado por modalidad'
+                      : 'N° Socio: ${member.memberNumber}$modalidad',
+                ),
+                trailing: isNotConvoked
+                    ? const Icon(
+                        Icons.do_not_disturb_on_outlined,
+                        color: Colors.grey,
+                      )
+                    : isAbsent
                     ? const Icon(Icons.cancel, color: Colors.red)
                     : const Icon(Icons.check_circle, color: Colors.green),
               );

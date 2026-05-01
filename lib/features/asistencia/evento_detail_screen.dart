@@ -25,52 +25,93 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
     _currentEvento = widget.evento;
   }
 
-  /// Método para mostrar el diálogo de selección de modalidad
-  Future<void> _mostrarDialogoModalidad() async {
+  /// Método para mostrar el diálogo de selección múltiple de modalidades no convocadas.
+  Future<void> _mostrarDialogoModalidadesNoConvocadas() async {
     final opciones = Modalidad.valoresParaJustificacionAsistencia;
-
-    final seleccionada = await showDialog<Modalidad>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Modalidad'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: opciones.length,
-            itemBuilder: (context, index) {
-              final modalidad = opciones[index];
-              return ListTile(
-                title: Text(JustificacionHelper.etiquetaModalidad(modalidad)),
-                selected: _currentEvento.modalidad == modalidad,
-                onTap: () => Navigator.pop(ctx, modalidad),
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-        ],
-      ),
+    final seleccionInicial = Set<Modalidad>.from(
+      _currentEvento.modalidadesNoConvocadas,
     );
 
-    if (seleccionada != null && mounted) {
-      setState(() => _currentEvento = _currentEvento.copyWith(modalidad: seleccionada));
-      
-      // Actualizar en Firestore y propagar justificaciones
+    final seleccionadas = await showDialog<Set<Modalidad>>(
+      context: context,
+      builder: (ctx) {
+        final draft = Set<Modalidad>.from(seleccionInicial);
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Modalidades no convocadas'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  Text(
+                    'Selecciona únicamente las modalidades que NO están convocadas a este evento.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  ...opciones.map((modalidad) {
+                    final checked = draft.contains(modalidad);
+                    return CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: checked,
+                      title: Text(
+                        JustificacionHelper.etiquetaModalidad(modalidad),
+                      ),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          if (value == true) {
+                            draft.add(modalidad);
+                          } else {
+                            draft.remove(modalidad);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => setDialogState(draft.clear),
+                child: const Text('Limpiar'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, draft),
+                child: const Text('Guardar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (seleccionadas != null && mounted) {
+      final ordered = opciones.where(seleccionadas.contains).toList();
+      setState(
+        () => _currentEvento = _currentEvento.copyWith(
+          clearModalidad: true,
+          modalidadesNoConvocadas: ordered,
+        ),
+      );
+
+      // Actualizar en Firestore la exclusión de modalidades.
       try {
-        await AsistenciaService().updateEventoModalidad(
+        await AsistenciaService().updateEventoModalidadesNoConvocadas(
           _currentEvento.id,
-          seleccionada,
+          ordered,
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                '${JustificacionHelper.etiquetaModalidad(seleccionada)} guardada.',
+                ordered.isEmpty
+                    ? 'Sin modalidades excluidas.'
+                    : 'Modalidades no convocadas actualizadas.',
               ),
               backgroundColor: Colors.green,
             ),
@@ -92,43 +133,55 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
   /// Busca un miembro por su identificador (workerCode, memberNumber, o documentId)
   Future<Member?> _buscarMiembroPorIdentificador(String? identificador) async {
     if (identificador == null || identificador.isEmpty) return null;
-    
+
     try {
       debugPrint('🔍 Buscando miembro con identificador: $identificador');
-      
+
       // PRIORIDAD 1: Buscar por workerCode
       debugPrint('   📍 Intentando búsqueda por workerCode...');
-      Member? member = await _membersService.getMemberByWorkerCode(identificador);
+      Member? member = await _membersService.getMemberByWorkerCode(
+        identificador,
+      );
       if (member != null) {
-        debugPrint('   ✅ Miembro encontrado por workerCode: ${member.fullName}');
+        debugPrint(
+          '   ✅ Miembro encontrado por workerCode: ${member.fullName}',
+        );
         return member;
       }
-      
+
       // PRIORIDAD 2: Buscar por memberNumber (N° Socio)
       debugPrint('   📍 Intentando búsqueda por memberNumber...');
       member = await _membersService.getMemberByNumber(identificador);
       if (member != null) {
-        debugPrint('   ✅ Miembro encontrado por memberNumber: ${member.fullName}');
+        debugPrint(
+          '   ✅ Miembro encontrado por memberNumber: ${member.fullName}',
+        );
         return member;
       }
-      
+
       // PRIORIDAD 3: Buscar por documentId (Cédula)
       debugPrint('   📍 Intentando búsqueda por documentId...');
       member = await _membersService.getMemberByDocument(identificador);
       if (member != null) {
-        debugPrint('   ✅ Miembro encontrado por documentId: ${member.fullName}');
+        debugPrint(
+          '   ✅ Miembro encontrado por documentId: ${member.fullName}',
+        );
         return member;
       }
-      
+
       // PRIORIDAD 4: Buscar por ID de Firestore (fallback)
       debugPrint('   📍 Intentando búsqueda por ID de Firestore...');
       member = await _membersService.getMemberById(identificador);
       if (member != null) {
-        debugPrint('   ✅ Miembro encontrado por ID de Firestore: ${member.fullName}');
+        debugPrint(
+          '   ✅ Miembro encontrado por ID de Firestore: ${member.fullName}',
+        );
         return member;
       }
-      
-      debugPrint('   ❌ No se encontró miembro para identificador: $identificador');
+
+      debugPrint(
+        '   ❌ No se encontró miembro para identificador: $identificador',
+      );
       return null;
     } catch (e) {
       debugPrint('   ⚠️ Error buscando miembro: $e');
@@ -149,11 +202,11 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
         title: 'Detalle del Evento',
         onNavigateBack: () => Navigator.pop(context),
         actions: [
-          // 🎯 Botón para editar modalidad
+          // Editar modalidades no convocadas.
           IconButton(
             icon: const Icon(Icons.edit),
-            tooltip: 'Modalidad (turno para justificar asistencia)',
-            onPressed: _mostrarDialogoModalidad,
+            tooltip: 'Modalidades no convocadas',
+            onPressed: _mostrarDialogoModalidadesNoConvocadas,
           ),
           IconButton(
             icon: const Icon(Icons.delete),
@@ -219,17 +272,17 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   const SizedBox(height: 12),
-                  // Modalidad operativa de turno para justificar asistencias.
+                  // Modalidades excluidas del llamado para no contarlas como falta.
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _currentEvento.modalidad != null
+                      color: _currentEvento.modalidadesNoConvocadas.isNotEmpty
                           ? Colors.blue.shade50
                           : Colors.orange.shade50,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: _currentEvento.modalidad != null
+                        color: _currentEvento.modalidadesNoConvocadas.isNotEmpty
                             ? Colors.blue.shade300
                             : Colors.orange.shade300,
                         width: 2,
@@ -243,25 +296,35 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                             Icon(
                               Icons.work_outline,
                               size: 20,
-                              color: _currentEvento.modalidad != null
+                              color:
+                                  _currentEvento
+                                      .modalidadesNoConvocadas
+                                      .isNotEmpty
                                   ? Colors.blue.shade700
                                   : Colors.orange.shade700,
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              'Modalidad',
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w600,
-                                color: _currentEvento.modalidad != null
-                                    ? Colors.blue.shade700
-                                    : Colors.orange.shade700,
-                              ),
+                              'Modalidades no convocadas',
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color:
+                                        _currentEvento
+                                            .modalidadesNoConvocadas
+                                            .isNotEmpty
+                                        ? Colors.blue.shade700
+                                        : Colors.orange.shade700,
+                                  ),
                             ),
                             const Spacer(),
                             Icon(
                               Icons.edit,
                               size: 18,
-                              color: _currentEvento.modalidad != null
+                              color:
+                                  _currentEvento
+                                      .modalidadesNoConvocadas
+                                      .isNotEmpty
                                   ? Colors.blue.shade600
                                   : Colors.orange.shade600,
                             ),
@@ -269,17 +332,21 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _currentEvento.modalidad != null
-                              ? JustificacionHelper.etiquetaModalidad(
-                                  _currentEvento.modalidad!,
-                                )
-                              : 'Sin modalidad — use el ícono de edición arriba para asignar la letra (A, B, C…)',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
-                            color: _currentEvento.modalidad != null
-                                ? Colors.blue.shade900
-                                : Colors.orange.shade900,
-                          ),
+                          _currentEvento.modalidadesNoConvocadas.isNotEmpty
+                              ? _currentEvento.modalidadesNoConvocadas
+                                    .map(JustificacionHelper.etiquetaModalidad)
+                                    .join(', ')
+                              : 'Sin modalidades excluidas: todas las modalidades aplicables están convocadas.',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w500,
+                                color:
+                                    _currentEvento
+                                        .modalidadesNoConvocadas
+                                        .isNotEmpty
+                                    ? Colors.blue.shade900
+                                    : Colors.orange.shade900,
+                              ),
                         ),
                       ],
                     ),
@@ -324,37 +391,42 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                   itemCount: list.length,
                   itemBuilder: (context, i) {
                     final a = list[i];
-                    
+
                     return FutureBuilder<Member?>(
-                      future: _buscarMiembroPorIdentificador(a.persona.identificador),
+                      future: _buscarMiembroPorIdentificador(
+                        a.persona.identificador,
+                      ),
                       builder: (context, snapshot) {
                         final member = snapshot.data;
-                        
+
                         // 🔍 Lógica de display con datos del miembro si están disponibles
                         String displayName;
                         if (member != null) {
                           // Usar datos completos del miembro
                           displayName = member.fullName;
-                        } else if (a.persona.nombres.isNotEmpty && a.persona.apellidos.isNotEmpty &&
-                            a.persona.nombres != 'Sin nombre' && a.persona.apellidos != 'Sin apellido') {
+                        } else if (a.persona.nombres.isNotEmpty &&
+                            a.persona.apellidos.isNotEmpty &&
+                            a.persona.nombres != 'Sin nombre' &&
+                            a.persona.apellidos != 'Sin apellido') {
                           // Mostrar nombre completo de persona si es válido
                           displayName = a.persona.nombreCompleto;
-                        } else if (a.persona.identificador != null && a.persona.identificador!.isNotEmpty) {
+                        } else if (a.persona.identificador != null &&
+                            a.persona.identificador!.isNotEmpty) {
                           // Fallback: mostrar identificador como texto plano
-                          displayName = 'N° Trabajador: ${a.persona.identificador}';
+                          displayName =
+                              'N° Trabajador: ${a.persona.identificador}';
                         } else {
                           // Último recurso
                           displayName = 'Sin nombre Sin apellido';
                         }
-                        
+
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ListTile(
                             title: Text(
                               displayName,
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w500,
-                              ),
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w500),
                             ),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -375,14 +447,18 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                                       const SizedBox(width: 4),
                                       Text(
                                         'N° Socio: ${member.memberNumber}',
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Colors.grey[700],
-                                          fontWeight: FontWeight.w500,
-                                        ),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: Colors.grey[700],
+                                              fontWeight: FontWeight.w500,
+                                            ),
                                       ),
                                     ],
                                   ),
-                                  if (member.documentId != null && member.documentId!.isNotEmpty)
+                                  if (member.documentId != null &&
+                                      member.documentId!.isNotEmpty)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 2),
                                       child: Row(
@@ -395,17 +471,22 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                                           const SizedBox(width: 4),
                                           Text(
                                             'Cédula: ${member.documentId}',
-                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                              color: Colors.grey[700],
-                                              fontWeight: FontWeight.w500,
-                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: Colors.grey[700],
+                                                  fontWeight: FontWeight.w500,
+                                                ),
                                           ),
                                         ],
                                       ),
                                     ),
                                 ],
                                 // Mostrar N° Trabajador si no hay miembro pero sí identificador
-                                if (member == null && a.persona.identificador != null && a.persona.identificador!.isNotEmpty)
+                                if (member == null &&
+                                    a.persona.identificador != null &&
+                                    a.persona.identificador!.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Row(
@@ -418,10 +499,13 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                                         const SizedBox(width: 4),
                                         Text(
                                           'N° Trabajador: ${a.persona.identificador}',
-                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                            color: Colors.grey[700],
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: Colors.grey[700],
+                                                fontWeight: FontWeight.w500,
+                                              ),
                                         ),
                                       ],
                                     ),
@@ -440,18 +524,22 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                                     ),
                                     actions: [
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, false),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
                                         child: const Text('Cancelar'),
                                       ),
                                       TextButton(
-                                        onPressed: () => Navigator.pop(ctx, true),
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
                                         child: const Text('Eliminar'),
                                       ),
                                     ],
                                   ),
                                 );
                                 if (ok == true) {
-                                  await service.deleteAsistencia(a.asistencia.id);
+                                  await service.deleteAsistencia(
+                                    a.asistencia.id,
+                                  );
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
@@ -466,7 +554,7 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                         );
                       },
                     );
-                  }
+                  },
                 );
               },
             ),
@@ -494,8 +582,7 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
             onPressed: () => Navigator.pushNamed(
               context,
               '/asistencia/registro_manual',
-              arguments:
-                  AsistenciaEventRouteArgs.legacy(_currentEvento),
+              arguments: AsistenciaEventRouteArgs.legacy(_currentEvento),
             ),
             child: const Icon(Icons.person_add),
           ),
@@ -505,8 +592,7 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
             onPressed: () => Navigator.pushNamed(
               context,
               '/asistencia/scanner',
-              arguments:
-                  AsistenciaEventRouteArgs.legacy(_currentEvento),
+              arguments: AsistenciaEventRouteArgs.legacy(_currentEvento),
             ),
             child: const Icon(Icons.qr_code_scanner),
           ),

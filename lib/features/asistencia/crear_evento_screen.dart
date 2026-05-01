@@ -16,7 +16,7 @@ class _CrearEventoAsistenciaScreenState
   final _nombreController = TextEditingController();
   final _descripcionController = TextEditingController();
   TipoReunion _tipo = TipoReunion.ordinaria;
-  Modalidad? _modalidad;
+  final Set<Modalidad> _modalidadesNoConvocadas = {};
   DateTime _fecha = DateTime.now();
   bool _loading = false;
 
@@ -122,73 +122,59 @@ class _CrearEventoAsistenciaScreenState
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
-                    // Modalidad: columna para evitar overflow horizontal en pantallas angostas.
                     Text(
-                      'Modalidad',
+                      'Modalidades no convocadas',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    DropdownButtonFormField<Modalidad>(
-                      isExpanded: true,
-                      initialValue: _modalidad,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                      hint: const Text('Seleccionar modalidad (código)'),
-                      items:
-                          Modalidad.valoresParaJustificacionAsistencia.map((
-                            modalidad,
-                          ) {
-                        return DropdownMenuItem(
-                          value: modalidad,
-                          child: Text(
-                            JustificacionHelper.etiquetaModalidad(modalidad),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() => _modalidad = value);
-                      },
+                    _InfoBox(
+                      icon: Icons.info_outline,
+                      color: Colors.blue,
+                      text:
+                          'Selecciona únicamente las modalidades que NO están convocadas a este evento. Los socios que pertenezcan a estas modalidades no serán considerados como faltantes injustificados.',
                     ),
-                    if (_modalidad != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.blue.shade200),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.info_outline,
-                              size: 16,
-                              color: Colors.blue,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Se asocia ${JustificacionHelper.etiquetaModalidad(_modalidad!)} al evento para registro de asistencia.',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: Colors.blue.shade800,
-                                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: Modalidad.valoresParaJustificacionAsistencia
+                          .map((modalidad) {
+                            final selected = _modalidadesNoConvocadas.contains(
+                              modalidad,
+                            );
+                            return FilterChip(
+                              selected: selected,
+                              avatar: selected ? const Icon(Icons.check) : null,
+                              label: Text(
+                                JustificacionHelper.etiquetaModalidad(
+                                  modalidad,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                              onSelected: (checked) {
+                                setState(() {
+                                  if (checked) {
+                                    _modalidadesNoConvocadas.add(modalidad);
+                                  } else {
+                                    _modalidadesNoConvocadas.remove(modalidad);
+                                  }
+                                });
+                              },
+                            );
+                          })
+                          .toList(),
+                    ),
+                    const SizedBox(height: 8),
+                    _InfoBox(
+                      icon: Icons.rule,
+                      color: _modalidadesNoConvocadas.isEmpty
+                          ? Colors.orange
+                          : Colors.green,
+                      text: _modalidadesNoConvocadas.isEmpty
+                          ? 'Si no seleccionas ninguna modalidad, se asumirá que no hay modalidades excluidas.'
+                          : 'No convocadas: ${_modalidadesNoConvocadas.map(JustificacionHelper.etiquetaModalidad).join(', ')}.',
+                    ),
                   ],
                 ),
               ),
@@ -216,7 +202,8 @@ class _CrearEventoAsistenciaScreenState
                       descripcion: _descripcionController.text.trim().isEmpty
                           ? null
                           : _descripcionController.text.trim(),
-                      modalidad: _modalidad,
+                      modalidadesNoConvocadas: _modalidadesNoConvocadas
+                          .toList(),
                     );
                     await service.createEvento(evento);
                     if (context.mounted) {
@@ -239,6 +226,42 @@ class _CrearEventoAsistenciaScreenState
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _InfoBox extends StatelessWidget {
+  const _InfoBox({required this.icon, required this.color, required this.text});
+
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: color.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

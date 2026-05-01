@@ -38,7 +38,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 | Comando | Resultado | Observación |
 |---|---|---|
 | `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
-| `flutter test --no-pub --reporter expanded` | Correcto | 5 pruebas pasan: smoke de login sin sesión, configuración de columnas de importación, CSV con comillas/comas internas y validación/canonización de `modalidad`. |
+| `flutter test --no-pub --reporter expanded` | Correcto | 8 pruebas pasan: smoke de login sin sesión, configuración de importación, parser CSV, modalidad de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
 | `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members`/`import_logs` y endurecer contrato de `audit_logs`. |
 | Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
 
@@ -565,26 +565,26 @@ Aplicación
 
 **Objetivo de la pantalla:** crear eventos legacy de asistencia.
 
-**Elementos visibles:** nombre, descripción, tipo ordinaria/extraordinaria, selector fecha/hora, **modalidad** (lista desplegable con ítems **sólo** `Modalidad A`, `Modalidad B`, … para el subconjunto `Modalidad.valoresParaJustificacionAsistencia`; sin frases tipo *Mañana/Tarde* en lista), texto informativo breve sin narrativa de turno, botón guardar.
+**Elementos visibles:** nombre, descripción, tipo ordinaria/extraordinaria, selector fecha/hora, bloque **Modalidades no convocadas**, texto informativo de regla de negocio, chips multi-selección con `Modalidad A`, `Modalidad B`, … para el subconjunto `Modalidad.valoresParaJustificacionAsistencia`, mensaje cuando no hay exclusiones y botón guardar.
 
-**Acciones disponibles:** seleccionar tipo, fecha, modalidad (código/letra para convocatoria), guardar.
+**Acciones disponibles:** seleccionar tipo, fecha, marcar/desmarcar una o varias modalidades no convocadas, guardar.
 
 **Flujo paso a paso:**
 1. Usuario ingresa nombre.
 2. Opcionalmente ingresa descripción.
 3. Selecciona tipo y fecha.
-4. Selecciona modalidad.
-5. Guarda en `eventos`.
+4. Opcionalmente selecciona modalidades **no convocadas**.
+5. Guarda en `eventos` con `modalidadesNoConvocadas: List<String>`.
 
-**Validaciones esperadas:** nombre obligatorio, fecha válida, permisos operador/admin.
+**Validaciones esperadas:** nombre obligatorio, fecha válida, permisos operador/admin; el campo `modalidadesNoConvocadas` no es obligatorio, lista vacía significa que no hay modalidades excluidas.
 
-**Datos utilizados:** `eventos`.
+**Datos utilizados:** `eventos.modalidadesNoConvocadas`; compatibilidad de lectura con `eventos.modalidad` legacy.
 
 **Estados posibles:** formulario, cargando, éxito, error.
 
-**Observaciones técnicas o funcionales:** no usa `Form` ni `TextFormField`, validación manual del nombre.
+**Observaciones técnicas o funcionales:** no usa `Form` ni `TextFormField`, validación manual del nombre. Corregido localmente: la modalidad ya no representa convocados; ahora la lista representa únicamente modalidades **no convocadas**.
 
-**Problemas encontrados:** la modalidad en alta legacy sigue **opcional en formulario**, pero los servicios/UI de gestión socio exigen código en otros flujos; convocatorias limitan opciones editables en detalle legacy a turnos estándar (A–N2). Texto largo de justificación (**`JustificacionHelper.obtenerJustificacion`**) puede persistir en backend donde aplique **AsistenciaService**; en pantallas revisadas ya **no** se muestra al usuario texto *Turno mañana/tarde/noche*.
+**Problemas encontrados:** corregido localmente el selector simple incorrecto. Queda pendiente validar con datos reales que todas las modalidades del padrón estén completas para excluir correctamente faltantes.
 
 **Huecos o pendientes por corregir:** lugar/convocados no existen en legacy, pero reporte nuevo espera esos campos en `attendance_events`.
 
@@ -620,9 +620,9 @@ Aplicación
 
 **Objetivo de la pantalla:** ver datos de un evento y sus registros de asistencia.
 
-**Elementos visibles:** datos del evento, **bloque Modalidad** (título corto «Modalidad» + línea **`Modalidad {código}`**; sin segunda línea descriptiva *Turno …* ni párrafo de justificación en pantalla), tipo, lista de registros; **diálogo de edición** con título **«Modalidad»** y opciones sólo etiqueta `Modalidad X` para **subconjunto** `Modalidad.valoresParaJustificacionAsistencia`; botón eliminar evento; FAB reporte/registro manual/escanear.
+**Elementos visibles:** datos del evento, bloque **Modalidades no convocadas** con lista de códigos excluidos o mensaje “sin modalidades excluidas”, tipo, lista de registros; diálogo de edición con checkboxes para seleccionar varias modalidades no convocadas; botón eliminar evento; FAB reporte/registro manual/escanear.
 
-**Acciones disponibles:** editar modalidad (solo códigos de convocatoria A–N2 en el picker), eliminar evento, eliminar asistencia, abrir reporte, registro manual, escanear QR.
+**Acciones disponibles:** editar modalidades no convocadas, limpiar exclusiones, eliminar evento, eliminar asistencia, abrir reporte, registro manual, escanear QR.
 
 **Flujo paso a paso:**
 1. Recibe `EventoAsistencia` como argumento.
@@ -918,9 +918,9 @@ Aplicación
 
 **Ruta o ubicación:** `/attendance/report`.
 
-**Objetivo de la pantalla:** calcular convocados, presentes, faltantes y tasa de asistencia.
+**Objetivo de la pantalla:** calcular convocados, presentes, faltantes, no convocados y tasa de asistencia.
 
-**Elementos visibles:** información de evento, estadísticas, barra de asistencia, lista completa/faltantes.
+**Elementos visibles:** información de evento, chips de modalidades no convocadas si existen, estadísticas, barra de asistencia, lista completa/faltantes con estado **No convocado / Justificado por modalidad** cuando aplica.
 
 **Acciones disponibles:** alternar vista de faltantes, reintentar carga.
 
@@ -929,17 +929,18 @@ Aplicación
 2. **`generateAttendanceReport`** usa **`_getEventForReport`**: primero **`getEventById`** en **`attendance_events`**; si no existe, documento **`eventos/{eventId}`** y adapta metadatos a `AttendanceEvent` marcando modo **legacy**.
 3. Carga convocados (`members` desde `miembrosConvocados` o todos activos si vacío según modelo).
 4. Carga asistencias: subcolección **`attendance_events/.../asistencias`** o lecturas legacy (**`AsistenciaService`** sobre `asistencias`/`personas`) según bandera.
-5. Calcula conjunto de presentes (en legacy cruza personas → miembros) y estadísticas.
+5. Aplica exclusión por `modalidadesNoConvocadas`: socios activos cuya `members.modalidad` esté en esa lista pasan a **no convocados** y no se cuentan como faltantes.
+6. Calcula conjunto de presentes (en legacy cruza personas → miembros) y estadísticas sobre los convocados obligados.
 
 **Validaciones esperadas:** evento existe en **`attendance_events`** *o* en **`eventos`**; convocados cargables.
 
-**Datos utilizados:** `attendance_events` y/o `eventos`, `asistencias`, `personas`, `members`.
+**Datos utilizados:** `attendance_events` y/o `eventos`, `asistencias`, `personas`, `members.modalidad`, `eventos.modalidadesNoConvocadas`.
 
 **Estados posibles:** cargando, error (evento inexistente en ambos), reporte vacío válido si no hay convocados, éxito con listas presentes/ausentes.
 
-**Observaciones técnicas o funcionales:** botón FAB desde **`attendance_events`** usa el mismo endpoint; FAB desde **legacy** ya no falla sólo porque el doc no está en colección nueva (E-005).
+**Observaciones técnicas o funcionales:** botón FAB desde **`attendance_events`** usa el mismo endpoint; FAB desde **legacy** ya no falla sólo porque el doc no está en colección nueva (E-005). Corregido localmente: `AttendanceReport` incluye `totalNotConvoked` y `notConvokedMembers`.
 
-**Problemas encontrados:** mitigado E-005 (**fallback legacy** en generación de reporte); error «Evento no encontrado» sólo si el id no existe ni en **`attendance_events`** ni en **`eventos`**.
+**Problemas encontrados:** mitigado E-005 (**fallback legacy** en generación de reporte) y E-024 (modalidades excluidas no se cuentan como ausencias); error «Evento no encontrado» sólo si el id no existe ni en **`attendance_events`** ni en **`eventos`**.
 
 **Huecos o pendientes por corregir:** export filtrado por evento/tipo modelo; prueba con alto volumen de convocados.
 
@@ -1215,11 +1216,11 @@ Aplicación
 | Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Funcional/parcial | Eliminación bloqueada si el candidato tiene votos; falta test automatizado | Media |
 | Voto | Emitir voto | Batch de voto y contadores | Parcial | Reglas locales compilan y validan voto propio/contadores; falta suite de reglas con emulator | Alta |
 | Resultados | Ver conteos | Ranking en tiempo real | Funcional/parcial | Visibilidad para votantes respeta `showResultsAutomatically` y fin de elección; falta test automatizado | Media |
-| Asistencia | Crear evento legacy | Crea `eventos` | Funcional | Modelo distinto a `attendance_events` | Alta |
+| Asistencia | Crear evento legacy | Crea `eventos` con `modalidadesNoConvocadas` | Funcional | Selector múltiple de modalidades no convocadas; lista vacía significa sin exclusiones | Alta |
 | Asistencia | Scanner | QR/código/manual | Funcional/parcial | Legacy y modelo reporte vía rutas/contexto (`AsistenciaEventRouteArgs`); falta prueba de cámara/dispositivo | Media |
 | Asistencia | Registro manual | Alta manual | Funcional/parcial | Modo legacy o `attendance_events`; buscador en hoja inferior; padrón muy grande ⇒ coste en cliente | Media |
 | Asistencia | Exportar | CSV/PDF/XLSX | Funcional/parcial | Segmentos **Legacy / Reporte / Ambos**; modelo reporte vía `fetchAllAttendanceExportsRows` (subs en paralelo); falta **filtro fino** por evento/fecha dentro de cada origen y prueba manual con datos masivos | Media |
-| Asistencia | Reporte faltantes | Calcula ausentes | Funcional/parcial | Soporta `attendance_events` y fallback legacy `eventos/asistencias/personas`; falta prueba con datos reales | Media |
+| Asistencia | Reporte faltantes | Calcula ausentes y no convocados | Funcional/parcial | Soporta `attendance_events` y fallback legacy; excluye `modalidadesNoConvocadas` de faltantes; falta prueba con datos reales | Media |
 | Socios | CRUD | Listar por páginas, crear/editar/activar/desactivar | Funcional/parcial | **Modalidad obligatoria** en crear/actualizar; unicidad número, documento y `workerCode`; auditoría registra cambio de modalidad; listado `/members` paginado de forma incremental | Media |
 | Socios | Importación masiva | CSV/Excel a `members` | Funcional/parcial | **Columna `modalidad` obligatoria** y validación estricta; `documento` opcional; duplicados y parser CSV robusto; falta preview y prueba con datos reales | Media |
 | Socios | Exportación CSV | Padrón con columna modalidad | Funcional | `MembersService.buildMembersExportCsv`; celda **`modalidad` = sólo código** (`A`, `N1`, …); orden compatible con importación (`numero_socio`…`modalidad`…`estado`) | Baja/Media |
@@ -1254,13 +1255,14 @@ Aplicación
 | E-021 | Asistencia | Corregido localmente: reducción de duplicados por evento/persona | `AsistenciaService.createAsistencia` usa ID determinístico por `eventoId + personaId` en legacy y replica el mismo ID en `eventos/{id}/asistencias`; `AttendanceService.registerAttendance` usa ID determinístico por `personaId` dentro de cada `attendance_events/{id}`. Ambos servicios verifican duplicado interno antes de escribir. | Reduce duplicados por doble click, doble escaneo o llamadas directas al servicio. | Alta | Validar con doble escaneo real/emulator y revisar datos históricos con IDs aleatorios ya existentes. |
 | E-022 | Asistencia legacy / Auditoría | Corregido localmente: trazabilidad y borrado consistente | `AsistenciaService` registra auditoría al crear/actualizar/eliminar eventos legacy y al crear/eliminar asistencias legacy; `deleteAsistencia` elimina también la réplica `eventos/{id}/asistencias/{asistenciaId}` cuando el registro global contiene `eventoId`. | Reduce registros huérfanos y mejora trazabilidad operativa de asistencia clásica. | Media/Alta | Validar borrado desde UI con datos reales y revisar registros legacy sin `eventoId`. |
 | E-023 | Socios / Rendimiento | Corregido localmente: paginación básica del padrón | `MembersService.getMembersPage()` expone páginas con `limit` y cursor; `/members` carga 50 socios iniciales, permite **Cargar más socios**, refresca tras alta/edición/cambio de estado y conserva búsqueda/exportación completa como fallback funcional. | Reduce lecturas iniciales y mejora uso del padrón con muchos socios sin cambiar contrato de import/export. | Media | Validar con Firestore real, volumen representativo e índices; implementar búsqueda backend/indexada si el padrón crece mucho. |
+| E-024 | Asistencia / Modalidades no convocadas | Corregido localmente: selector múltiple y exclusión de faltantes | `CrearEventoAsistenciaScreen` reemplaza `Modalidad` simple por chips de **Modalidades no convocadas**; `EventoAsistencia` persiste `modalidadesNoConvocadas: List<String>` y lee `modalidad` legacy como respaldo; `AttendanceService.generateAttendanceReport` excluye esas modalidades del cálculo de faltantes y las muestra como **No convocado / Justificado por modalidad**. | Evita contar como ausentes injustificados a socios que no debían asistir por modalidad/turno. | Alta | Validar con padrón real que todos los socios tengan `members.modalidad`; probar evento con D/N1/N2 excluidas y datos reales de asistencia. |
 
 ### Clasificación por tipo
 
-- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021 y E-022; pendientes funcionales relevantes: reporte con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
+- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022 y E-024; pendientes funcionales relevantes: reporte con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
 - Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012 queda corregido localmente con pendiente de validación manual.
 - Errores de navegación: E-014 corregido localmente, pendiente validación manual.
-- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017 y E-018 (**modalidad en padrón**); faltan pruebas con archivos reales y emulator.
+- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**) y E-024 (**modalidades no convocadas opcionales**); faltan pruebas con archivos reales y emulator.
 - Errores de permisos: E-001, E-002, E-014, E-019 y E-020 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
 - Errores de rendimiento: E-015 parcialmente mitigado por E-023 en el listado de socios; persisten lecturas completas en búsqueda/exportación y pantallas de asistencia/auditoría.
 - Errores de contenido: instrucciones contradictorias de importación/QR corregidas en perfil; mantener revisión de copy operativo con usuarios reales.
@@ -1315,7 +1317,7 @@ Aplicación
 | Navegación consistente | Parcial | Rutas nombradas claras; guard y adaptación de operador implementados; falta prueba manual. |
 | Auditoría | Parcial | `audit_logs` activo; Historial de Eventos ya se alimenta desde `audit_logs`; `events` queda legacy. |
 | Exportaciones | Parcial | CSV/PDF/XLSX real; falta prueba manual de apertura y filtros por evento/fecha. |
-| Pruebas automatizadas | Parcial | 5 pruebas pasan; cobertura aún mínima para flujos críticos. |
+| Pruebas automatizadas | Parcial | 8 pruebas pasan; cobertura aún mínima para flujos críticos. |
 | Análisis estático | Completo/parcial | `flutter analyze --no-pub` sin issues al 2026-05-01. |
 
 ## 11. Casos de prueba sugeridos
@@ -1337,7 +1339,8 @@ Aplicación
 | TC-013 | Voto con asistencia requerida sin asistencia | Abrir elección vinculada | Bloquea voto | Alta |
 | TC-014 | Voto con reglas emulator | Ejecutar batch como VOTER | Reglas permiten solo voto legítimo | Alta |
 | TC-015 | Resultados visibilidad | Votante intenta ver resultados antes de tiempo | Respeta `showResultsAutomatically` | Media |
-| TC-016 | Crear evento asistencia | Operador/admin crea evento | Evento aparece en dashboard | Alta |
+| TC-016 | Crear evento asistencia | Operador/admin crea evento y opcionalmente marca modalidades D/N1/N2 como no convocadas | Evento aparece en dashboard y persiste `modalidadesNoConvocadas` | Alta |
+| TC-016B | Reporte con modalidades no convocadas | Crear evento legacy con D/N1/N2 excluidas; tener socios activos en esas modalidades sin asistencia | Esos socios aparecen como No convocado / Justificado por modalidad y no suman en faltantes | Alta |
 | TC-017 | Scanner sin evento inicial | Abrir scanner desde dashboard, seleccionar evento, ingresar código | Botón registrar se habilita y guarda | Alta |
 | TC-018 | Scanner QR duplicado | Escanear mismo QR dos veces | Segundo intento informa duplicado | Alta |
 | TC-019 | Registro manual existente | Seleccionar socio, guardar asistencia | Crea registro con justificación | Alta |
@@ -1438,7 +1441,7 @@ Prioridades antes de entrega o producción:
 | `Election` | `lib/core/models/election.dart` | title, dates, isActive, isVisibleToVoters, requireAttendance, totalVotes |
 | `Candidate` | `lib/core/models/candidate.dart` | electionId, name, order, voteCount |
 | `Member` | `lib/core/models/member.dart` | memberNumber, firstName, lastName, workerCode, documentId, modalidad, status |
-| `EventoAsistencia` | `lib/core/models/asistencia/evento.dart` | nombre, fecha, tipoReunion, modalidad |
+| `EventoAsistencia` | `lib/core/models/asistencia/evento.dart` | nombre, fecha, tipoReunion, `modalidadesNoConvocadas`; `modalidad` queda como lectura legacy |
 | `PersonaAsistencia` | `lib/core/models/asistencia/persona.dart` | nombres, apellidos, identificador, codigoQR |
 | `AsistenciaRegistro` | `lib/core/models/asistencia/asistencia.dart` | eventoId, personaId, metodoRegistro, justificacion, asistio |
 | `AsistenciaEventRouteArgs` | `lib/features/asistencia/route_args.dart` | `evento` (legacy), `attendanceEventId` (reporte), `isAttendanceReport` |
@@ -1463,6 +1466,7 @@ Resultado actual:
 
 - `test/widget_test.dart`: valida que se muestre Login cuando no hay sesión activa.
 - `test/import_service_test.dart`: valida contrato de columnas obligatorias, separación de `numero_socio` frente a `worker_code`, CSV con campos entre comillas/comas internas, obligatoriedad de `modalidad` y normalización/canonización de alias (`turno` → `modalidad`, `n1` → `N1`).
+- `test/evento_asistencia_test.dart`: valida serialización canónica de `modalidadesNoConvocadas`, lectura de `modalidad` legacy como exclusión única y descarte de valores inválidos/duplicados.
 - Estado: 5 pruebas pasan.
 - Acción recomendada: ampliar cobertura de rutas por rol, reglas Firestore, voto, asistencia e importación con datos representativos.
 
@@ -1478,6 +1482,7 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Crear Evento legacy cambia `Modalidad` única por **Modalidades no convocadas** multi-selección; se persiste `modalidadesNoConvocadas: List<String>`, se lee `modalidad` legacy como respaldo, el detalle permite editar la lista y el reporte excluye esas modalidades de faltantes mostrándolas como **No convocado / Justificado por modalidad**. | `lib/core/models/asistencia/evento.dart`, `lib/features/asistencia/crear_evento_screen.dart`, `lib/features/asistencia/evento_detail_screen.dart`, `lib/features/attendance/attendance_report_screen.dart`, `lib/services/asistencia_service.dart`, `lib/services/attendance_service.dart`, `test/evento_asistencia_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (8/8) | Aplicado localmente |
 | 2026-05-01 | Paginación básica del padrón de socios: `MembersService.getMembersPage()` con límite/cursor y `/members` carga 50 registros iniciales, permite **Cargar más socios** y refresca tras alta/edición/cambio de estado. Búsqueda/exportación conservan lectura completa como fallback funcional. | `lib/services/members_service.dart`, `lib/features/members/members_list_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5) | Aplicado localmente |
 | 2026-05-01 | Asistencia legacy con auditoría y borrado consistente: eventos legacy registran create/update/delete en `audit_logs`; asistencias legacy registran alta/baja; `deleteAsistencia` elimina colección global y réplica por evento cuando puede resolver `eventoId`. | `lib/services/asistencia_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5) | Aplicado localmente |
 | 2026-05-01 | Asistencia sin duplicados operativos: IDs determinísticos para registros legacy (`eventoId + personaId`) y modelo reporte (`personaId` dentro del evento), con prevalidación interna de duplicados en servicio antes de escribir. | `lib/services/asistencia_service.dart`, `lib/services/attendance_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5); pendiente doble escaneo real/emulator | Aplicado localmente |

@@ -18,6 +18,7 @@ class AttendanceEvent {
   final String tipo; // reunion, asamblea, capacitacion, etc.
   final bool activo;
   final List<String> miembrosConvocados; // IDs de socios convocados
+  final List<String> modalidadesNoConvocadas;
   final String creadoPor;
   final int createdAt;
   final String estado; // programado, en_curso, finalizado
@@ -31,6 +32,7 @@ class AttendanceEvent {
     required this.tipo,
     required this.activo,
     required this.miembrosConvocados,
+    this.modalidadesNoConvocadas = const [],
     required this.creadoPor,
     required this.createdAt,
     this.estado = 'programado',
@@ -46,6 +48,9 @@ class AttendanceEvent {
       tipo: map['tipo'] ?? 'reunion',
       activo: map['activo'] ?? true,
       miembrosConvocados: List<String>.from(map['miembrosConvocados'] ?? []),
+      modalidadesNoConvocadas: List<String>.from(
+        map['modalidadesNoConvocadas'] ?? [],
+      ),
       creadoPor: map['creadoPor'] ?? '',
       createdAt: (map['createdAt'] as num?)?.toInt() ?? 0,
       estado: map['estado'] ?? 'programado',
@@ -61,6 +66,7 @@ class AttendanceEvent {
       'tipo': tipo,
       'activo': activo,
       'miembrosConvocados': miembrosConvocados,
+      'modalidadesNoConvocadas': modalidadesNoConvocadas,
       'creadoPor': creadoPor,
       'createdAt': createdAt,
       'estado': estado,
@@ -76,6 +82,7 @@ class AttendanceEvent {
     String? tipo,
     bool? activo,
     List<String>? miembrosConvocados,
+    List<String>? modalidadesNoConvocadas,
     String? creadoPor,
     int? createdAt,
     String? estado,
@@ -89,6 +96,8 @@ class AttendanceEvent {
       tipo: tipo ?? this.tipo,
       activo: activo ?? this.activo,
       miembrosConvocados: miembrosConvocados ?? this.miembrosConvocados,
+      modalidadesNoConvocadas:
+          modalidadesNoConvocadas ?? this.modalidadesNoConvocadas,
       creadoPor: creadoPor ?? this.creadoPor,
       createdAt: createdAt ?? this.createdAt,
       estado: estado ?? this.estado,
@@ -168,6 +177,9 @@ class AttendanceService {
         tipo: legacyEvent.tipoReunion.value.toLowerCase(),
         activo: true,
         miembrosConvocados: const [],
+        modalidadesNoConvocadas: legacyEvent.modalidadesNoConvocadas
+            .map((m) => m.value)
+            .toList(),
         creadoPor: '',
         createdAt: legacyEvent.fechaCreacion ?? legacyEvent.fecha,
         estado: 'programado',
@@ -383,6 +395,18 @@ class AttendanceService {
       final membersConvoked = await _loadConvokedMembers(
         event.miembrosConvocados,
       );
+      final excludedModalidades = event.modalidadesNoConvocadas.toSet();
+      final obligatedMembers = <Member>[];
+      final notConvokedMembers = <Member>[];
+
+      for (final member in membersConvoked) {
+        final modalidad = member.modalidad?.value;
+        if (modalidad != null && excludedModalidades.contains(modalidad)) {
+          notConvokedMembers.add(member);
+        } else {
+          obligatedMembers.add(member);
+        }
+      }
 
       // 3. Obtener asistencias reales
       final attendances = await _loadAttendancesForReport(
@@ -392,13 +416,13 @@ class AttendanceService {
 
       // 4. Calcular presentes y faltantes
       final attendedMemberIds = reportEvent.isLegacy
-          ? await _resolveLegacyAttendedMemberIds(attendances, membersConvoked)
+          ? await _resolveLegacyAttendedMemberIds(attendances, obligatedMembers)
           : attendances.where((a) => a.asistio).map((a) => a.personaId).toSet();
 
       final presentMembers = <Member>[];
       final absentMembers = <Member>[];
 
-      for (final member in membersConvoked) {
+      for (final member in obligatedMembers) {
         if (attendedMemberIds.contains(member.id)) {
           presentMembers.add(member);
         } else {
@@ -407,7 +431,7 @@ class AttendanceService {
       }
 
       // 5. Calcular estadísticas
-      final totalConvoked = membersConvoked.length;
+      final totalConvoked = obligatedMembers.length;
       final totalPresent = presentMembers.length;
       final totalAbsent = absentMembers.length;
       final attendanceRate = totalConvoked > 0
@@ -419,9 +443,11 @@ class AttendanceService {
         totalConvoked: totalConvoked,
         totalPresent: totalPresent,
         totalAbsent: totalAbsent,
+        totalNotConvoked: notConvokedMembers.length,
         attendanceRate: attendanceRate,
         presentMembers: presentMembers,
         absentMembers: absentMembers,
+        notConvokedMembers: notConvokedMembers,
         attendances: attendances,
       );
     } catch (e) {
@@ -675,9 +701,11 @@ class AttendanceReport {
   final int totalConvoked;
   final int totalPresent;
   final int totalAbsent;
+  final int totalNotConvoked;
   final double attendanceRate;
   final List<Member> presentMembers;
   final List<Member> absentMembers;
+  final List<Member> notConvokedMembers;
   final List<AsistenciaRegistro> attendances;
 
   AttendanceReport({
@@ -685,11 +713,13 @@ class AttendanceReport {
     required this.totalConvoked,
     required this.totalPresent,
     required this.totalAbsent,
+    required this.totalNotConvoked,
     required this.attendanceRate,
     required this.presentMembers,
     required this.absentMembers,
+    required this.notConvokedMembers,
     required this.attendances,
   });
 
-  double get absenceRate => 100 - attendanceRate;
+  double get absenceRate => totalConvoked == 0 ? 0 : 100 - attendanceRate;
 }

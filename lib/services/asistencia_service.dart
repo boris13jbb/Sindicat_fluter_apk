@@ -77,7 +77,10 @@ class AsistenciaService {
       'fecha': evento.fecha,
       'tipoReunion': evento.tipoReunion.value,
       'descripcion': evento.descripcion ?? '',
-      if (evento.modalidad != null) 'modalidad': evento.modalidad!.value,
+      'modalidadesNoConvocadas': evento.modalidadesNoConvocadas
+          .map((m) => m.value)
+          .toList(),
+      'modalidad': FieldValue.delete(),
     });
     await _audit.logAction(
       action: AuditAction.update,
@@ -88,55 +91,36 @@ class AsistenciaService {
     );
   }
 
-  /// Actualiza la modalidad de un evento y actualiza automáticamente
-  /// las justificaciones de las asistencias existentes.
+  /// Compatibilidad con el flujo antiguo de modalidad única.
   Future<void> updateEventoModalidad(
     String eventoId,
     Modalidad nuevaModalidad,
   ) async {
-    if (eventoId.isEmpty) return;
+    await updateEventoModalidadesNoConvocadas(eventoId, [nuevaModalidad]);
+  }
 
-    // 1. Actualizar modalidad en el evento
+  /// Actualiza las modalidades que NO están convocadas al evento.
+  Future<void> updateEventoModalidadesNoConvocadas(
+    String eventoId,
+    List<Modalidad> modalidades,
+  ) async {
+    if (eventoId.isEmpty) return;
+    final values = modalidades.map((m) => m.value).toList();
     await _firestore.collection(_eventos).doc(eventoId).update({
-      'modalidad': nuevaModalidad.value,
+      'modalidadesNoConvocadas': values,
+      'modalidad': FieldValue.delete(),
     });
 
-    // 2. Generar justificación automática basada en la modalidad
-    final justificacion = JustificacionHelper.obtenerJustificacion(
-      nuevaModalidad,
-    );
-
-    // 3. Actualizar todas las asistencias del evento con la nueva justificación
-    final asistenciasSnap = await _firestore
-        .collection(_asistencias)
-        .where('eventoId', isEqualTo: eventoId)
-        .get();
-
-    for (final doc in asistenciasSnap.docs) {
-      await doc.reference.update({'justificacion': justificacion});
-    }
-
-    // 4. Actualizar también en subcolecciones si existen
-    final subColeccionSnap = await _firestore
-        .collection(_eventos)
-        .doc(eventoId)
-        .collection(_asistencias)
-        .get();
-
-    for (final doc in subColeccionSnap.docs) {
-      await doc.reference.update({'justificacion': justificacion});
-    }
-
+    final label = values.isEmpty ? 'ninguna' : values.join(', ');
     await _audit.logAction(
       action: AuditAction.update,
       entityType: AuditEntityType.attendanceEvent,
       entityId: eventoId,
       changes: {
-        'modalidad': {'after': nuevaModalidad.value},
-        'justificacion': {'after': justificacion},
+        'modalidadesNoConvocadas': {'after': values},
       },
       description:
-          'Modalidad actualizada en evento legacy de asistencia: ${nuevaModalidad.value}',
+          'Modalidades no convocadas actualizadas en evento legacy de asistencia: $label',
       platform: 'flutter',
     );
   }

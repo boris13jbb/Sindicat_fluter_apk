@@ -138,6 +138,7 @@ class EventoAsistencia {
     this.descripcion,
     this.fechaCreacion,
     this.modalidad,
+    this.modalidadesNoConvocadas = const [],
   });
 
   final String id;
@@ -146,11 +147,36 @@ class EventoAsistencia {
   final TipoReunion tipoReunion;
   final String? descripcion;
   final int? fechaCreacion;
+
+  /// Campo legacy. Se mantiene solo para leer documentos antiguos.
   final Modalidad? modalidad;
+  final List<Modalidad> modalidadesNoConvocadas;
+
+  static List<Modalidad> _parseModalidadesNoConvocadas(
+    dynamic raw,
+    Modalidad? legacyModalidad,
+  ) {
+    final parsed = <Modalidad>[];
+    if (raw is Iterable) {
+      for (final item in raw) {
+        final modalidad = Modalidad.tryParse(item?.toString());
+        if (modalidad != null && !parsed.contains(modalidad)) {
+          parsed.add(modalidad);
+        }
+      }
+    }
+    if (parsed.isEmpty && legacyModalidad != null) {
+      parsed.add(legacyModalidad);
+    }
+    return parsed;
+  }
 
   factory EventoAsistencia.fromMap(Map<String, dynamic> map, [String? id]) {
     final docId = id ?? map['id']?.toString() ?? '';
     final modalidadStr = (map['modalidad'] as String?);
+    final legacyModalidad = modalidadStr != null && modalidadStr.isNotEmpty
+        ? Modalidad.fromString(modalidadStr)
+        : null;
     return EventoAsistencia(
       id: docId,
       nombre: map['nombre'] as String? ?? '',
@@ -160,9 +186,11 @@ class EventoAsistencia {
       ),
       descripcion: map['descripcion'] as String?,
       fechaCreacion: (map['fechaCreacion'] as num?)?.toInt(),
-      modalidad: modalidadStr != null && modalidadStr.isNotEmpty
-          ? Modalidad.fromString(modalidadStr)
-          : null,
+      modalidad: legacyModalidad,
+      modalidadesNoConvocadas: _parseModalidadesNoConvocadas(
+        map['modalidadesNoConvocadas'],
+        legacyModalidad,
+      ),
     );
   }
 
@@ -174,12 +202,18 @@ class EventoAsistencia {
       'tipoReunion': tipoReunion.value,
       'descripcion': descripcion ?? '',
       'fechaCreacion': fechaCreacion ?? DateTime.now().millisecondsSinceEpoch,
-      if (modalidad != null) 'modalidad': modalidad!.value,
+      'modalidadesNoConvocadas': modalidadesNoConvocadas
+          .map((m) => m.value)
+          .toList(),
     };
   }
 
-  /// Retorna una copia del evento con la modalidad actualizada.
-  EventoAsistencia copyWith({Modalidad? modalidad}) {
+  /// Retorna una copia del evento con cambios puntuales.
+  EventoAsistencia copyWith({
+    Modalidad? modalidad,
+    bool clearModalidad = false,
+    List<Modalidad>? modalidadesNoConvocadas,
+  }) {
     return EventoAsistencia(
       id: id,
       nombre: nombre,
@@ -187,7 +221,9 @@ class EventoAsistencia {
       tipoReunion: tipoReunion,
       descripcion: descripcion,
       fechaCreacion: fechaCreacion,
-      modalidad: modalidad ?? this.modalidad,
+      modalidad: clearModalidad ? null : (modalidad ?? this.modalidad),
+      modalidadesNoConvocadas:
+          modalidadesNoConvocadas ?? this.modalidadesNoConvocadas,
     );
   }
 }
