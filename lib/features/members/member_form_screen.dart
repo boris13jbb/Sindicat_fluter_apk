@@ -20,6 +20,7 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
   late final TextEditingController _memberNumberController;
   late final TextEditingController _firstNameController;
   late final TextEditingController _lastNameController;
+  late final TextEditingController _workerCodeController; // 🆕 Campo workerCode
   late final TextEditingController _documentIdController;
   late final TextEditingController _emailController;
   late final TextEditingController _phoneController;
@@ -39,6 +40,9 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
     _lastNameController = TextEditingController(
       text: widget.member?.lastName ?? '',
     );
+    _workerCodeController = TextEditingController(
+      text: widget.member?.workerCode ?? '',
+    );
     _documentIdController = TextEditingController(
       text: widget.member?.documentId ?? '',
     );
@@ -51,6 +55,7 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
     _memberNumberController.dispose();
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _workerCodeController.dispose(); // 🆕 Dispose del nuevo controller
     _documentIdController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
@@ -109,6 +114,22 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
                         return 'Los apellidos son obligatorios';
+                      }
+                      return null;
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // 🆕 Código de Trabajador (workerCode) - CLAVE PARA QR Y VOTACIÓN
+                  _buildTextField(
+                    controller: _workerCodeController,
+                    label: 'Código/Número de Trabajador *',
+                    icon: Icons.work,
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'El código de trabajador es obligatorio para generar QR y votar';
                       }
                       return null;
                     },
@@ -201,6 +222,15 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // 🆕 Obtener workerCode, con fallback a memberNumber si está vacío
+      final workerCodeValue = _workerCodeController.text.trim().isEmpty
+          ? _memberNumberController.text.trim()
+          : _workerCodeController.text.trim();
+      
+      debugPrint('💾 Guardando socio:');
+      debugPrint('   workerCode: $workerCodeValue');
+      debugPrint('   memberNumber: ${_memberNumberController.text.trim()}');
+
       final member = Member(
         id: widget.member?.id ?? '',
         memberNumber: _memberNumberController.text.trim(),
@@ -209,6 +239,7 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
         fullName:
             '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'
                 .trim(),
+        workerCode: workerCodeValue,
         documentId: _documentIdController.text.trim().isEmpty
             ? null
             : _documentIdController.text.trim(),

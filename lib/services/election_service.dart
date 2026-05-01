@@ -4,7 +4,11 @@ import '../core/models/candidate.dart';
 import '../core/models/election.dart';
 import '../core/models/election_result.dart';
 import '../core/models/audit_log.dart';
+import '../core/models/member.dart';
 import 'audit_service.dart';
+import 'asistencia_service.dart';
+import 'members_service.dart';
+import 'auth_service.dart';
 import 'dart:async';
 
 /// Modo de elegibilidad para votación
@@ -365,6 +369,8 @@ class VoteService {
   }
 
   /// Verificar si un usuario es elegible para votar en una elección
+  /// ESTRATEGIA: Usa búsqueda inteligente por múltiples identificadores
+  /// (workerCode, email, userId) similar a asistencia_service.dart
   Future<bool> isUserEligibleToVote({
     required String electionId,
     required String userId,
@@ -378,7 +384,7 @@ class VoteService {
           .get();
 
       if (!electionDoc.exists) {
-        debugPrint('Elección no encontrada: $electionId');
+        debugPrint('❌ Elección no encontrada: $electionId');
         return false;
       }
 
@@ -388,6 +394,7 @@ class VoteService {
 
       // Si no requiere asistencia, todos los socios activos pueden votar
       if (!requireAttendance) {
+        debugPrint('✅ Elección sin requisito de asistencia - Votante elegible');
         return true;
       }
 
@@ -396,12 +403,103 @@ class VoteService {
 
       if (eventoAsistenciaId == null || eventoAsistenciaId.isEmpty) {
         debugPrint(
-          'Elección requiere asistencia pero no tiene evento configurado',
+          '❌ Elección requiere asistencia pero no tiene evento configurado',
         );
         return false;
       }
 
-      // Verificar si el socio tiene asistencia registrada en el evento
+      debugPrint('\n🗳️  Verificando elegibilidad para votación:');
+      debugPrint('   Election: $electionId');
+      debugPrint('   Evento requerido: $eventoAsistenciaId');
+      debugPrint('   UserId: $userId');
+      debugPrint('   MemberId recibido: $memberId');
+
+      // ESTRATEGIA DE BÚSQUEDA INTELIGENTE:
+      // Intentar múltiples identificadores (workerCode, email, userId)
+      // Similar a isUserRegisteredInEvent en asistencia_service.dart
+      
+      // 1. Obtener datos completos del usuario para tener su número de empleado
+      final fullUser = await AuthService().getCurrentUser();
+      final employeeNum = fullUser?.employeeNumber;
+      final userEmail = fullUser?.email;
+
+      // Lista de posibles identificadores del usuario
+      // PRIORIDAD: employeeNumber (workerCode) primero, luego memberId, luego userId
+      final idsParaProbar = <String>[];
+      
+      if (employeeNum != null && employeeNum.isNotEmpty) {
+        idsParaProbar.add(employeeNum);
+        debugPrint('   📋 Agregado employeeNumber: $employeeNum');
+      }
+      
+      if (memberId.isNotEmpty && !idsParaProbar.contains(memberId)) {
+        idsParaProbar.add(memberId);
+        debugPrint('   📋 Agregado memberId: $memberId');
+      }
+      
+      if (userId.isNotEmpty && !idsParaProbar.contains(userId)) {
+        idsParaProbar.add(userId);
+        debugPrint('   📋 Agregado userId: $userId');
+      }
+      
+      if (userEmail != null && userEmail.isNotEmpty && !idsParaProbar.contains(userEmail)) {
+        idsParaProbar.add(userEmail);
+        debugPrint('   📋 Agregado email: $userEmail');
+      }
+
+      if (idsParaProbar.isEmpty) {
+        debugPrint('❌ No hay identificadores disponibles para buscar');
+        return false;
+      }
+
+      debugPrint('   🔍 Identificadores a probar (${idsParaProbar.length}): ${idsParaProbar.join(", ")}');
+
+      // 2. Buscar en miembros (members) por cada identificador
+      final membersService = MembersService();
+      for (final identifier in idsParaProbar) {
+        debugPrint('   \n   🔎 Probando identifier: "$identifier"');
+        
+        final member = await membersService.getMemberByWorkerCode(identifier);
+        if (member != null) {
+          debugPrint('   ✅ Miembro encontrado:');
+          debugPrint('      - workerCode: ${member.workerCode}');
+          debugPrint('      - Nombre: ${member.fullName}');
+          debugPrint('      - Status: ${member.status.displayName}');
+          
+          // Verificar estado activo
+          if (member.status != MemberStatus.active) {
+            debugPrint('      ⚠️ Miembro no está activo (status: ${member.status.displayName})');
+            continue;
+          }
+          
+          // Verificar si este miembro tiene asistencia registrada en el evento
+          final asistenciaService = AsistenciaService();
+          final persona = await asistenciaService.getPersonaPorIdentificador(
+            member.workerCode!,
+          );
+          if (persona != null) {
+            debugPrint('      👤 Persona encontrada en sistema de asistencia: ${persona.id}');
+            final asistencia =
+                await asistenciaService.getAsistenciaPorEventoYPersona(
+              eventoAsistenciaId,
+              persona.id,
+            );
+            if (asistencia != null && asistencia.asistio == true) {
+              debugPrint('      ✅ ASISTENCIA ENCONTRADA - Usuario ELEGIBLE');
+              return true;
+            } else {
+              debugPrint('      ❌ No tiene asistencia registrada en este evento');
+            }
+          } else {
+            debugPrint('      ⚠️ Persona no encontrada en sistema de asistencia con workerCode: ${member.workerCode}');
+          }
+        } else {
+          debugPrint('   ❌ No se encontró miembro con identifier: "$identifier"');
+        }
+      }
+
+      // 3. Fallback: buscar directamente en asistencias por el memberId original
+      debugPrint('\n   🔄 Intentando búsqueda directa en asistencias...');
       final attendanceSnapshot = await _firestore
           .collection('attendance_events')
           .doc(eventoAsistenciaId)
@@ -413,15 +511,18 @@ class VoteService {
 
       final hasAttendance = attendanceSnapshot.docs.isNotEmpty;
 
-      if (!hasAttendance) {
-        debugPrint(
-          'Socio $memberId no tiene asistencia en evento $eventoAsistenciaId',
-        );
+      if (hasAttendance) {
+        debugPrint('   ✅ Asistencia encontrada por búsqueda directa');
+        debugPrint('   🎉 Usuario ELEGIBLE para votar');
+      } else {
+        debugPrint('   ❌ No se encontró asistencia por búsqueda directa');
+        debugPrint('   💡 Sugerencia: Verificar que el socio tenga registro de asistencia en el evento $eventoAsistenciaId');
       }
 
       return hasAttendance;
-    } catch (e) {
-      debugPrint('Error verificando elegibilidad: $e');
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error verificando elegibilidad: $e');
+      debugPrint('Stack trace: $stackTrace');
       return false;
     }
   }
@@ -432,20 +533,36 @@ class VoteService {
     required String candidateId,
     String? memberId, // 🆕 ID del socio para validación de elegibilidad
   }) async {
+    debugPrint('\n🗳️ === INICIANDO PROCESO DE VOTACIÓN ===');
+    debugPrint('   Election: $electionId');
+    debugPrint('   UserId: $userId');
+    debugPrint('   CandidateId: $candidateId');
+    debugPrint('   MemberId: ${memberId ?? "null"}');
+
     // 🆕 Validar elegibilidad antes de permitir el voto
     if (memberId != null && memberId.isNotEmpty) {
-      final isEligible = await isUserEligibleToVote(
-        electionId: electionId,
-        userId: userId,
-        memberId: memberId,
-      );
-
-      if (!isEligible) {
-        throw Exception(
-          'No tienes permiso para votar en esta elección. '
-          'Verifica que cumplas con los requisitos de elegibilidad.',
+      debugPrint('   🔍 Validando elegibilidad...');
+      try {
+        final isEligible = await isUserEligibleToVote(
+          electionId: electionId,
+          userId: userId,
+          memberId: memberId,
         );
+
+        if (!isEligible) {
+          debugPrint('   ❌ Usuario NO es elegible para votar');
+          throw Exception(
+            'No tienes permiso para votar en esta elección. '
+            'Verifica que cumplas con los requisitos de elegibilidad.',
+          );
+        }
+        debugPrint('   ✅ Usuario es elegible - Continuando con votación');
+      } catch (e) {
+        debugPrint('   ❌ Error durante validación de elegibilidad: $e');
+        rethrow;
       }
+    } else {
+      debugPrint('   ⚠️ MemberId no proporcionado - omitiendo validación de elegibilidad');
     }
 
     final batch = _firestore.batch();
@@ -460,6 +577,8 @@ class VoteService {
         .collection('candidates')
         .doc(candidateId);
     final electionRef = _firestore.collection('elections').doc(electionId);
+
+    debugPrint('   📝 Preparando batch de escritura...');
 
     // Registrar el voto
     batch.set(voteRef, {
@@ -477,9 +596,17 @@ class VoteService {
     });
 
     try {
+      debugPrint('   💾 Ejecutando commit del batch...');
+      debugPrint('   📊 Detalles del batch:');
+      debugPrint('      - Vote Ref: elections/$electionId/votes/${_voteId(electionId, userId)}');
+      debugPrint('      - Candidate Ref: elections/$electionId/candidates/$candidateId');
+      debugPrint('      - Election Ref: elections/$electionId');
+      
       await batch.commit();
+      debugPrint('   ✅ Batch commit exitoso');
 
       // Registrar emisión de voto en auditoría (después de commit exitoso)
+      debugPrint('   📋 Registrando auditoría...');
       await _audit.logAction(
         action: AuditAction.vote,
         entityType: AuditEntityType.election,
@@ -487,8 +614,27 @@ class VoteService {
         description: 'Voto emitido por usuario $userId en elección $electionId',
         platform: 'flutter',
       );
-    } catch (e) {
-      debugPrint('Vote casting error: $e');
+      debugPrint('   ✅ Auditoría registrada');
+      debugPrint('🗳️ === VOTACIÓN COMPLETADA EXITOSAMENTE ===\n');
+    } catch (e, stackTrace) {
+      debugPrint('   ❌ Error al ejecutar batch: $e');
+      debugPrint('   Stack trace: $stackTrace');
+      
+      // Clasificar el tipo de error
+      final errorMsg = e.toString().toLowerCase();
+      if (errorMsg.contains('permission-denied') || errorMsg.contains('permission')) {
+        debugPrint('   🔒 ERROR DE PERMISOS - Verifica firestore.rules');
+        debugPrint('   💡 Posible causa: Las reglas no permiten esta operación');
+      } else if (errorMsg.contains('not-found') || errorMsg.contains('does not exist')) {
+        debugPrint('   🔍 DOCUMENTO NO ENCONTRADO - Verifica que la elección y candidato existan');
+        debugPrint('   💡 Posible causa: electionId o candidateId incorrectos');
+      } else if (errorMsg.contains('already') || errorMsg.contains('exists')) {
+        debugPrint('   ⚠️ El voto ya existe - tratando como éxito');
+        debugPrint('🗳️ === VOTO YA REGISTRADO (DUPLICADO) ===\n');
+        return; // No relanzar, tratar como éxito
+      }
+      
+      debugPrint('🗳️ === ERROR EN VOTACIÓN ===\n');
       rethrow;
     }
   }

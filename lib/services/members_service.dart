@@ -24,6 +24,8 @@ class MembersService {
     MemberStatus? status,
     String? searchQuery,
   }) {
+    debugPrint('📊 MembersService: getAllMembers() llamado - status filter: $status');
+    
     Query query = _firestore.collection('members');
 
     // Nota: No aplicamos where ni orderBy en Firestore para evitar índices compuestos
@@ -32,8 +34,40 @@ class MembersService {
     return query.snapshots().map(
       (snapshot) {
         debugPrint(
-          '📊 Stream de members: ${snapshot.docs.length} documentos recibidos',
+          '📦 Snapshot recibido: ${snapshot.docs.length} documentos totales',
         );
+        
+        // Mostrar diagnóstico de los primeros documentos si hay muchos
+        if (snapshot.docs.isNotEmpty) {
+          debugPrint('   📋 Muestra de miembros (primeros 3):');
+          final sampleSize = snapshot.docs.length < 3 ? snapshot.docs.length : 3;
+          for (var i = 0; i < sampleSize; i++) {
+            final doc = snapshot.docs[i];
+            final data = doc.data() as Map<String, dynamic>;
+            final statusValue = data['status'];
+            final fullName = data['fullName'] ?? data['firstName'] ?? 'N/A';
+            
+            if (statusValue == null) {
+              debugPrint('      [$i] $fullName - ⚠️ status: AUSENTE');
+            } else {
+              debugPrint('      [$i] $fullName - status: "$statusValue"');
+            }
+          }
+          
+          // Contar únicos valores de status
+          final statusCounts = <String, int>{};
+          for (final doc in snapshot.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final statusValue = data['status']?.toString() ?? 'AUSENTE';
+            statusCounts[statusValue] = (statusCounts[statusValue] ?? 0) + 1;
+          }
+          
+          debugPrint('   📊 Distribución de status en Firestore:');
+          statusCounts.forEach((statusVal, count) {
+            debugPrint('      - "$statusVal": $count miembros');
+          });
+        }
+        
         return snapshot.docs
             .map(
               (doc) =>
@@ -44,7 +78,16 @@ class MembersService {
     ).map((members) {
       // Filtrado en cliente por estado
       if (status != null) {
+        final beforeFilter = members.length;
         members = members.where((m) => m.status == status).toList();
+        final afterFilter = members.length;
+        debugPrint('   🔽 Filtrado por status=${status.name}: $beforeFilter → $afterFilter miembros');
+        
+        // Si no hay resultados pero sí había miembros, explicar por qué
+        if (afterFilter == 0 && beforeFilter > 0) {
+          debugPrint('   ⚠️ ADVERTENCIA: Se encontraron $beforeFilter miembros pero NINGUNO tiene status="${status.name}"');
+          debugPrint('   💡 SOLUCIÓN: Actualiza el campo status en Firestore a "${status.name}" o re-importa los socios');
+        }
       }
       
       // Ordenamiento en cliente por apellido y nombre
@@ -75,6 +118,9 @@ class MembersService {
 
   /// Obtener stream de socios activos
   Stream<List<Member>> getActiveMembers() {
+    debugPrint('\n🔍 MembersService: getActiveMembers() llamado');
+    debugPrint('   Filtrando por status: MemberStatus.active');
+    debugPrint('   Valor esperado en Firestore: "${MemberStatus.active.name}"');
     return getAllMembers(status: MemberStatus.active);
   }
 

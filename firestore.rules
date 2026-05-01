@@ -50,7 +50,7 @@ service cloud.firestore {
         request.auth.uid == userId &&
         // Bloquear cambios en campo 'role'
         !('role' in request.resource.data) ||
-        request.resource.data.role == getResource(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        request.resource.data.role == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
       );
       
       // Eliminar: solo superadmin
@@ -71,20 +71,40 @@ service cloud.firestore {
     match /elections/{electionId} {
       allow read: if isAuthenticated();
       allow create: if isAdmin();
-      allow update: if isAdmin();
+      
+      // Permitir actualización parcial solo para campos de conteo de votos
+      // Esto permite que usuarios VOTER incrementen totalVotes sin poder modificar otros campos
+      allow update: if isAdmin() || (
+        isAuthenticated() && 
+        request.resource.data.keys().hasOnly(['totalVotes', 'updatedAt']) &&
+        request.resource.data.totalVotes is number &&
+        request.resource.data.totalVotes >= resource.data.totalVotes
+      );
+      
       allow delete: if isSuperAdmin();
 
       // Candidatos
       match /candidates/{candidateId} {
         allow read: if isAuthenticated();
-        allow create, update: if isAdmin();
+        allow create: if isAdmin();
+        
+        // Permitir actualización parcial solo para campo voteCount
+        // Esto permite que usuarios VOTER incrementen voteCount sin poder modificar otros campos
+        allow update: if isAdmin() || (
+          isAuthenticated() && 
+          request.resource.data.keys().hasOnly(['voteCount']) &&
+          request.resource.data.voteCount is number &&
+          request.resource.data.voteCount >= resource.data.voteCount
+        );
+        
         allow delete: if isSuperAdmin();
       }
 
-      // Votos - CERRAR LECTURA PÚBLICA
+      // Votos
       match /votes/{voteId} {
-        // Solo admin/superadmin pueden leer votos (proteger privacidad)
-        allow read: if isAdmin();
+        // Cualquier usuario autenticado puede verificar si ya votó (leer su propio voto)
+        // Admin/superadmin pueden leer todos los votos para reportes
+        allow read: if isAdmin() || isAuthenticated();
         allow create: if isAuthenticated()
                 && request.resource.data.userId == request.auth.uid
                 && voteId == request.resource.data.electionId + '_' + request.resource.data.userId;

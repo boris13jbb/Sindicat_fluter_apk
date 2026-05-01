@@ -22,6 +22,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   // Datos del socio actual (si existe)
   dynamic _currentMember;
   bool _isLoadingMember = true;
+  bool _noMembersInDatabase = false; // Flag para detectar si no hay miembros en BD
 
   @override
   void initState() {
@@ -110,14 +111,53 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       if (foundMember == null) {
         debugPrint('\n🔎 Estrategia 4: Escaneo completo de miembros...');
         try {
+          // Primero intentamos getActiveMembers()
+          debugPrint('   Intento: getActiveMembers() con filtro status=active');
           final allMembersStream = _membersService.getActiveMembers();
-          final allMembers = await allMembersStream.first;
+          var allMembers = await allMembersStream.first;
           
-          debugPrint('   Total miembros activos en Firestore: ${allMembers.length}');
+          debugPrint('   Total miembros con status=active: ${allMembers.length}');
           
+          // Si no hay activos, intentamos getAllMembers() sin filtro
           if (allMembers.isEmpty) {
-            debugPrint('   ⚠️ NO HAY MIEMBROS ACTIVOS en la base de datos');
+            debugPrint('   ⚠️ getActiveMembers() retornó 0 miembros.');
+            debugPrint('   Intento fallback: getAllMembers() SIN filtro de status...');
+            
+            final allMembersUnfiltered = await _membersService.getAllMembers().first;
+            debugPrint('   📦 getAllMembers() retornó ${allMembersUnfiltered.length} miembros');
+            
+            if (allMembersUnfiltered.isNotEmpty) {
+              debugPrint('   💡 ENCONTRADOS ${allMembersUnfiltered.length} miembros SIN filtrar por status');
+              debugPrint('   ⚠️ Esto sugiere que los miembros existen pero su campo status no es "active"');
+              
+              // Mostrar distribución de status
+              final statusCounts = <String, int>{};
+              for (final m in allMembersUnfiltered) {
+                final statusName = m.status.name;
+                statusCounts[statusName] = (statusCounts[statusName] ?? 0) + 1;
+              }
+              debugPrint('   📊 Distribución de status:');
+              statusCounts.forEach((status, count) {
+                debugPrint('      - "$status": $count miembros');
+              });
+              
+              // Usamos todos los miembros para la búsqueda (fallback)
+              allMembers = allMembersUnfiltered;
+              debugPrint('   ✅ Continuando escaneo con ${allMembers.length} miembros (todos los status)');
+            } else {
+              debugPrint('   ❌ NO se encontraron miembros en absoluto (colección vacía)');
+              debugPrint('   🚨 DIAGNÓSTICO: La base de datos NO tiene ningún socio importado');
+              debugPrint('   📋 Acción requerida: Importar socios desde CSV/Excel');
+              if (mounted) {
+                setState(() {
+                  _noMembersInDatabase = true;
+                });
+              }
+            }
           } else {
+            debugPrint('   ✅ Encontrados ${allMembers.length} miembros activos');
+          }
+          
             // Mostrar primeros 5 miembros para diagnóstico
             debugPrint('\n   📋 Primeros 5 miembros activos:');
             for (var i = 0; i < allMembers.length && i < 5; i++) {
@@ -215,6 +255,23 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                 }
               }
             }
+          
+          // Verificar si hay algún miembro en la base de datos (después del escaneo)
+          if (foundMember == null && allMembers.isEmpty) {
+            try {
+              final allCheck = await _membersService.getAllMembers().first;
+              if (allCheck.isEmpty) {
+                debugPrint('\n   🚨 DIAGNÓSTICO FINAL: La base de datos NO tiene ningún socio importado');
+                debugPrint('   📋 Acción requerida: Importar socios desde CSV/Excel');
+                if (mounted) {
+                  setState(() {
+                    _noMembersInDatabase = true;
+                  });
+                }
+              }
+            } catch (e) {
+              debugPrint('   ⚠️ No se pudo verificar si hay miembros: $e');
+            }
           }
         } catch (e, stackTrace) {
           debugPrint('   ❌ Error en escaneo completo: $e');
@@ -222,7 +279,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         }
       }
 
-      // RESULTADO FINAL
+        // RESULTADO FINAL
       debugPrint('\n${'=' * 60}');
       if (foundMember != null) {
         debugPrint('✅ RESULTADO: Socio encontrado vía "$searchMethod"');
@@ -233,6 +290,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         debugPrint('   email: ${foundMember.email ?? "N/A"}');
         debugPrint('   status: ${foundMember.status.displayName}');
         debugPrint('=' * 60 + '\n');
+        
+        // VERIFICAR si el workerCode existe
+        if (foundMember.workerCode == null || foundMember.workerCode!.isEmpty) {
+          debugPrint('   ⚠️ ADVERTENCIA: El socio encontrado NO tiene workerCode asignado');
+          debugPrint('   💡 Sin workerCode, NO se puede generar el código QR');
+        }
       } else {
         debugPrint('❌ RESULTADO: NO SE ENCONTRÓ SOCIO');
         debugPrint('   Se intentaron 5 estrategias de búsqueda:');
@@ -409,43 +472,98 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.shade200),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.info_outline, color: Colors.orange.shade700),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Posibles causas:',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.orange.shade900,
+                  
+                  // Mensaje específico si no hay miembros en la BD
+                  if (_noMembersInDatabase)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded, color: Colors.red.shade700),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'No hay socios importados',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: Colors.red.shade900,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '• Tu email no coincide con el registrado en el sistema\n'
-                          '• Falta el campo workerCode en tu registro\n'
-                          '• Aún no has sido importado como socio',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.orange.shade800,
+                            ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 12),
+                          Text(
+                            'La base de datos no contiene ningún socio importado.\n\n'
+                            'Para generar códigos QR, primero debes importar los socios:\n\n'
+                            '1. Ve al panel de administración\n'
+                            '2. Selecciona "Importar Socios"\n'
+                            '3. Carga un archivo CSV o Excel con los datos\n'
+                            '4. Asegúrate de incluir las columnas obligatorias:\n'
+                            '   • numero_socio\n'
+                            '   • nombres\n'
+                            '   • apellidos\n'
+                            '   • documento (cédula)\n'
+                            '   • worker_code (código de trabajador) - OBLIGATORIO para QR\n'
+                            '   • email (opcional pero recomendado)',
+                            textAlign: TextAlign.left,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.red.shade800,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    // Mensaje genérico cuando sí hay miembros pero no coincide el usuario
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.orange.shade700),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Posibles causas:',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.orange.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '• Tu email no coincide con el registrado en el sistema\n'
+                            '• Falta el campo workerCode en tu registro\n'
+                            '• Aún no has sido importado como socio\n'
+                            '• El campo status de tu registro no es "active"',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.orange.shade800,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 16),
                   Text(
                     'Contacta al administrador para verificar tu registro.',
@@ -518,7 +636,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             'Datos detectados:\n'
                             '• Nombre: ${_currentMember!.fullName}\n'
                             '• Email: ${_currentMember!.email ?? "No registrado"}\n'
-                            '• workerCode: ${_currentMember!.workerCode?.isNotEmpty == true ? _currentMember!.workerCode : "NO ASIGNADO"}',
+                            '• workerCode: ${_currentMember!.workerCode?.isNotEmpty == true ? _currentMember!.workerCode : "NO ASIGNADO"}\n\n'
+                            '🔧 ¿Cómo solucionarlo?\n'
+                            '1. Si eres administrador: importa el CSV con la columna "worker_code"\n'
+                            '2. Contacta al admin para que asigne tu Número de Trabajador',
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.orange.shade800,
@@ -529,7 +650,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Contacta al administrador para que actualice tu Número de Trabajador.',
+                      'Sin workerCode no se puede generar el código QR.\n'
+                      'El admin debe actualizar tu registro con el Número de Trabajador.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),

@@ -1,0 +1,11 @@
+numero_socio,nombres,apellidos,documento,email,telefono,worker_code
+1,Juan Carlos,Pérez García,1234567890,juan.perez@empresa.com,555-1234,W001
+2,María Elena,Rodríguez López,0987654321,maria.rodriguez@empresa.com,555-5678,W002
+3,Carlos Alberto,Martínez Silva,1122334455,carlos.martinez@empresa.com,555-9012,W003
+4,Ana Lucía,Fernández Torres,5566778899,ana.fernandez@empresa.com,555-3456,W004
+5,Luis Fernando,Gómez Ramírez,9988776655,luis.gomez@empresa.com,555-7890,W005
+6,Carmen Rosa,Vásquez Mendoza,4455667788,carmen.vasquez@empresa.com,555-2345,W006
+7,Jorge Eduardo,Díaz Herrera,3344556677,jorge.diaz@empresa.com,555-6789,W007
+8,Patricia Isabel,Ruiz Castillo,2233445566,patricia.ruiz@empresa.com,555-0123,W008
+9,Roberto Antonio,Morales Vargas,6677889900,roberto.morales@empresa.com,555-4567,W009
+10,Laura Sofía,Jiménez Castro,7788990011,laura.jimenez@empresa.com,555-8901,W010

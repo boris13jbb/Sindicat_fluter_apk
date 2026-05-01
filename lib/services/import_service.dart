@@ -51,7 +51,7 @@ class ImportService {
 
   /// Mapeo de columnas alternativas a columnas estándar
   static const Map<String, List<String>> columnMappings = {
-    'numero_socio': ['numero_socio', 'codigo', 'codigo_socio', 'id', 'num_socio'],
+    'numero_socio': ['numero_socio', 'codigo', 'codigo_socio', 'id', 'num_socio', 'worker_code'],
     'nombres': ['nombres', 'nombre', 'primer_nombre', 'nombres_completos'],
     'apellidos': ['apellidos', 'apellido', 'apellidos_completos'],
     'documento': ['documento', 'cedula', 'cedula_ciudadania', 'identificacion', 'dni'],
@@ -382,14 +382,25 @@ class ImportService {
         }
 
         // Crear objeto Member con ambos campos: workerCode y documentId
-        final workerCode = validation.data['worker_code'] as String?;
+        // Lógica de fallback inteligente:
+        // 1. Si existe worker_code explícito, usarlo
+        // 2. Si no, usar numero_socio (que puede venir de worker_code mapeado)
+        // 3. Si ninguno existe, intentar con documento
+        String? workerCode = validation.data['worker_code'] as String?;
+        
+        // Si worker_code está vacío pero tenemos memberNumber, usar memberNumber como workerCode
+        if ((workerCode == null || workerCode.isEmpty) && memberNumber.isNotEmpty) {
+          workerCode = memberNumber;
+          debugPrint('   🔄 Fila ${i + 2}: Usando memberNumber ($memberNumber) como workerCode');
+        }
+        
         final documentId = validation.data['documento'] as String?;
         
         // Validar que al menos uno de los identificadores exista
         if ((workerCode == null || workerCode.isEmpty) && 
             (documentId == null || documentId.isEmpty)) {
           errorsCount++;
-          errorDetails.add('Fila ${i + 2}: Se requiere código de trabajador O cédula');
+          errorDetails.add('Fila ${i + 2}: Se requiere worker_code, numero_socio O cédula');
           continue;
         }
         
@@ -451,7 +462,9 @@ class ImportService {
       if (validRows.isNotEmpty) {
         final batch = _firestore.batch();
         for (final row in validRows) {
-          final docRef = _firestore.collection('members').doc();
+          // CORRECCIÓN: Usar workerCode o documentId como ID del documento
+          final docId = row['workerCode'] as String? ?? row['documentId'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString();
+          final docRef = _firestore.collection('members').doc(docId);
           batch.set(docRef, row);
         }
         await batch.commit();
@@ -646,15 +659,26 @@ class ImportService {
           continue;
         }
 
-        // Crear objeto Member
-        final workerCode = validation.data['worker_code'] as String?;
+        // Crear objeto Member con ambos campos: workerCode y documentId
+        // Lógica de fallback inteligente:
+        // 1. Si existe worker_code explícito, usarlo
+        // 2. Si no, usar memberNumber (que puede venir de worker_code mapeado)
+        // 3. Si ninguno existe, intentar con documento
+        String? workerCode = validation.data['worker_code'] as String?;
+        
+        // Si worker_code está vacío pero tenemos memberNumber, usar memberNumber como workerCode
+        if ((workerCode == null || workerCode.isEmpty) && memberNumber.isNotEmpty) {
+          workerCode = memberNumber;
+          debugPrint('   🔄 Fila ${i + 2}: Usando memberNumber ($memberNumber) como workerCode');
+        }
+        
         final documentId = validation.data['documento'] as String?;
         
         // Validar que al menos uno de los identificadores exista
         if ((workerCode == null || workerCode.isEmpty) && 
             (documentId == null || documentId.isEmpty)) {
           errorsCount++;
-          errorDetails.add('Fila ${i + 2}: Se requiere código de trabajador O cédula');
+          errorDetails.add('Fila ${i + 2}: Se requiere worker_code, numero_socio O cédula');
           continue;
         }
         
@@ -715,7 +739,9 @@ class ImportService {
       if (validRows.isNotEmpty) {
         final batch = _firestore.batch();
         for (final row in validRows) {
-          final docRef = _firestore.collection('members').doc();
+          // CORRECCIÓN: Usar workerCode o documentId como ID del documento
+          final docId = row['workerCode'] as String? ?? row['documentId'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString();
+          final docRef = _firestore.collection('members').doc(docId);
           batch.set(docRef, row);
         }
         await batch.commit();

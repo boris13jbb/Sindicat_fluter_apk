@@ -6,6 +6,7 @@ import '../../core/models/candidate.dart';
 import '../../core/models/election.dart';
 import '../../services/asistencia_service.dart';
 import '../../services/election_service.dart';
+import '../../services/auth_service.dart';
 import '../../core/widgets/professional_app_bar.dart';
 
 class VotingScreen extends StatefulWidget {
@@ -21,6 +22,7 @@ class _VotingScreenState extends State<VotingScreen> {
   late Future<ResultsBootstrap> _bootstrap;
   final VoteService _voteService = VoteService();
   final AsistenciaService _asistenciaService = AsistenciaService();
+  final AuthService _authService = AuthService();
 
   static const Duration _bootstrapTimeout = Duration(seconds: 30);
 
@@ -29,6 +31,7 @@ class _VotingScreenState extends State<VotingScreen> {
   bool _localVoteDone = false;
   String _userId = '';
   String? _userEmail;
+  String? _memberId; // 🆕 ID del socio para validación de elegibilidad
 
   @override
   void initState() {
@@ -38,6 +41,26 @@ class _VotingScreenState extends State<VotingScreen> {
     _electionService = ElectionService();
     _bootstrap = _loadBootstrap();
     _votedStream = _voteService.userVotedStream(widget.electionId, _userId);
+    _initializeMemberId();
+  }
+
+  /// Inicializa el memberId correcto basado en employeeNumber del usuario
+  Future<void> _initializeMemberId() async {
+    try {
+      final user = await _authService.getCurrentUser();
+      if (user != null) {
+        setState(() {
+          // PRIORIDAD: employeeNumber (workerCode) como memberId
+          // Fallback: userId si no hay employeeNumber
+          _memberId = user.employeeNumber?.isNotEmpty == true 
+              ? user.employeeNumber 
+              : _userId;
+        });
+        debugPrint('🗳️ MemberId inicializado: $_memberId (tipo: ${user.employeeNumber?.isNotEmpty == true ? "employeeNumber" : "userId fallback"})');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error al inicializar memberId: $e');
+    }
   }
 
   Future<ResultsBootstrap> _loadBootstrap() {
@@ -207,7 +230,7 @@ class _VotingScreenState extends State<VotingScreen> {
       voteService: _voteService,
       initialCandidates: initialCandidates,
       onVoteSuccess: () => setState(() => _localVoteDone = true),
-      memberId: _userEmail, // 🆕 Usar email como memberId temporal
+      memberId: _memberId, // ✅ Pasar memberId correcto (employeeNumber o userId)
     );
   }
 }
@@ -432,28 +455,83 @@ class _VotingContentState extends State<_VotingContent> {
     );
     if (ok != true) return;
 
+    debugPrint('\n🗳️ Usuario confirmó voto - Iniciando proceso...');
     setState(() => _loading = true);
+    
     try {
+      debugPrint('   📤 Llamando a castVote...');
       await widget.voteService.castVote(
         electionId: widget.electionId,
         userId: widget.userId,
         candidateId: _selected!.id,
         memberId: widget.memberId, // 🆕 Pasar memberId para validación de elegibilidad
       );
+      
+      debugPrint('   ✅ castVote completado sin errores');
       widget.voteService.recordLocalVote(widget.electionId, widget.userId);
+      debugPrint('   ✅ Voto local registrado');
       widget.onVoteSuccess();
-    } catch (e) {
+      debugPrint('   ✅ UI actualizada - mostrando pantalla de éxito\n');
+    } catch (e, stackTrace) {
+      debugPrint('   ❌ Error en _confirmar: $e');
+      debugPrint('   Stack trace: $stackTrace');
+      
       final msg = e.toString().toLowerCase();
+      
+      // Verificar si es error de voto ya existente
       if (msg.contains('already-exists') ||
           msg.contains('already_exists') ||
-          msg.contains('already exists')) {
+          msg.contains('already exists') ||
+          msg.contains('ya existe') ||
+          msg.contains('duplicado')) {
+        debugPrint('   ⚠️ Detectado voto duplicado - tratando como éxito');
+        widget.voteService.recordLocalVote(widget.electionId, widget.userId);
         widget.onVoteSuccess();
         return;
       }
+      
+      // Verificar si es error de elegibilidad
+      if (msg.contains('elegible') || msg.contains('permiso') || msg.contains('requisito')) {
+        debugPrint('   ❌ Error de elegibilidad detectado');
+        if (mounted) {
+          setState(() => _loading = false);
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('No se puede votar'),
+              content: Text(
+                'No cumples con los requisitos para votar en esta elección.\n\n'
+                'Posibles causas:\n'
+                '• No tienes registro de asistencia en el evento requerido\n'
+                '• Tu socio no está activo\n'
+                '• La elección requiere asistencia pero no estás registrado',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Entendido'),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+      
+      // Error genérico
       if (mounted) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error al registrar tu voto: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Reintentar',
+              textColor: Colors.white,
+              onPressed: () => _confirmar(),
+            ),
+          ),
         );
       }
     }
