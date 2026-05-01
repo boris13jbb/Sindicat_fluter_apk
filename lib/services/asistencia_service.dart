@@ -5,19 +5,23 @@ import 'package:excel/excel.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import '../core/models/asistencia/asistencia.dart';
+import '../core/models/audit_log.dart';
 import '../core/models/member.dart';
 import '../core/reports/attendance_report_generator.dart';
 import '../core/utils/qr_encoding_helper.dart';
+import 'audit_service.dart';
 import 'auth_service.dart';
 import 'members_service.dart';
 import 'attendance_service.dart';
 
 /// Servicio de asistencia con Firestore (compatible con module-asistencia Android).
 class AsistenciaService {
-  AsistenciaService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  AsistenciaService({FirebaseFirestore? firestore, AuditService? audit})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _audit = audit ?? AuditService();
 
   final FirebaseFirestore _firestore;
+  final AuditService _audit;
 
   // Getter público para acceso desde UI (solo lectura)
   FirebaseFirestore get firestore => _firestore;
@@ -56,6 +60,13 @@ class AsistenciaService {
       data['fechaCreacion'] = DateTime.now().millisecondsSinceEpoch;
     }
     await ref.set(data);
+    await _audit.logAction(
+      action: AuditAction.create,
+      entityType: AuditEntityType.attendanceEvent,
+      entityId: id,
+      description: 'Evento legacy de asistencia creado: ${evento.nombre}',
+      platform: 'flutter',
+    );
     return id;
   }
 
@@ -68,6 +79,13 @@ class AsistenciaService {
       'descripcion': evento.descripcion ?? '',
       if (evento.modalidad != null) 'modalidad': evento.modalidad!.value,
     });
+    await _audit.logAction(
+      action: AuditAction.update,
+      entityType: AuditEntityType.attendanceEvent,
+      entityId: evento.id,
+      description: 'Evento legacy de asistencia actualizado: ${evento.nombre}',
+      platform: 'flutter',
+    );
   }
 
   /// Actualiza la modalidad de un evento y actualiza automáticamente
@@ -108,11 +126,33 @@ class AsistenciaService {
     for (final doc in subColeccionSnap.docs) {
       await doc.reference.update({'justificacion': justificacion});
     }
+
+    await _audit.logAction(
+      action: AuditAction.update,
+      entityType: AuditEntityType.attendanceEvent,
+      entityId: eventoId,
+      changes: {
+        'modalidad': {'after': nuevaModalidad.value},
+        'justificacion': {'after': justificacion},
+      },
+      description:
+          'Modalidad actualizada en evento legacy de asistencia: ${nuevaModalidad.value}',
+      platform: 'flutter',
+    );
   }
 
   Future<void> deleteEvento(String eventoId) async {
     if (eventoId.isEmpty) return;
+    final evento = await getEventoById(eventoId);
     await _firestore.collection(_eventos).doc(eventoId).delete();
+    await _audit.logAction(
+      action: AuditAction.delete,
+      entityType: AuditEntityType.attendanceEvent,
+      entityId: eventoId,
+      description:
+          'Evento legacy de asistencia eliminado: ${evento?.nombre ?? eventoId}',
+      platform: 'flutter',
+    );
   }
 
   // ---------- Personas ----------
@@ -182,6 +222,17 @@ class AsistenciaService {
   }
 
   // ---------- Asistencias ----------
+  String _safeDocSegment(String raw) {
+    final encoded = base64Url
+        .encode(utf8.encode(raw.trim()))
+        .replaceAll('=', '');
+    return encoded.isEmpty ? '_' : encoded;
+  }
+
+  String _legacyAsistenciaId(String eventoId, String personaId) {
+    return '${_safeDocSegment(eventoId)}_${_safeDocSegment(personaId)}';
+  }
+
   Stream<List<AsistenciaConDatos>> getAsistenciasPorEventoStream(
     String eventoId,
   ) {
@@ -265,19 +316,46 @@ class AsistenciaService {
     AsistenciaRegistro asistencia,
     String identificadorPersona,
   ) async {
-    final ref = _firestore.collection(_asistencias).doc();
-    final id = ref.id;
-    final data = asistencia.toMap()
-      ..['id'] = id
-      ..['personaId'] = identificadorPersona;
-    await ref.set(data);
-    // Compatibilidad con subcolección
-    await _firestore
+    if (asistencia.eventoId.isEmpty || identificadorPersona.isEmpty) {
+      throw Exception('Evento o persona no proporcionados');
+    }
+
+    final existente = await getAsistenciaPorEventoYPersona(
+      asistencia.eventoId,
+      identificadorPersona,
+    );
+    if (existente != null) {
+      throw Exception('Ya existe asistencia para esta persona en el evento');
+    }
+
+    final id = _legacyAsistenciaId(asistencia.eventoId, identificadorPersona);
+    final ref = _firestore.collection(_asistencias).doc(id);
+    final subRef = _firestore
         .collection(_eventos)
         .doc(asistencia.eventoId)
         .collection(_asistencias)
-        .doc(id)
-        .set(data);
+        .doc(id);
+    final data = asistencia.toMap()
+      ..['id'] = id
+      ..['personaId'] = identificadorPersona;
+    await _firestore.runTransaction((transaction) async {
+      final current = await transaction.get(ref);
+      final currentSub = await transaction.get(subRef);
+      if (current.exists || currentSub.exists) {
+        throw Exception('Ya existe asistencia para esta persona en el evento');
+      }
+      transaction.set(ref, data);
+      // Compatibilidad con subcolección
+      transaction.set(subRef, data);
+    });
+    await _audit.logAction(
+      action: AuditAction.attendance,
+      entityType: AuditEntityType.attendanceRecord,
+      entityId: id,
+      description:
+          'Asistencia legacy registrada: evento ${asistencia.eventoId}, persona $identificadorPersona',
+      platform: 'flutter',
+    );
     return id;
   }
 
@@ -640,7 +718,8 @@ class AsistenciaService {
 
     if (registrosAttendanceEvents) {
       final attendanceApi = AttendanceService();
-      final personaIdFirestore = memberEncontrado?.id ??
+      final personaIdFirestore =
+          memberEncontrado?.id ??
           await _memberFirestoreIdParaReporteAttendance(persona);
       if (personaIdFirestore == null || personaIdFirestore.isEmpty) {
         debugPrint(
@@ -762,7 +841,31 @@ class AsistenciaService {
   /// Eliminar registro de asistencia
   Future<void> deleteAsistencia(String asistenciaId) async {
     if (asistenciaId.isEmpty) return;
-    await _firestore.collection(_asistencias).doc(asistenciaId).delete();
+    final ref = _firestore.collection(_asistencias).doc(asistenciaId);
+    final doc = await ref.get();
+    final eventoId = doc.data()?['eventoId'] as String?;
+
+    final batch = _firestore.batch();
+    batch.delete(ref);
+    if (eventoId != null && eventoId.isNotEmpty) {
+      batch.delete(
+        _firestore
+            .collection(_eventos)
+            .doc(eventoId)
+            .collection(_asistencias)
+            .doc(asistenciaId),
+      );
+    }
+    await batch.commit();
+
+    await _audit.logAction(
+      action: AuditAction.delete,
+      entityType: AuditEntityType.attendanceRecord,
+      entityId: asistenciaId,
+      description:
+          'Asistencia legacy eliminada${eventoId != null ? " del evento $eventoId" : ""}',
+      platform: 'flutter',
+    );
   }
 
   // ========== SINCRONIZACIÓN AUTOMÁTICA ==========

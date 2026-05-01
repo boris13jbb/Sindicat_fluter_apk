@@ -39,7 +39,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 |---|---|---|
 | `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
 | `flutter test --no-pub --reporter expanded` | Correcto | 5 pruebas pasan: smoke de login sin sesión, configuración de columnas de importación, CSV con comillas/comas internas y validación/canonización de `modalidad`. |
-| `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members` e `import_logs` para `ADMIN`/`SUPERADMIN`. |
+| `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members`/`import_logs` y endurecer contrato de `audit_logs`. |
 | Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
 
 ### Convención de mantenimiento del expediente
@@ -120,7 +120,7 @@ Aplicación
 | Resultados | Visualizar y exportar conteos | Resultados | Ver ranking, exportar CSV/PDF | `elections`, `candidates`, `printing` |
 | Asistencia legacy | Registrar en `eventos` + `asistencias` globales | Home asistencia (tab Clásicos), detalle `eventos`, Scanner/Registro con `AsistenciaEventRouteArgs.legacy` | Alta operativa día a día en colección legacy | `eventos`, `personas`, `asistencias`, `members` |
 | Attendance modelo reporte | Eventos para faltantes/presentes con `members` | Home (tab Reporte), crear/reporte/detalle `attendance_events`, Scanner/Manual con `AsistenciaEventRouteArgs.attendance`, FAB lista en AppBar → hub | Registro escribe `attendance_events/{id}/asistencias`; `personaId` es id Firestore del doc `members` | `attendance_events`, subcolección `asistencias`, `members` |
-| Socios | Administrar padrón sindical | Socios, Formulario, Importar | Buscar, filtrar, **export CSV** (`MembersService.buildMembersExportCsv`), crear, editar, activar/desactivar, importar; **campo obligatorio `modalidad`** coherente con turnos (`Modalidad`) | `members`, `import_logs`, `audit_logs` |
+| Socios | Administrar padrón sindical | Socios, Formulario, Importar | Listar por páginas, buscar, filtrar, **export CSV** (`MembersService.buildMembersExportCsv`), crear, editar, activar/desactivar, importar; **campo obligatorio `modalidad`** coherente con turnos (`Modalidad`) | `members`, `import_logs`, `audit_logs` |
 | Auditoría | Trazabilidad de acciones | Audit Logs, Historial de Eventos | Consultar y filtrar registros | `audit_logs`; `events` queda como compatibilidad legacy |
 
 ## 4. Inventario detallado de pantallas
@@ -954,16 +954,17 @@ Aplicación
 
 **Objetivo de la pantalla:** administrar padrón sindical.
 
-**Elementos visibles:** buscador, filtro estado, **exportación CSV** (compartir/desde sistema), botón importar, lista de socios (si hay modalidad, tarjeta muestra **`Modalidad {código}`**), menú desactivar/reactivar, FAB nuevo socio.
+**Elementos visibles:** buscador, filtro estado, **exportación CSV** (compartir/desde sistema), botón importar, lista paginada de socios (si hay modalidad, tarjeta muestra **`Modalidad {código}`**), botón **Cargar más socios**, menú desactivar/reactivar, FAB nuevo socio.
 
 **Acciones disponibles:** buscar, filtrar, **exportar padrón (CSV con columna modalidad en orden estándar)**, crear, editar, activar/desactivar, importar.
 
 **Flujo paso a paso:**
-1. Escucha `members`.
-2. Filtra y ordena en cliente.
-3. Muestra lista.
-4. Permite abrir formulario.
-5. Permite cambiar estado con confirmación.
+1. Carga la primera página de `members` con límite de 50 registros.
+2. Permite cargar páginas adicionales con cursor Firestore.
+3. Si el usuario busca texto, usa el flujo legacy de búsqueda flexible en cliente sobre `members`.
+4. Muestra lista.
+5. Permite abrir formulario.
+6. Permite cambiar estado con confirmación.
 
 **Validaciones esperadas:** permisos admin, búsqueda eficiente, estado correcto.
 
@@ -971,15 +972,15 @@ Aplicación
 
 **Estados posibles:** cargando, vacío, error, con datos.
 
-**Observaciones técnicas o funcionales:** filtros se hacen en cliente para evitar índices compuestos.
+**Observaciones técnicas o funcionales:** mitigado 2026-05-01: el listado normal usa `MembersService.getMembersPage()` con `limit` y cursor `startAfterDocument`; búsqueda textual y exportación CSV conservan lectura completa por flexibilidad multi-campo y porque requieren dataset completo.
 
-**Problemas encontrados:** sin paginación; lectura completa de padrón.
+**Problemas encontrados:** paginación básica implementada para listado; búsqueda/exportación siguen leyendo completo.
 
-**Huecos o pendientes por corregir:** falta eliminación permanente desde UI aunque existe en servicio.
+**Huecos o pendientes por corregir:** falta eliminación permanente desde UI aunque existe en servicio; falta búsqueda indexada backend si el padrón supera volumen alto.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** implementar paginación y búsqueda indexada si el padrón crece.
+**Recomendación:** validar paginación con datos reales e implementar búsqueda indexada/backend si el padrón crece.
 
 ### Pantalla: Formulario de Socio
 
@@ -1219,7 +1220,7 @@ Aplicación
 | Asistencia | Registro manual | Alta manual | Funcional/parcial | Modo legacy o `attendance_events`; buscador en hoja inferior; padrón muy grande ⇒ coste en cliente | Media |
 | Asistencia | Exportar | CSV/PDF/XLSX | Funcional/parcial | Segmentos **Legacy / Reporte / Ambos**; modelo reporte vía `fetchAllAttendanceExportsRows` (subs en paralelo); falta **filtro fino** por evento/fecha dentro de cada origen y prueba manual con datos masivos | Media |
 | Asistencia | Reporte faltantes | Calcula ausentes | Funcional/parcial | Soporta `attendance_events` y fallback legacy `eventos/asistencias/personas`; falta prueba con datos reales | Media |
-| Socios | CRUD | Crear/editar/activar/desactivar | Funcional/parcial | **Modalidad obligatoria** en crear/actualizar; unicidad número, documento y `workerCode`; auditoría registra cambio de modalidad | Media |
+| Socios | CRUD | Listar por páginas, crear/editar/activar/desactivar | Funcional/parcial | **Modalidad obligatoria** en crear/actualizar; unicidad número, documento y `workerCode`; auditoría registra cambio de modalidad; listado `/members` paginado de forma incremental | Media |
 | Socios | Importación masiva | CSV/Excel a `members` | Funcional/parcial | **Columna `modalidad` obligatoria** y validación estricta; `documento` opcional; duplicados y parser CSV robusto; falta preview y prueba con datos reales | Media |
 | Socios | Exportación CSV | Padrón con columna modalidad | Funcional | `MembersService.buildMembersExportCsv`; celda **`modalidad` = sólo código** (`A`, `N1`, …); orden compatible con importación (`numero_socio`…`modalidad`…`estado`) | Baja/Media |
 | Herramienta | Plantilla `socios.xlsx` | Regeneración local | Funcional | Script **`dart run tool/generate_socios_template.dart`**: hoja **`Plantilla_socios`** (cabeceras + ejemplo fila código en `modalidad`) y hoja **`Modalidades`** (todas las letras **`documentar_como`** = **`Modalidad X`**). Si `socios.xlsx` está abierto en Excel, puede generarse **`socios_plantilla.xlsx`** en raíz hasta poder sobrescribir. | Media |
@@ -1249,15 +1250,19 @@ Aplicación
 | E-017 | Registro | Corregido localmente: email válido, botón reactivo y padrón activo | `SignUpScreen` valida formato de email y `AuthService` exige socio activo en `members` por `workerCode` o `memberNumber`; si falla, revierte/cierra el usuario Auth recién creado. | Reduce rechazos tardíos, usuarios huérfanos y cuentas sin socio asociado. | Media | Agregar prueba widget/emulator con socio activo, inactivo y no encontrado. |
 | E-018 | Socios modalidad turno | Corregido localmente: modelo y flujos alineados | Campo **`modalidad`** en `members` (enum `Modalidad` compartido con eventos legacy), formulario/import/export/perfil/admin; migra opcional desde `additionalData.mod`. Socios históricos sin campo requieren edición o masa de datos antes de otros updates vía servicio si aplica. **Ampliación 2026-05:** UX unificada: en **perfil, socios y selectores revisados** el usuario ve solo **`Modalidad {letra}`** (`JustificacionHelper.etiquetaModalidad`); en **detalle/creación evento legacy** el picker de convocatorias usa sólo **`Modalidad.valoresParaJustificacionAsistencia`** (sin X/Y/Z) y sin subtítulos *Mañana/Tarde/Noche*; plantilla **`socios.xlsx`** vía **`tool/generate_socios_template.dart`**. | Coherencia documental y legibilidad en campo. | Media | Ejecutar script con Excel cerrado; completar datos legacy sin `modalidad`. |
 | E-019 | Firestore reglas / Socios e importaciones | Corregido localmente: permisos `ADMIN` coherentes con UI | `firestore.rules` permite ahora `create` en `members` e `import_logs` a `isAdmin()` (`SUPERADMIN` o `ADMIN`), manteniendo `delete` de `members` solo para `SUPERADMIN`. | Evita `permission-denied` al crear/importar socios desde cuentas `ADMIN`, ruta que la UI ya habilita. | Alta | Validar con usuarios reales/emulator y desplegar reglas antes de pruebas operativas. |
+| E-020 | Firestore reglas / Auditoría | Corregido localmente: contrato mínimo de `audit_logs` | `audit_logs.create` ya no acepta payload arbitrario: exige campos esperados, `userId == request.auth.uid`, acción/entidad permitidas, `timestamp` numérico y opcionales tipados. | Reduce falsificación de eventos de auditoría por clientes autenticados sin romper votos/asistencia/importaciones. | Alta | Validar con emulator/reglas y flujos reales; desplegar reglas antes de prueba operativa. |
+| E-021 | Asistencia | Corregido localmente: reducción de duplicados por evento/persona | `AsistenciaService.createAsistencia` usa ID determinístico por `eventoId + personaId` en legacy y replica el mismo ID en `eventos/{id}/asistencias`; `AttendanceService.registerAttendance` usa ID determinístico por `personaId` dentro de cada `attendance_events/{id}`. Ambos servicios verifican duplicado interno antes de escribir. | Reduce duplicados por doble click, doble escaneo o llamadas directas al servicio. | Alta | Validar con doble escaneo real/emulator y revisar datos históricos con IDs aleatorios ya existentes. |
+| E-022 | Asistencia legacy / Auditoría | Corregido localmente: trazabilidad y borrado consistente | `AsistenciaService` registra auditoría al crear/actualizar/eliminar eventos legacy y al crear/eliminar asistencias legacy; `deleteAsistencia` elimina también la réplica `eventos/{id}/asistencias/{asistenciaId}` cuando el registro global contiene `eventoId`. | Reduce registros huérfanos y mejora trazabilidad operativa de asistencia clásica. | Media/Alta | Validar borrado desde UI con datos reales y revisar registros legacy sin `eventoId`. |
+| E-023 | Socios / Rendimiento | Corregido localmente: paginación básica del padrón | `MembersService.getMembersPage()` expone páginas con `limit` y cursor; `/members` carga 50 socios iniciales, permite **Cargar más socios**, refresca tras alta/edición/cambio de estado y conserva búsqueda/exportación completa como fallback funcional. | Reduce lecturas iniciales y mejora uso del padrón con muchos socios sin cambiar contrato de import/export. | Media | Validar con Firestore real, volumen representativo e índices; implementar búsqueda backend/indexada si el padrón crece mucho. |
 
 ### Clasificación por tipo
 
-- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011 y E-016; pendientes funcionales relevantes: reporte con datos reales, reset con Firebase real y prueba manual de cuenta sin perfil/historial.
+- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021 y E-022; pendientes funcionales relevantes: reporte con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
 - Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012 queda corregido localmente con pendiente de validación manual.
 - Errores de navegación: E-014 corregido localmente, pendiente validación manual.
 - Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017 y E-018 (**modalidad en padrón**); faltan pruebas con archivos reales y emulator.
-- Errores de permisos: E-001, E-002, E-014 y E-019 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
-- Errores de rendimiento: E-015.
+- Errores de permisos: E-001, E-002, E-014, E-019 y E-020 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
+- Errores de rendimiento: E-015 parcialmente mitigado por E-023 en el listado de socios; persisten lecturas completas en búsqueda/exportación y pantallas de asistencia/auditoría.
 - Errores de contenido: instrucciones contradictorias de importación/QR corregidas en perfil; mantener revisión de copy operativo con usuarios reales.
 
 ## 8. Huecos funcionales pendientes por corregir
@@ -1269,7 +1274,7 @@ Aplicación
 | H-002 | Cobertura baja de login/voto/asistencia | QA | Regresiones no detectadas en flujos críticos | Crear tests de widgets y servicios con mocks/emulator | Alta |
 | H-003 | No hay Firebase Emulator tests para reglas | Seguridad | Reglas rotas en producción | Agregar suite de reglas y Java 21+ local | Alta |
 | H-004 | Dos modelos de asistencia coexistiendo | Asistencia | Divergencias si operación no sigue pestañas en UI export/home | **`generateAttendanceReport`** y **`/asistencia/exportar`** contemplan legacy + **`attendance_events`** (pestaña Reporte/Ambos) | Media |
-| H-005 | No hay paginación | Socios/asistencia/auditoría | Lentitud con muchos datos | Implementar paginación | Media |
+| H-005 | Mitigado parcialmente 2026-05-01: paginación básica en listado de socios (`/members`) | Socios/asistencia/auditoría | Lentitud con muchos datos en búsqueda/exportación y otros listados | Extender paginación a asistencia/auditoría y búsqueda indexada | Media |
 | H-006 | No hay confirmación para algunas acciones sensibles | Exportaciones/estado | Acciones accidentales | Revisar UX de confirmaciones | Baja |
 | H-007 | Mitigado 2026-05-01: buscador en modal de personas | Asistencia | Listas muy grandes cargan todas en cliente | Paginación o virtual scrolling con backend | Media |
 | H-008 | Falta accesibilidad formal | UI | Dificultad para usuarios con lectores | Semántica, labels, contrastes, tamaños | Media |
@@ -1287,7 +1292,7 @@ Aplicación
 | QA | Cobertura automatizada mínima | Ampliar pruebas reales de autenticación, home, rutas y formularios | Suite útil y confiable | Alta |
 | UX | Rutas administrativas ya guardadas localmente, sin test por rol | Cubrir `_RouteGuard` con pruebas y matriz rol-ruta | Experiencia clara y segura | Media |
 | Datos | WorkerCode cubierto en formulario/import; sin suite amplia dedicada | Mantener validaciones y ampliar pruebas de servicio/mock | Evita duplicidad crítica | Media |
-| Rendimiento | Lecturas completas | Paginación, filtros Firestore, cache | Mejor desempeño con padrones grandes | Media |
+| Rendimiento | Lecturas completas parcialmente mitigadas en `/members`; persisten búsqueda/exportación y otros listados | Extender paginación, filtros Firestore, cache y búsqueda indexada | Mejor desempeño con padrones grandes | Media |
 | Importación | `ImportService`/personas legacy: CSV y Excel cubiertos para socios/personas; falta preview y plantillas descargables | Preview y plantilla desde la app | Menos errores operativos | Media |
 | Auditoría | `audit_logs` ya alimenta ambas pantallas; `events` sigue legacy | Documentar responsabilidades, migración/retención y permisos | Trazabilidad completa | Media |
 | Accesibilidad | No verificada | Agregar labels, contraste, navegación teclado | Cumplimiento y usabilidad | Media |
@@ -1310,7 +1315,7 @@ Aplicación
 | Navegación consistente | Parcial | Rutas nombradas claras; guard y adaptación de operador implementados; falta prueba manual. |
 | Auditoría | Parcial | `audit_logs` activo; Historial de Eventos ya se alimenta desde `audit_logs`; `events` queda legacy. |
 | Exportaciones | Parcial | CSV/PDF/XLSX real; falta prueba manual de apertura y filtros por evento/fecha. |
-| Pruebas automatizadas | Parcial | 3 pruebas pasan; cobertura aún mínima para flujos críticos. |
+| Pruebas automatizadas | Parcial | 5 pruebas pasan; cobertura aún mínima para flujos críticos. |
 | Análisis estático | Completo/parcial | `flutter analyze --no-pub` sin issues al 2026-05-01. |
 
 ## 11. Casos de prueba sugeridos
@@ -1463,8 +1468,8 @@ Resultado actual:
 
 ### F. Validación de reglas Firestore
 
-- `firebase deploy --only firestore --dry-run` se ejecutó nuevamente el 2026-05-01: correcto (compilación local de reglas actuales, incluyendo E-019).
-- `firebase deploy --only firestore` (sin dry-run) al proyecto **`sistema-integrado-sindicato`** se ejecutó previamente el mismo día: **deploy complete** según ejecución en entorno de desarrollo. Tras E-019 se validó con dry-run, pero queda pendiente repetir deploy real antes de pruebas operativas con `ADMIN`.
+- `firebase deploy --only firestore --dry-run` se ejecutó nuevamente el 2026-05-01: correcto (compilación local de reglas actuales, incluyendo E-019 y E-020).
+- `firebase deploy --only firestore` (sin dry-run) al proyecto **`sistema-integrado-sindicato`** se ejecutó previamente el mismo día: **deploy complete** según ejecución en entorno de desarrollo. Tras E-019/E-020 se validó con dry-run, pero queda pendiente repetir deploy real antes de pruebas operativas con `ADMIN`.
 - Limitación: no sustituye pruebas con Firebase Emulator; para emuladores suele hacer falta Java 21+ local.
 
 ### G. Bitácora de correcciones
@@ -1473,6 +1478,10 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Paginación básica del padrón de socios: `MembersService.getMembersPage()` con límite/cursor y `/members` carga 50 registros iniciales, permite **Cargar más socios** y refresca tras alta/edición/cambio de estado. Búsqueda/exportación conservan lectura completa como fallback funcional. | `lib/services/members_service.dart`, `lib/features/members/members_list_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5) | Aplicado localmente |
+| 2026-05-01 | Asistencia legacy con auditoría y borrado consistente: eventos legacy registran create/update/delete en `audit_logs`; asistencias legacy registran alta/baja; `deleteAsistencia` elimina colección global y réplica por evento cuando puede resolver `eventoId`. | `lib/services/asistencia_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5) | Aplicado localmente |
+| 2026-05-01 | Asistencia sin duplicados operativos: IDs determinísticos para registros legacy (`eventoId + personaId`) y modelo reporte (`personaId` dentro del evento), con prevalidación interna de duplicados en servicio antes de escribir. | `lib/services/asistencia_service.dart`, `lib/services/attendance_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5); pendiente doble escaneo real/emulator | Aplicado localmente |
+| 2026-05-01 | Auditoría Firestore endurecida: `audit_logs.create` valida contrato de campos, `userId == request.auth.uid`, acciones/entidades permitidas y tipos de campos opcionales; se mantiene append-only y lectura sólo admin. | `firestore.rules`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5); `firebase deploy --only firestore --dry-run` OK | Aplicado localmente |
 | 2026-05-01 | Permisos `ADMIN` alineados con UI de socios: `members.create` e `import_logs.create` pasan a `isAdmin()`; `delete` de socios se conserva sólo `SUPERADMIN`. Se corrige texto del perfil QR sobre columnas de importación y se agregan pruebas puras de `modalidad` (`turno` → `modalidad`, `n1` → `N1`). | `firestore.rules`, `lib/features/profile/user_profile_screen.dart`, `lib/services/import_service.dart`, `test/import_service_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5); `firebase deploy --only firestore --dry-run` OK | Aplicado localmente |
 | 2026-05-01 | **Sólo expediente:** convención de mantenimiento (§2); coherencia **Editar elección** ↔ **E-008** (bloqueo eliminación candidato con votos); matriz §6 Exportar/Manual/Scanner; limitación modo **Combinado** en texto §4 Exportar. Sin cambios en `lib/`. | `expediente_tecnico_aplicacion.md` | Revisión interna línea contra línea; sin ejecución de QA en esta edición editorial | Documentación |
 | 2026-05-01 | Export reporte: lecturas de subcolecciones `asistencias` por evento en paralelo (`Future.wait`) dentro de `fetchAllAttendanceExportsRows`. | `lib/services/attendance_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub` OK | Aplicado localmente |

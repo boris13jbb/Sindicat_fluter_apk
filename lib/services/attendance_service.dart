@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -248,6 +250,12 @@ class AttendanceService {
   }
 
   // ==================== ASISTENCIAS ====================
+  String _safeDocSegment(String raw) {
+    final encoded = base64Url
+        .encode(utf8.encode(raw.trim()))
+        .replaceAll('=', '');
+    return encoded.isEmpty ? '_' : encoded;
+  }
 
   /// Registrar asistencia manual
   /// `personaId` debe ser normalmente el id del documento en `members` para que cuadre con el reporte.
@@ -263,17 +271,31 @@ class AttendanceService {
       if (userId == null) {
         throw Exception('Usuario no autenticado');
       }
+      if (eventId.isEmpty || personaId.isEmpty) {
+        throw Exception('Evento o persona no proporcionados');
+      }
+
+      final existing = await _firestore
+          .collection('attendance_events')
+          .doc(eventId)
+          .collection('asistencias')
+          .where('personaId', isEqualTo: personaId)
+          .limit(1)
+          .get();
+      if (existing.docs.isNotEmpty) {
+        throw Exception('Ya existe un registro para este socio en este evento');
+      }
 
       final attendanceRef = _firestore
           .collection('attendance_events')
           .doc(eventId)
           .collection('asistencias')
-          .doc();
+          .doc(_safeDocSegment(personaId));
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final nota = observaciones ?? '';
 
-      await attendanceRef.set({
+      final data = {
         'id': attendanceRef.id,
         'eventoId': eventId,
         'personaId': personaId,
@@ -283,6 +305,16 @@ class AttendanceService {
         'registradoPor': userId,
         'justificacion': nota,
         if (nota.isNotEmpty) 'observaciones': nota,
+      };
+
+      await _firestore.runTransaction((transaction) async {
+        final current = await transaction.get(attendanceRef);
+        if (current.exists) {
+          throw Exception(
+            'Ya existe un registro para este socio en este evento',
+          );
+        }
+        transaction.set(attendanceRef, data);
       });
 
       await _audit.logAction(
@@ -524,10 +556,9 @@ class AttendanceService {
       );
       for (var j = 0; j < part.length; j++) {
         final s = snaps[j];
-        out[part[j]] =
-            s.exists && s.data() != null
-                ? Member.fromMap(s.data()!, s.id)
-                : null;
+        out[part[j]] = s.exists && s.data() != null
+            ? Member.fromMap(s.data()!, s.id)
+            : null;
       }
     }
     return out;
@@ -625,11 +656,7 @@ class AttendanceService {
         descripcion: ev.descripcion,
       );
       rows.add(
-        AsistenciaConDatos(
-          asistencia: reg,
-          persona: persona,
-          evento: eventUi,
-        ),
+        AsistenciaConDatos(asistencia: reg, persona: persona, evento: eventUi),
       );
     }
 

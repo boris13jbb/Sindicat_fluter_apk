@@ -6,6 +6,21 @@ import '../core/models/member.dart';
 import '../core/models/audit_log.dart';
 import 'audit_service.dart';
 
+/// Resultado paginado para listados administrativos de socios.
+class MembersPage {
+  const MembersPage({
+    required this.members,
+    required this.lastDocument,
+    required this.hasMore,
+    required this.rawCount,
+  });
+
+  final List<Member> members;
+  final DocumentSnapshot<Map<String, dynamic>>? lastDocument;
+  final bool hasMore;
+  final int rawCount;
+}
+
 /// Servicio para gestión de socios/miembros de la organización
 class MembersService {
   MembersService({
@@ -168,6 +183,54 @@ class MembersService {
           debugPrint('✅ Members procesados: ${members.length}');
           return members;
         });
+  }
+
+  /// Obtener una página de socios para listados grandes.
+  ///
+  /// La búsqueda textual completa permanece en [getAllMembers] porque requiere
+  /// comparar varios campos en cliente. Para navegación normal del padrón se
+  /// evita leer toda la colección en cada render.
+  Future<MembersPage> getMembersPage({
+    MemberStatus? status,
+    int limit = 50,
+    DocumentSnapshot<Map<String, dynamic>>? startAfterDocument,
+  }) async {
+    final safeLimit = limit.clamp(1, 200).toInt();
+    Query<Map<String, dynamic>> query = _firestore.collection('members');
+
+    if (status != null) {
+      query = query
+          .where('status', isEqualTo: status.name)
+          .orderBy(FieldPath.documentId);
+    } else {
+      query = query.orderBy('memberNumber');
+    }
+
+    if (startAfterDocument != null) {
+      query = query.startAfterDocument(startAfterDocument);
+    }
+
+    final snapshot = await query.limit(safeLimit).get();
+    final members =
+        snapshot.docs.map((doc) => Member.fromMap(doc.data(), doc.id)).toList()
+          ..sort((a, b) {
+            final lastNameCompare = a.lastName.toLowerCase().compareTo(
+              b.lastName.toLowerCase(),
+            );
+            if (lastNameCompare != 0) return lastNameCompare;
+            return a.firstName.toLowerCase().compareTo(
+              b.firstName.toLowerCase(),
+            );
+          });
+
+    return MembersPage(
+      members: members,
+      lastDocument: snapshot.docs.isEmpty
+          ? startAfterDocument
+          : snapshot.docs.last,
+      hasMore: snapshot.docs.length == safeLimit,
+      rawCount: snapshot.docs.length,
+    );
   }
 
   /// Obtener stream de socios activos

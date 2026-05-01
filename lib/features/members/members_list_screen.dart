@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/models/asistencia/evento.dart';
@@ -15,11 +16,27 @@ class MembersListScreen extends StatefulWidget {
 }
 
 class _MembersListScreenState extends State<MembersListScreen> {
+  static const int _pageSize = 50;
+
   final MembersService _service = MembersService();
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
   MemberStatus? _statusFilter;
+  final List<Member> _pagedMembers = [];
+  DocumentSnapshot<Map<String, dynamic>>? _lastMemberDocument;
+  bool _isLoadingPage = false;
+  bool _hasMorePages = true;
+  Object? _pageError;
+  int _pageRequestId = 0;
+
+  bool get _isSearching => _searchQuery.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialMembersPage();
+  }
 
   @override
   void dispose() {
@@ -50,6 +67,9 @@ class _MembersListScreenState extends State<MembersListScreen> {
             icon: const Icon(Icons.filter_list),
             onSelected: (status) {
               setState(() => _statusFilter = status);
+              if (!_isSearching) {
+                _loadInitialMembersPage();
+              }
             },
             itemBuilder: (context) => [
               const PopupMenuItem(value: null, child: Text('Todos')),
@@ -81,6 +101,7 @@ class _MembersListScreenState extends State<MembersListScreen> {
                         onPressed: () {
                           _searchController.clear();
                           setState(() => _searchQuery = '');
+                          _loadInitialMembersPage();
                         },
                       )
                     : null,
@@ -89,55 +110,20 @@ class _MembersListScreenState extends State<MembersListScreen> {
                 ),
               ),
               onChanged: (value) {
+                final wasSearching = _isSearching;
                 setState(() => _searchQuery = value.trim());
+                if (wasSearching && !_isSearching) {
+                  _loadInitialMembersPage();
+                }
               },
             ),
           ),
 
           // Lista de socios
           Expanded(
-            child: StreamBuilder<List<Member>>(
-              stream: _service.getAllMembers(
-                status: _statusFilter,
-                searchQuery: _searchQuery.isNotEmpty ? _searchQuery : null,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return _ErrorState(
-                    message: snapshot.error.toString(),
-                    onRetry: () => setState(() {}),
-                  );
-                }
-
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final members = snapshot.data!;
-
-                if (members.isEmpty) {
-                  return _EmptyState(
-                    message: _searchQuery.isNotEmpty
-                        ? 'No se encontraron socios con "$_searchQuery"'
-                        : 'No hay socios registrados',
-                    onAdd: _navigateToAddMember,
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: members.length,
-                  itemBuilder: (context, index) {
-                    final member = members[index];
-                    return _MemberCard(
-                      member: member,
-                      onTap: () => _navigateToEditMember(member),
-                      onDeactivate: () => _toggleMemberStatus(member),
-                    );
-                  },
-                );
-              },
-            ),
+            child: _isSearching
+                ? _buildSearchResultsList()
+                : _buildPagedMembersList(),
           ),
         ],
       ),
@@ -149,14 +135,134 @@ class _MembersListScreenState extends State<MembersListScreen> {
     );
   }
 
+  Future<void> _loadInitialMembersPage() {
+    return _loadMembersPage(reset: true);
+  }
+
+  Future<void> _loadMembersPage({bool reset = false}) async {
+    if (_isLoadingPage && !reset) return;
+    final requestId = ++_pageRequestId;
+
+    setState(() {
+      _isLoadingPage = true;
+      _pageError = null;
+      if (reset) {
+        _pagedMembers.clear();
+        _lastMemberDocument = null;
+        _hasMorePages = true;
+      }
+    });
+
+    try {
+      final page = await _service.getMembersPage(
+        status: _statusFilter,
+        limit: _pageSize,
+        startAfterDocument: reset ? null : _lastMemberDocument,
+      );
+
+      if (!mounted || requestId != _pageRequestId) return;
+      setState(() {
+        _pagedMembers.addAll(page.members);
+        _lastMemberDocument = page.lastDocument;
+        _hasMorePages = page.hasMore;
+        _isLoadingPage = false;
+      });
+    } catch (e) {
+      if (!mounted || requestId != _pageRequestId) return;
+      setState(() {
+        _pageError = e;
+        _isLoadingPage = false;
+      });
+    }
+  }
+
+  Widget _buildSearchResultsList() {
+    return StreamBuilder<List<Member>>(
+      stream: _service.getAllMembers(
+        status: _statusFilter,
+        searchQuery: _searchQuery,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _ErrorState(
+            message: snapshot.error.toString(),
+            onRetry: () => setState(() {}),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final members = snapshot.data!;
+        if (members.isEmpty) {
+          return _EmptyState(
+            message: 'No se encontraron socios con "$_searchQuery"',
+            onAdd: _navigateToAddMember,
+          );
+        }
+
+        return _MembersListView(
+          members: members,
+          onEdit: _navigateToEditMember,
+          onToggleStatus: _toggleMemberStatus,
+        );
+      },
+    );
+  }
+
+  Widget _buildPagedMembersList() {
+    if (_pageError != null && _pagedMembers.isEmpty) {
+      return _ErrorState(
+        message: _pageError.toString(),
+        onRetry: _loadInitialMembersPage,
+      );
+    }
+
+    if (_isLoadingPage && _pagedMembers.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_pagedMembers.isEmpty) {
+      return _EmptyState(
+        message: 'No hay socios registrados',
+        onAdd: _navigateToAddMember,
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadInitialMembersPage,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _pagedMembers.length + 1,
+        itemBuilder: (context, index) {
+          if (index == _pagedMembers.length) {
+            return _MembersPageFooter(
+              count: _pagedMembers.length,
+              hasMore: _hasMorePages,
+              isLoading: _isLoadingPage,
+              error: _pageError,
+              onLoadMore: () => _loadMembersPage(),
+              onRetry: () => _loadMembersPage(),
+            );
+          }
+
+          final member = _pagedMembers[index];
+          return _MemberCard(
+            member: member,
+            onTap: () => _navigateToEditMember(member),
+            onDeactivate: () => _toggleMemberStatus(member),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _exportMembersCsv(BuildContext context) async {
     try {
       final list = await _service.getAllMembers().first;
       final csv = MembersService.buildMembersExportCsv(list);
-      await Share.share(
-        csv,
-        subject: 'Exportación socios',
-      );
+      await Share.share(csv, subject: 'Exportación socios');
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -176,6 +282,10 @@ class _MembersListScreenState extends State<MembersListScreen> {
     );
 
     if (result == true && mounted) {
+      if (!_isSearching) {
+        await _loadInitialMembersPage();
+        if (!mounted) return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Socio creado exitosamente'),
@@ -192,6 +302,10 @@ class _MembersListScreenState extends State<MembersListScreen> {
     );
 
     if (result == true && mounted) {
+      if (!_isSearching) {
+        await _loadInitialMembersPage();
+        if (!mounted) return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Socio actualizado exitosamente'),
@@ -239,6 +353,10 @@ class _MembersListScreenState extends State<MembersListScreen> {
         }
 
         if (mounted) {
+          if (!_isSearching) {
+            await _loadInitialMembersPage();
+            if (!mounted) return;
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
@@ -262,6 +380,105 @@ class _MembersListScreenState extends State<MembersListScreen> {
 }
 
 // ==================== WIDGETS AUXILIARES ====================
+
+class _MembersListView extends StatelessWidget {
+  const _MembersListView({
+    required this.members,
+    required this.onEdit,
+    required this.onToggleStatus,
+  });
+
+  final List<Member> members;
+  final void Function(Member member) onEdit;
+  final void Function(Member member) onToggleStatus;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: members.length,
+      itemBuilder: (context, index) {
+        final member = members[index];
+        return _MemberCard(
+          member: member,
+          onTap: () => onEdit(member),
+          onDeactivate: () => onToggleStatus(member),
+        );
+      },
+    );
+  }
+}
+
+class _MembersPageFooter extends StatelessWidget {
+  const _MembersPageFooter({
+    required this.count,
+    required this.hasMore,
+    required this.isLoading,
+    required this.error,
+    required this.onLoadMore,
+    required this.onRetry,
+  });
+
+  final int count;
+  final bool hasMore;
+  final bool isLoading;
+  final Object? error;
+  final VoidCallback onLoadMore;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (error != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          children: [
+            Text(
+              'No se pudo cargar la siguiente página',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (hasMore) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: OutlinedButton.icon(
+            onPressed: onLoadMore,
+            icon: const Icon(Icons.expand_more),
+            label: const Text('Cargar más socios'),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Center(
+        child: Text(
+          'Mostrando $count socio(s)',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+    );
+  }
+}
 
 class _MemberCard extends StatelessWidget {
   final Member member;
