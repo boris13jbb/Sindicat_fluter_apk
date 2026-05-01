@@ -108,6 +108,9 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
             _buildBulletPoint('numero_socio (obligatorio)'),
             _buildBulletPoint('nombres (obligatorio)'),
             _buildBulletPoint('apellidos (obligatorio)'),
+            _buildBulletPoint(
+              'modalidad (obligatorio: A,B,C,D,E,N,N1,N2,X,Y,Z)',
+            ),
             _buildBulletPoint('worker_code (recomendado para QR/votación)'),
             _buildBulletPoint('documento (opcional)'),
             _buildBulletPoint('email (opcional)'),

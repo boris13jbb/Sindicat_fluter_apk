@@ -26,8 +26,8 @@ void main() {
 
     test('parses quoted CSV fields with internal commas', () {
       final csv = [
-        'numero_socio,nombres,apellidos,documento,email,telefono,worker_code',
-        '1001,"Ana, María",Pérez,123,ana@example.com,555,W-1',
+        'numero_socio,nombres,apellidos,documento,email,telefono,worker_code,modalidad',
+        '1001,"Ana, María",Pérez,123,ana@example.com,555,W-1,A',
       ].join('\n');
 
       final rows = ImportService.parseCsv(Uint8List.fromList(utf8.encode(csv)));
@@ -37,6 +37,7 @@ void main() {
       expect(rows[1][1], 'Ana, María');
       expect(rows[1][2], 'Pérez');
       expect(rows[1][6], 'W-1');
+      expect(rows[1][7], 'A');
     });
   });
 }

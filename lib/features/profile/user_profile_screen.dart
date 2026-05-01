@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../../core/models/asistencia/evento.dart';
+import '../../core/models/member.dart';
 import '../../core/utils/qr_encoding_helper.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
@@ -19,8 +21,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   late TabController _tabController;
   final MembersService _membersService = MembersService();
   
-  // Datos del socio actual (si existe)
-  dynamic _currentMember;
+  /// Socio vinculado al usuario (padrón `members`), si existe.
+  Member? _currentMember;
   bool _isLoadingMember = true;
   bool _noMembersInDatabase = false; // Flag para detectar si no hay miembros en BD
 
@@ -49,7 +51,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       debugPrint('   - EmployeeNumber: ${user.employeeNumber ?? "N/A"}');
       debugPrint('   - DisplayName: ${user.displayName ?? "N/A"}');
       
-      dynamic foundMember;
+      Member? foundMember;
       String searchMethod = 'ninguno';
 
       // ESTRATEGIA 1: Buscar por email del usuario (búsqueda parcial)
@@ -429,13 +431,28 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                 const Center(child: CircularProgressIndicator())
               else if (_currentMember != null)
                 _buildInfoCard(context, 'Información de Socio', [
-                  _buildInfoRow('Nombre Completo', _currentMember.fullName),
-                  _buildInfoRow('N° Socio', _currentMember.memberNumber),
-                  if (_currentMember.workerCode != null)
-                    _buildInfoRow('Código Trabajador', _currentMember.workerCode),
-                  if (_currentMember.documentId != null)
-                    _buildInfoRow('Cédula', _currentMember.documentId),
-                  _buildInfoRow('Estado', _currentMember.status.displayName),
+                  _buildInfoRow('Nombre Completo', _currentMember!.fullName),
+                  _buildInfoRow('N° Socio', _currentMember!.memberNumber),
+                  if (_currentMember!.modalidad != null)
+                    _buildInfoRow(
+                      'Modalidad',
+                      JustificacionHelper.etiquetaModalidad(
+                        _currentMember!.modalidad!,
+                      ),
+                    )
+                  else
+                    _buildInfoRow(
+                      'Modalidad',
+                      'Sin asignar — un administrador puede completarla en Gestión de Socios',
+                    ),
+                  if (_currentMember!.workerCode != null)
+                    _buildInfoRow(
+                      'Código Trabajador',
+                      _currentMember!.workerCode!,
+                    ),
+                  if (_currentMember!.documentId != null)
+                    _buildInfoRow('Cédula', _currentMember!.documentId!),
+                  _buildInfoRow('Estado', _currentMember!.status.displayName),
                 ]),
             ],
           ),
@@ -759,11 +776,14 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                         // Información del socio
                         Divider(),
                         const SizedBox(height: 16),
-                        _buildInfoRow('Nombre', _currentMember.fullName),
-                        if (_currentMember.workerCode != null)
-                          _buildInfoRow('Código Trabajador', _currentMember.workerCode),
-                        if (_currentMember.documentId != null)
-                          _buildInfoRow('Cédula', _currentMember.documentId),
+                        _buildInfoRow('Nombre', _currentMember!.fullName),
+                        if (_currentMember!.workerCode != null)
+                          _buildInfoRow(
+                            'Código Trabajador',
+                            _currentMember!.workerCode!,
+                          ),
+                        if (_currentMember!.documentId != null)
+                          _buildInfoRow('Cédula', _currentMember!.documentId!),
                       ],
                     ),
                   ),

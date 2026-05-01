@@ -40,6 +40,30 @@ enum Modalidad {
       orElse: () => Modalidad.A,
     );
   }
+
+  /// Solo valores exactos de [Modalidad.value]; `null` si vacío o inválido.
+  static Modalidad? tryParse(String? raw) {
+    if (raw == null) return null;
+    final v = raw.trim().toUpperCase();
+    if (v.isEmpty) return null;
+    for (final e in Modalidad.values) {
+      if (e.value == v) return e;
+    }
+    return null;
+  }
+
+  /// Turnos válidos para **eventos legacy** y justificación operativa de asistencia (mañana/tarde/noche).
+  /// No incluye X, Y, Z (solo selector de modalidad para convocatorias).
+  static const List<Modalidad> valoresParaJustificacionAsistencia = [
+    Modalidad.A,
+    Modalidad.B,
+    Modalidad.C,
+    Modalidad.D,
+    Modalidad.E,
+    Modalidad.N,
+    Modalidad.N1,
+    Modalidad.N2,
+  ];
 }
 
 /// Utilidad para generar justificación automática basada en la modalidad.
@@ -71,6 +95,9 @@ class JustificacionHelper {
         return 'Turno especial Z - Justificado por asistencia en turno especial';
     }
   }
+
+  /// Etiqueta compacta tipo **Modalidad A** (selector de convocatorias).
+  static String etiquetaModalidad(Modalidad m) => 'Modalidad ${m.value}';
 
   /// Obtener descripción de la modalidad para UI.
   static String obtenerDescripcionModalidad(Modalidad modalidad) {

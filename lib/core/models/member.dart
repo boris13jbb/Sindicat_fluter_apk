@@ -1,3 +1,5 @@
+import 'asistencia/evento.dart';
+
 /// Estado del socio en el sistema
 enum MemberStatus {
   active('Activo'),
@@ -32,6 +34,8 @@ class Member {
   final String? documentId; // Cédula/DNI (documento oficial)
   final String? email;
   final String? phone;
+  /// Modalidad de turno (misma escala que eventos de asistencia). Persistida en Firestore como `modalidad`.
+  final Modalidad? modalidad;
   final MemberStatus status; // activo, inactivo
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -48,6 +52,7 @@ class Member {
     this.documentId,
     this.email,
     this.phone,
+    this.modalidad,
     this.status = MemberStatus.active,
     required this.createdAt,
     required this.updatedAt,
@@ -57,6 +62,14 @@ class Member {
 
   /// Crear instancia desde mapa de Firestore
   factory Member.fromMap(Map<String, dynamic> map, String id) {
+    Modalidad? modalidad = Modalidad.tryParse(map['modalidad'] as String?);
+    final add = map['additionalData'];
+    if (modalidad == null &&
+        add is Map<String, dynamic> &&
+        add['mod'] != null) {
+      modalidad = Modalidad.tryParse(add['mod'].toString());
+    }
+
     return Member(
       id: id,
       memberNumber: map['memberNumber'] ?? '',
@@ -67,6 +80,7 @@ class Member {
       documentId: map['documentId'],
       email: map['email'],
       phone: map['phone'],
+      modalidad: modalidad,
       status: MemberStatus.fromString(map['status'] ?? 'active'),
       createdAt: map['createdAt'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
@@ -90,6 +104,7 @@ class Member {
       if (documentId != null) 'documentId': documentId,
       if (email != null) 'email': email,
       if (phone != null) 'phone': phone,
+      if (modalidad != null) 'modalidad': modalidad!.value,
       'status': status.name,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'updatedAt': updatedAt.millisecondsSinceEpoch,
@@ -109,6 +124,8 @@ class Member {
     String? documentId,
     String? email,
     String? phone,
+    Modalidad? modalidad,
+    bool clearModalidad = false,
     MemberStatus? status,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -125,6 +142,7 @@ class Member {
       documentId: documentId ?? this.documentId,
       email: email ?? this.email,
       phone: phone ?? this.phone,
+      modalidad: clearModalidad ? null : (modalidad ?? this.modalidad),
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

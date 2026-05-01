@@ -92,7 +92,9 @@ class _CrearEventoAsistenciaScreenState
                       maxLines: 3,
                     ),
                     const SizedBox(height: 16),
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         FilterChip(
                           label: const Text('Ordinaria'),
@@ -100,7 +102,6 @@ class _CrearEventoAsistenciaScreenState
                           onSelected: (_) =>
                               setState(() => _tipo = TipoReunion.ordinaria),
                         ),
-                        const SizedBox(width: 8),
                         FilterChip(
                           label: const Text('Extraordinaria'),
                           selected: _tipo == TipoReunion.extraordinaria,
@@ -121,42 +122,41 @@ class _CrearEventoAsistenciaScreenState
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
-                    // 🆕 Selección de Modalidad de Turno
-                    Row(
-                      children: [
-                        Text(
-                          'Modalidad de Turno:',
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: DropdownButtonFormField<Modalidad>(
-                            initialValue: _modalidad,
-                            decoration: const InputDecoration(
-                              border: OutlineInputBorder(),
-                              contentPadding: EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                            ),
-                            hint: const Text('Seleccionar modalidad'),
-                            items: Modalidad.values.map((modalidad) {
-                              return DropdownMenuItem(
-                                value: modalidad,
-                                child: Text(
-                                  JustificacionHelper.obtenerDescripcionModalidad(
-                                    modalidad,
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              setState(() => _modalidad = value);
-                            },
+                    // Modalidad: columna para evitar overflow horizontal en pantallas angostas.
+                    Text(
+                      'Modalidad',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<Modalidad>(
+                      isExpanded: true,
+                      initialValue: _modalidad,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
                         ),
-                      ],
+                      ),
+                      hint: const Text('Seleccionar modalidad (código)'),
+                      items:
+                          Modalidad.valoresParaJustificacionAsistencia.map((
+                            modalidad,
+                          ) {
+                        return DropdownMenuItem(
+                          value: modalidad,
+                          child: Text(
+                            JustificacionHelper.etiquetaModalidad(modalidad),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() => _modalidad = value);
+                      },
                     ),
                     if (_modalidad != null) ...[
                       const SizedBox(height: 8),
@@ -178,13 +178,10 @@ class _CrearEventoAsistenciaScreenState
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                JustificacionHelper.obtenerJustificacion(
-                                  _modalidad!,
-                                ),
+                                'Se asocia ${JustificacionHelper.etiquetaModalidad(_modalidad!)} al evento para registro de asistencia.',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: Colors.blue.shade800,
-                                      fontStyle: FontStyle.italic,
                                     ),
                               ),
                             ),

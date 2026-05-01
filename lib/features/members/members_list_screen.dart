@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../core/models/asistencia/evento.dart';
 import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/members_service.dart';
@@ -32,6 +34,11 @@ class _MembersListScreenState extends State<MembersListScreen> {
         title: 'Gestión de Socios',
         onNavigateBack: () => Navigator.pop(context),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Exportar socios (CSV)',
+            onPressed: () => _exportMembersCsv(context),
+          ),
           // 🆕 Botón de importación
           IconButton(
             icon: const Icon(Icons.upload_file),
@@ -140,6 +147,26 @@ class _MembersListScreenState extends State<MembersListScreen> {
         label: const Text('Nuevo Socio'),
       ),
     );
+  }
+
+  Future<void> _exportMembersCsv(BuildContext context) async {
+    try {
+      final list = await _service.getAllMembers().first;
+      final csv = MembersService.buildMembersExportCsv(list);
+      await Share.share(
+        csv,
+        subject: 'Exportación socios',
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo exportar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _navigateToAddMember() async {
@@ -278,6 +305,11 @@ class _MemberCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('N° Socio: ${member.memberNumber}'),
+            if (member.modalidad != null)
+              Text(
+                JustificacionHelper.etiquetaModalidad(member.modalidad!),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             if (member.documentId != null)
               Text('Documento: ${member.documentId}'),
           ],

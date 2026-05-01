@@ -29,10 +29,12 @@ class AttendanceEventDetailScreen extends StatelessWidget {
             icon: const Icon(Icons.view_list_rounded),
             tooltip: 'Ir al listado de asistencia',
             onPressed: () {
-              Navigator.popUntil(
-                context,
-                (route) =>
-                    route.settings.name == '/asistencia' || route.isFirst,
+              // Siempre muestra `/asistencia` aunque el detalle se abriera sin esa
+              // ruta en la pila (p. ej. deep link futuro): se conserva la raíz (`isFirst`)
+              // y se apila el hub de asistencia encima.
+              Navigator.of(context).pushNamedAndRemoveUntil(
+                '/asistencia',
+                (route) => route.isFirst,
               );
             },
           ),

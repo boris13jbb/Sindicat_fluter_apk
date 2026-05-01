@@ -27,21 +27,21 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
 
   /// Método para mostrar el diálogo de selección de modalidad
   Future<void> _mostrarDialogoModalidad() async {
+    final opciones = Modalidad.valoresParaJustificacionAsistencia;
+
     final seleccionada = await showDialog<Modalidad>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Seleccionar Modalidad de Turno'),
+        title: const Text('Modalidad'),
         content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
             shrinkWrap: true,
-            itemCount: Modalidad.values.length,
+            itemCount: opciones.length,
             itemBuilder: (context, index) {
-              final modalidad = Modalidad.values[index];
-              final descripcion = JustificacionHelper.obtenerDescripcionModalidad(modalidad);
+              final modalidad = opciones[index];
               return ListTile(
-                title: Text(descripcion),
-                subtitle: Text('Código: ${modalidad.value}'),
+                title: Text(JustificacionHelper.etiquetaModalidad(modalidad)),
                 selected: _currentEvento.modalidad == modalidad,
                 onTap: () => Navigator.pop(ctx, modalidad),
               );
@@ -69,7 +69,9 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Modalidad actualizada a: ${seleccionada.value}'),
+              content: Text(
+                '${JustificacionHelper.etiquetaModalidad(seleccionada)} guardada.',
+              ),
               backgroundColor: Colors.green,
             ),
           );
@@ -150,7 +152,7 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
           // 🎯 Botón para editar modalidad
           IconButton(
             icon: const Icon(Icons.edit),
-            tooltip: 'Editar modalidad de turno',
+            tooltip: 'Modalidad (turno para justificar asistencia)',
             onPressed: _mostrarDialogoModalidad,
           ),
           IconButton(
@@ -217,7 +219,7 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   const SizedBox(height: 12),
-                  // 🆕 Indicador de Modalidad de Turno (muy visible)
+                  // Modalidad operativa de turno para justificar asistencias.
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -247,7 +249,7 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              'Modalidad de Turno',
+                              'Modalidad',
                               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                 fontWeight: FontWeight.w600,
                                 color: _currentEvento.modalidad != null
@@ -268,8 +270,10 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                         const SizedBox(height: 8),
                         Text(
                           _currentEvento.modalidad != null
-                              ? JustificacionHelper.obtenerDescripcionModalidad(_currentEvento.modalidad!)
-                              : 'No asignada - Toca el botón editar para asignar',
+                              ? JustificacionHelper.etiquetaModalidad(
+                                  _currentEvento.modalidad!,
+                                )
+                              : 'Sin modalidad — use el ícono de edición arriba para asignar la letra (A, B, C…)',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w500,
                             color: _currentEvento.modalidad != null
@@ -277,28 +281,6 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
                                 : Colors.orange.shade900,
                           ),
                         ),
-                        if (_currentEvento.modalidad != null) ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.info_outline,
-                                size: 14,
-                                color: Colors.blue.shade600,
-                              ),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  JustificacionHelper.obtenerJustificacion(_currentEvento.modalidad!),
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.blue.shade700,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
                       ],
                     ),
                   ),

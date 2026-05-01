@@ -510,6 +510,136 @@ class AttendanceService {
         .map((member) => member.id)
         .toSet();
   }
+
+  Future<Map<String, Member?>> _membersByIds(Set<String> ids) async {
+    final out = <String, Member?>{};
+    if (ids.isEmpty) return out;
+    const chunk = 25;
+    final list = ids.toList();
+    for (var i = 0; i < list.length; i += chunk) {
+      final end = i + chunk < list.length ? i + chunk : list.length;
+      final part = list.sublist(i, end);
+      final snaps = await Future.wait(
+        part.map((id) => _firestore.collection('members').doc(id).get()),
+      );
+      for (var j = 0; j < part.length; j++) {
+        final s = snaps[j];
+        out[part[j]] =
+            s.exists && s.data() != null
+                ? Member.fromMap(s.data()!, s.id)
+                : null;
+      }
+    }
+    return out;
+  }
+
+  PersonaAsistencia _personaExportDesdeMember(Member? m, String personaId) {
+    if (m != null) {
+      final ident =
+          (m.workerCode?.trim().isNotEmpty == true
+              ? m.workerCode!.trim()
+              : null) ??
+          (m.documentId?.trim().isNotEmpty == true
+              ? m.documentId!.trim()
+              : null) ??
+          (m.memberNumber.trim().isNotEmpty ? m.memberNumber : null);
+      return PersonaAsistencia(
+        id: m.id,
+        nombres: m.firstName,
+        apellidos: m.lastName,
+        identificador: ident,
+      );
+    }
+    return PersonaAsistencia(
+      id: personaId,
+      nombres: '(Sin ficha en members)',
+      apellidos: personaId,
+      identificador: null,
+    );
+  }
+
+  /// Filas **`AsistenciaConDatos`** para exportación/UI leyendo
+  /// `attendance_events` y cada subcolección `asistencias` (persona enlazada a `members`).
+  ///
+  /// Las lecturas de subcolecciones se lanzan en **paralelo** (`Future.wait`) para
+  /// reducir latencia total cuando hay muchos eventos de reporte.
+  Future<List<AsistenciaConDatos>> fetchAllAttendanceExportsRows() async {
+    final evSnap = await _firestore.collection('attendance_events').get();
+    if (evSnap.docs.isEmpty) return [];
+
+    final events = evSnap.docs
+        .map((d) => AttendanceEvent.fromMap(d.data(), d.id))
+        .toList();
+
+    final subSnaps = await Future.wait(
+      events.map(
+        (ev) => _firestore
+            .collection('attendance_events')
+            .doc(ev.id)
+            .collection('asistencias')
+            .get(),
+      ),
+    );
+
+    final pendingEv = <AttendanceEvent>[];
+    final pendingReg = <AsistenciaRegistro>[];
+    final memberIds = <String>{};
+
+    for (var ei = 0; ei < events.length; ei++) {
+      final ev = events[ei];
+      final sub = subSnaps[ei];
+      for (final aDoc in sub.docs) {
+        final raw = AsistenciaRegistro.fromMap(aDoc.data(), aDoc.id);
+        final reg = AsistenciaRegistro(
+          id: raw.id,
+          eventoId: ev.id,
+          personaId: raw.personaId,
+          fechaRegistro: raw.fechaRegistro,
+          metodoRegistro: raw.metodoRegistro,
+          justificacion: raw.justificacion,
+          asistio: raw.asistio,
+        );
+        pendingEv.add(ev);
+        pendingReg.add(reg);
+        if (reg.personaId.isNotEmpty) {
+          memberIds.add(reg.personaId);
+        }
+      }
+    }
+
+    final membMap = await _membersByIds(memberIds);
+    final rows = <AsistenciaConDatos>[];
+
+    for (var i = 0; i < pendingReg.length; i++) {
+      final ev = pendingEv[i];
+      final reg = pendingReg[i];
+      final persona = _personaExportDesdeMember(
+        membMap[reg.personaId],
+        reg.personaId,
+      );
+      final eventUi = EventoAsistencia(
+        id: ev.id,
+        nombre: '[Reporte] ${ev.nombre}',
+        fecha: ev.fecha,
+        tipoReunion: TipoReunion.fromString(ev.tipo),
+        descripcion: ev.descripcion,
+      );
+      rows.add(
+        AsistenciaConDatos(
+          asistencia: reg,
+          persona: persona,
+          evento: eventUi,
+        ),
+      );
+    }
+
+    rows.sort((a, b) {
+      final ta = a.asistencia.fechaRegistro ?? 0;
+      final tb = b.asistencia.fechaRegistro ?? 0;
+      return tb.compareTo(ta);
+    });
+    return rows;
+  }
 }
 
 /// Reporte de asistencia con cálculo de faltas

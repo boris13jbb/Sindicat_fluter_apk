@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/models/asistencia/evento.dart';
 import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/members_service.dart';
@@ -26,6 +27,7 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
   late final TextEditingController _phoneController;
 
   bool _isLoading = false;
+  Modalidad? _modalidad;
   bool get _isEditing => widget.member != null;
 
   @override
@@ -48,6 +50,7 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
     );
     _emailController = TextEditingController(text: widget.member?.email ?? '');
     _phoneController = TextEditingController(text: widget.member?.phone ?? '');
+    _modalidad = widget.member?.modalidad;
   }
 
   @override
@@ -133,6 +136,37 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
                       }
                       return null;
                     },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  DropdownButtonFormField<Modalidad>(
+                    key: ValueKey(_modalidad?.value ?? ''),
+                    isExpanded: true,
+                    initialValue: _modalidad,
+                    decoration: InputDecoration(
+                      labelText: 'Modalidad *',
+                      prefixIcon: const Icon(Icons.schedule),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    hint: const Text('Seleccionar modalidad (código)'),
+                    items: Modalidad.values
+                        .map(
+                          (m) => DropdownMenuItem(
+                            value: m,
+                            child: Text(
+                              JustificacionHelper.etiquetaModalidad(m),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setState(() => _modalidad = v),
+                    validator: (v) =>
+                        v == null ? 'Seleccione la modalidad del socio' : null,
                   ),
 
                   const SizedBox(height: 16),
@@ -249,6 +283,7 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
         phone: _phoneController.text.trim().isEmpty
             ? null
             : _phoneController.text.trim(),
+        modalidad: _modalidad,
         status: widget.member?.status ?? MemberStatus.active,
         createdAt: widget.member?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),

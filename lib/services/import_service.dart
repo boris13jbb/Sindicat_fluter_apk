@@ -6,6 +6,7 @@ import 'package:excel/excel.dart' hide Border;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/models/asistencia/evento.dart';
 import '../core/models/member.dart';
 import '../core/models/import_log.dart';
 import '../core/models/audit_log.dart';
@@ -43,14 +44,19 @@ class ImportService {
     'numero_socio',
     'nombres',
     'apellidos',
+    'worker_code',
+    'modalidad',
     'documento',
     'email',
     'telefono',
-    'worker_code', // Código/Número de trabajador
   ];
 
-  /// Columnas obligatorias
-  static const requiredColumns = ['numero_socio', 'nombres', 'apellidos'];
+  /// Columnas obligatorias (modalidad se valida aparte con [Modalidad.tryParse])
+  static const requiredColumns = [
+    'numero_socio',
+    'nombres',
+    'apellidos',
+  ];
 
   /// Mapeo de columnas alternativas a columnas estándar
   static const Map<String, List<String>> columnMappings = {
@@ -81,9 +87,15 @@ class ImportService {
       'legajo',
       'trabajador',
     ],
+    'modalidad': [
+      'modalidad',
+      'mod',
+      'modulo',
+      'modalidad_turno',
+      'turno',
+    ],
     'departamento': ['departamento', 'depto', 'area', 'seccion'],
     'nivel': ['nivel', 'grado', 'categoria', 'cargo'],
-    'mod': ['mod', 'modulo', 'modalidad'],
   };
 
   /// Columnas que contienen nombre completo (se separará automáticamente en nombres y apellidos)
@@ -238,6 +250,21 @@ class ImportService {
       return RowValidationResult(isValid: false, errors: errors, data: data);
     }
 
+    // Modalidad obligatoria y valor permitido (A, B, C, … coincide con eventos)
+    final modalidadRaw = (data['modalidad'] as String?)?.trim() ?? '';
+    if (modalidadRaw.isEmpty) {
+      errors.add('Fila $rowIndex: modalidad es obligatoria');
+    } else {
+      final parsed = Modalidad.tryParse(modalidadRaw);
+      if (parsed == null) {
+        errors.add(
+          'Fila $rowIndex: modalidad no válida "$modalidadRaw". Valores: A, B, C, D, E, N, N1, N2, X, Y, Z',
+        );
+      } else {
+        data['modalidad'] = parsed.value;
+      }
+    }
+
     // Validar formato de email si existe
     if (data.containsKey('email') && (data['email'] as String).isNotEmpty) {
       final email = data['email'] as String;
@@ -359,9 +386,14 @@ class ImportService {
       for (final col in requiredColumns) {
         if (!headers.contains(col)) {
           throw Exception(
-            'Columna obligatoria "$col" no encontrada en el archivo. Columnas encontradas: ${rawHeaders.join(", ")}\n\nMapeo automático aplicado: ${headers.join(", ")}\n\nSugerencia: Asegúrate de que tu archivo tenga columnas equivalentes a: ${requiredColumns.join(", ")}',
+            'Columna obligatoria "$col" no encontrada en el archivo. Columnas encontradas: ${rawHeaders.join(", ")}\n\nMapeo automático aplicado: ${headers.join(", ")}\n\nSugerencia: Asegúrate de que tu archivo tenga columnas equivalentes a: ${requiredColumns.join(", ")}, modalidad',
           );
         }
+      }
+      if (!headers.contains('modalidad')) {
+        throw Exception(
+          'Columna obligatoria "modalidad" no encontrada en el archivo. Columnas: ${rawHeaders.join(", ")}\n\nIncluya una columna modalidad con valores: A, B, C, D, E, N, N1, N2, X, Y, Z (también se aceptan encabezados: mod, modulo, turno).',
+        );
       }
 
       // Datos de las filas (sin header)
@@ -520,16 +552,15 @@ class ImportService {
             (validation.data['nivel'] as String).isNotEmpty) {
           additionalData['nivel'] = validation.data['nivel'];
         }
-        if (validation.data.containsKey('mod') &&
-            (validation.data['mod'] as String).isNotEmpty) {
-          additionalData['mod'] = validation.data['mod'];
-        }
 
         // Generar ID único combinando workerCode y documentId
         final memberId =
             workerCode ??
             documentId ??
             DateTime.now().millisecondsSinceEpoch.toString();
+
+        final modalidadSocio =
+            Modalidad.tryParse(validation.data['modalidad'] as String?);
 
         final member = Member(
           id: memberId,
@@ -543,6 +574,7 @@ class ImportService {
           documentId: documentId,
           email: validation.data['email'] as String?,
           phone: validation.data['telefono'] as String?,
+          modalidad: modalidadSocio,
           status: MemberStatus.active,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
@@ -678,9 +710,14 @@ class ImportService {
       for (final col in requiredColumns) {
         if (!headers.contains(col)) {
           throw Exception(
-            'Columna obligatoria "$col" no encontrada en el archivo. Columnas encontradas: $rawHeaders\n\nMapeo automático aplicado: $headers\n\nSugerencia: Asegúrate de que tu archivo tenga columnas equivalentes a: ${requiredColumns.join(", ")}',
+            'Columna obligatoria "$col" no encontrada en el archivo. Columnas encontradas: $rawHeaders\n\nMapeo automático aplicado: $headers\n\nSugerencia: Asegúrate de que tu archivo tenga columnas equivalentes a: ${requiredColumns.join(", ")}, modalidad',
           );
         }
+      }
+      if (!headers.contains('modalidad')) {
+        throw Exception(
+          'Columna obligatoria "modalidad" no encontrada en el archivo. Columnas: $rawHeaders\n\nIncluya una columna modalidad con valores: A, B, C, D, E, N, N1, N2, X, Y, Z (también se aceptan encabezados: mod, modulo, turno).',
+        );
       }
 
       // Detectar si hay columna de nombre completo para separar
@@ -867,16 +904,15 @@ class ImportService {
             (validation.data['nivel'] as String).isNotEmpty) {
           additionalData['nivel'] = validation.data['nivel'];
         }
-        if (validation.data.containsKey('mod') &&
-            (validation.data['mod'] as String).isNotEmpty) {
-          additionalData['mod'] = validation.data['mod'];
-        }
 
         // Generar ID único combinando workerCode y documentId
         final memberId =
             workerCode ??
             documentId ??
             DateTime.now().millisecondsSinceEpoch.toString();
+
+        final modalidadSocio =
+            Modalidad.tryParse(validation.data['modalidad'] as String?);
 
         final member = Member(
           id: memberId,
@@ -890,6 +926,7 @@ class ImportService {
           documentId: documentId,
           email: validation.data['email'] as String?,
           phone: validation.data['telefono'] as String?,
+          modalidad: modalidadSocio,
           status: MemberStatus.active,
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),

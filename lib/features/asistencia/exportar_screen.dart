@@ -6,6 +6,7 @@ import 'dart:async';
 import '../../core/models/asistencia/asistencia.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
+import '../../services/attendance_service.dart';
 
 // ============================================================================
 // FUNCIONES TOP-LEVEL PARA ISOLATES (OPTIMIZADAS)
@@ -100,8 +101,23 @@ class ExportarAsistenciaScreen extends StatefulWidget {
       _ExportarAsistenciaScreenState();
 }
 
+enum _OrigenExport { legacy, reporte, combinado }
+
 class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
   final AsistenciaService _service = AsistenciaService();
+  final AttendanceService _attendance = AttendanceService();
+
+  _OrigenExport _origen = _OrigenExport.legacy;
+
+  /// Sólo se asigna al entrar en pestaña **Reporte** o al pulsar «Actualizar».
+  Future<List<AsistenciaConDatos>>? _filasReporteFuture;
+
+  void _recargarReporte() {
+    setState(() {
+      _filasReporteFuture = _attendance.fetchAllAttendanceExportsRows();
+    });
+  }
+
 
   Future<void> _exportarExcel(
     BuildContext context,
@@ -315,59 +331,57 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Exportar Asistencias',
-        onNavigateBack: () => Navigator.pop(context),
-      ),
-      body: StreamBuilder<List<AsistenciaConDatos>>(
-        stream: _service.watchAllAsistenciasConDatos(),
-        builder: (context, snap) {
-          if (snap.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Error: ${snap.error}',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          if (snap.connectionState == ConnectionState.waiting &&
-              !snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final list = snap.data ?? [];
-          if (list.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.file_download,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('No hay asistencias para exportar.'),
-                ],
-              ),
-            );
-          }
-          // Serializar lista para CSV
-          final serializedList = list.map(_serializeAsistencia).toList();
-          return Column(
-            children: [
+  Widget _buildListaExport(
+    BuildContext context,
+    List<AsistenciaConDatos> list, {
+    bool mostrarActualizarReporte = false,
+  }) {
+    if (list.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.file_download,
+              size: 64,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _origen == _OrigenExport.legacy
+                  ? 'No hay asistencias globales legacy para exportar.'
+                  : _origen == _OrigenExport.reporte
+                  ? 'No hay registros en eventos tipo reporte (attendance_events).'
+                  : 'No hay registros combinados.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    final serializedList = list.map(_serializeAsistencia).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  '${list.length} registros. Copia en formato CSV o descarga según la plataforma.',
+                  '${list.length} registros. Los del modelo reporte muestran el prefijo «[Reporte]» en el nombre del evento.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
+              if (mostrarActualizarReporte)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: OutlinedButton.icon(
+                    onPressed: _recargarReporte,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Actualizar lista reporte'),
+                  ),
+                ),
+              if (mostrarActualizarReporte) const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: FilledButton.icon(
@@ -494,8 +508,136 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
               const SizedBox(height: 16),
             ],
           );
-        },
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: ProfessionalAppBar(
+        title: 'Exportar Asistencias',
+        onNavigateBack: () => Navigator.pop(context),
       ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: SegmentedButton<_OrigenExport>(
+              segments: const [
+                ButtonSegment(
+                  value: _OrigenExport.legacy,
+                  label: Text('Legacy'),
+                  icon: Icon(Icons.history_edu_outlined, size: 18),
+                ),
+                ButtonSegment(
+                  value: _OrigenExport.reporte,
+                  label: Text('Reporte'),
+                  icon: Icon(Icons.bar_chart_outlined, size: 18),
+                ),
+                ButtonSegment(
+                  value: _OrigenExport.combinado,
+                  label: Text('Ambos'),
+                  icon: Icon(Icons.merge_type_outlined, size: 18),
+                ),
+              ],
+              selected: {_origen},
+              onSelectionChanged: (s) {
+                setState(() => _origen = s.first);
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              _origen == _OrigenExport.legacy
+                  ? 'Colección global `asistencias` ligada a `eventos` / `personas`.'
+                  : _origen == _OrigenExport.reporte
+                  ? 'Subcolecciones `attendance_events/*/asistencias`; socios vía id en `members`.'
+                  : 'Unión en memoria de legacy + modelo reporte.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(child: _cuerpoSegunOrigen(context)),
+        ],
+      ),
+    );
+  }
+
+  Widget _cuerpoSegunOrigen(BuildContext context) {
+    switch (_origen) {
+      case _OrigenExport.legacy:
+        return StreamBuilder<List<AsistenciaConDatos>>(
+          stream: _service.watchAllAsistenciasConDatos(),
+          builder: (context, snap) => _resolverStream(context, snap, false),
+        );
+      case _OrigenExport.reporte:
+        _filasReporteFuture ??= _attendance.fetchAllAttendanceExportsRows();
+        return FutureBuilder<List<AsistenciaConDatos>>(
+          future: _filasReporteFuture!,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snap.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Error: ${snap.error}',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+            return _buildListaExport(
+              context,
+              snap.data ?? [],
+              mostrarActualizarReporte: true,
+            );
+          },
+        );
+      case _OrigenExport.combinado:
+        return StreamBuilder<List<AsistenciaConDatos>>(
+          stream: _service.watchAllAsistenciasConDatos().asyncMap((
+            legacy,
+          ) async {
+            final rep = await _attendance.fetchAllAttendanceExportsRows();
+            final merged = [...legacy, ...rep];
+            merged.sort((a, b) {
+              final ta = a.asistencia.fechaRegistro ?? 0;
+              final tb = b.asistencia.fechaRegistro ?? 0;
+              return tb.compareTo(ta);
+            });
+            return merged;
+          }),
+          builder: (context, snap) => _resolverStream(context, snap, false),
+        );
+    }
+  }
+
+  Widget _resolverStream(
+    BuildContext context,
+    AsyncSnapshot<List<AsistenciaConDatos>> snap,
+    bool mostrarActualizar,
+  ) {
+    if (snap.hasError) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text('Error: ${snap.error}', textAlign: TextAlign.center),
+        ),
+      );
+    }
+    if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return _buildListaExport(
+      context,
+      snap.data ?? [],
+      mostrarActualizarReporte: mostrarActualizar,
     );
   }
 }

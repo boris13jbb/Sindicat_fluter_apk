@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:csv/csv.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../core/models/member.dart';
@@ -18,6 +19,46 @@ class MembersService {
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
   final AuditService _audit;
+
+  /// CSV alineado a la importación (columna `modalidad` con código A, B, C, …).
+  static String buildMembersExportCsv(List<Member> members) {
+    const converter = ListToCsvConverter();
+    final rows = <List<dynamic>>[
+      [
+        'numero_socio',
+        'nombres',
+        'apellidos',
+        'worker_code',
+        'modalidad',
+        'documento',
+        'email',
+        'telefono',
+        'estado',
+      ],
+    ];
+    for (final m in members) {
+      rows.add([
+        m.memberNumber,
+        m.firstName,
+        m.lastName,
+        m.workerCode ?? '',
+        m.modalidad?.value ?? '',
+        m.documentId ?? '',
+        m.email ?? '',
+        m.phone ?? '',
+        m.status.displayName,
+      ]);
+    }
+    return converter.convert(rows);
+  }
+
+  void _ensureModalidadObligatoria(Member member) {
+    if (member.modalidad == null) {
+      throw Exception(
+        'La modalidad del socio es obligatoria. Seleccione un turno válido (A–Z/N1/N2).',
+      );
+    }
+  }
 
   /// Obtener stream de todos los socios
   Stream<List<Member>> getAllMembers({
@@ -245,6 +286,7 @@ class MembersService {
       }
 
       await _ensureUniqueMemberFields(member);
+      _ensureModalidadObligatoria(member);
 
       final memberRef = _firestore.collection('members').doc();
       final newMember = member.copyWith(
@@ -286,6 +328,11 @@ class MembersService {
       final changes = <String, dynamic>{};
 
       if (oldMember != null) {
+        final oldMod = oldMember.modalidad?.value;
+        final newMod = member.modalidad?.value;
+        if (oldMod != newMod) {
+          changes['modalidad'] = {'before': oldMod, 'after': newMod};
+        }
         if (oldMember.status != member.status) {
           changes['status'] = {
             'before': oldMember.status.name,
@@ -325,6 +372,7 @@ class MembersService {
       }
 
       await _ensureUniqueMemberFields(member, excludingId: member.id);
+      _ensureModalidadObligatoria(member);
 
       final updatedMember = member.copyWith(updatedAt: DateTime.now());
 
