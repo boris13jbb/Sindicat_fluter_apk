@@ -39,5 +39,34 @@ void main() {
       expect(rows[1][6], 'W-1');
       expect(rows[1][7], 'A');
     });
+
+    test('requires modalidad in row validation', () {
+      final result = ImportService.validateRowStatic(
+        ['1001', 'Ana', 'Perez', ''],
+        ['numero_socio', 'nombres', 'apellidos', 'modalidad'],
+        2,
+      );
+
+      expect(result.isValid, isFalse);
+      expect(result.errors, contains('Fila 2: modalidad es obligatoria'));
+    });
+
+    test('normalizes modalidad aliases and canonical values', () {
+      final headers = ImportService.normalizeHeadersStatic([
+        'numero_socio',
+        'nombres',
+        'apellidos',
+        'turno',
+      ]);
+      final result = ImportService.validateRowStatic(
+        ['1001', 'Ana', 'Perez', 'n1'],
+        headers,
+        2,
+      );
+
+      expect(headers, ['numero_socio', 'nombres', 'apellidos', 'modalidad']);
+      expect(result.isValid, isTrue);
+      expect(result.data['modalidad'], 'N1');
+    });
   });
 }

@@ -38,8 +38,8 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 | Comando | Resultado | Observación |
 |---|---|---|
 | `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
-| `flutter test --no-pub --reporter expanded` | Correcto | 3 pruebas pasan: smoke de login sin sesión, configuración de columnas de importación y CSV con comillas/comas internas. |
-| `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run. |
+| `flutter test --no-pub --reporter expanded` | Correcto | 5 pruebas pasan: smoke de login sin sesión, configuración de columnas de importación, CSV con comillas/comas internas y validación/canonización de `modalidad`. |
+| `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members` e `import_logs` para `ADMIN`/`SUPERADMIN`. |
 | Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
 
 ### Convención de mantenimiento del expediente
@@ -1036,7 +1036,7 @@ Aplicación
 7. Inserta en batches.
 8. Guarda `import_logs` y `audit_logs`.
 
-**Validaciones esperadas:** columnas obligatorias, email válido si viene informado, duplicados, auth.
+**Validaciones esperadas:** columnas obligatorias (`numero_socio`, `nombres`, `apellidos` y columna `modalidad` exigida por archivo), email válido si viene informado, duplicados, auth.
 
 **Datos utilizados:** archivo local, `members`, `import_logs`, `audit_logs`.
 
@@ -1248,6 +1248,7 @@ Aplicación
 | E-016 | Login | Corregido localmente: cuenta sin perfil Firestore | `AuthService.signIn` valida que exista `users/{uid}` después de Firebase Auth; si falta, cierra sesión y devuelve mensaje claro. | Evita sesión fantasma sin navegación ni explicación. | Alta | Probar con cuenta real sin documento `users/{uid}`. |
 | E-017 | Registro | Corregido localmente: email válido, botón reactivo y padrón activo | `SignUpScreen` valida formato de email y `AuthService` exige socio activo en `members` por `workerCode` o `memberNumber`; si falla, revierte/cierra el usuario Auth recién creado. | Reduce rechazos tardíos, usuarios huérfanos y cuentas sin socio asociado. | Media | Agregar prueba widget/emulator con socio activo, inactivo y no encontrado. |
 | E-018 | Socios modalidad turno | Corregido localmente: modelo y flujos alineados | Campo **`modalidad`** en `members` (enum `Modalidad` compartido con eventos legacy), formulario/import/export/perfil/admin; migra opcional desde `additionalData.mod`. Socios históricos sin campo requieren edición o masa de datos antes de otros updates vía servicio si aplica. **Ampliación 2026-05:** UX unificada: en **perfil, socios y selectores revisados** el usuario ve solo **`Modalidad {letra}`** (`JustificacionHelper.etiquetaModalidad`); en **detalle/creación evento legacy** el picker de convocatorias usa sólo **`Modalidad.valoresParaJustificacionAsistencia`** (sin X/Y/Z) y sin subtítulos *Mañana/Tarde/Noche*; plantilla **`socios.xlsx`** vía **`tool/generate_socios_template.dart`**. | Coherencia documental y legibilidad en campo. | Media | Ejecutar script con Excel cerrado; completar datos legacy sin `modalidad`. |
+| E-019 | Firestore reglas / Socios e importaciones | Corregido localmente: permisos `ADMIN` coherentes con UI | `firestore.rules` permite ahora `create` en `members` e `import_logs` a `isAdmin()` (`SUPERADMIN` o `ADMIN`), manteniendo `delete` de `members` solo para `SUPERADMIN`. | Evita `permission-denied` al crear/importar socios desde cuentas `ADMIN`, ruta que la UI ya habilita. | Alta | Validar con usuarios reales/emulator y desplegar reglas antes de pruebas operativas. |
 
 ### Clasificación por tipo
 
@@ -1255,9 +1256,9 @@ Aplicación
 - Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012 queda corregido localmente con pendiente de validación manual.
 - Errores de navegación: E-014 corregido localmente, pendiente validación manual.
 - Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017 y E-018 (**modalidad en padrón**); faltan pruebas con archivos reales y emulator.
-- Errores de permisos: E-001, E-002, E-014 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
+- Errores de permisos: E-001, E-002, E-014 y E-019 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
 - Errores de rendimiento: E-015.
-- Errores de contenido: instrucciones contradictorias en importación.
+- Errores de contenido: instrucciones contradictorias de importación/QR corregidas en perfil; mantener revisión de copy operativo con usuarios reales.
 
 ## 8. Huecos funcionales pendientes por corregir
 
@@ -1431,7 +1432,7 @@ Prioridades antes de entrega o producción:
 | `AppUser` | `lib/core/models/user.dart` | id, email, displayName, role, employeeNumber |
 | `Election` | `lib/core/models/election.dart` | title, dates, isActive, isVisibleToVoters, requireAttendance, totalVotes |
 | `Candidate` | `lib/core/models/candidate.dart` | electionId, name, order, voteCount |
-| `Member` | `lib/core/models/member.dart` | memberNumber, firstName, lastName, workerCode, documentId, status |
+| `Member` | `lib/core/models/member.dart` | memberNumber, firstName, lastName, workerCode, documentId, modalidad, status |
 | `EventoAsistencia` | `lib/core/models/asistencia/evento.dart` | nombre, fecha, tipoReunion, modalidad |
 | `PersonaAsistencia` | `lib/core/models/asistencia/persona.dart` | nombres, apellidos, identificador, codigoQR |
 | `AsistenciaRegistro` | `lib/core/models/asistencia/asistencia.dart` | eventoId, personaId, metodoRegistro, justificacion, asistio |
@@ -1456,14 +1457,14 @@ Resultado actual:
 `flutter test --no-pub --reporter expanded` se ejecutó nuevamente el 2026-05-01 y pasó correctamente:
 
 - `test/widget_test.dart`: valida que se muestre Login cuando no hay sesión activa.
-- `test/import_service_test.dart`: valida contrato de columnas obligatorias, separación de `numero_socio` frente a `worker_code` y CSV con campos entre comillas/comas internas.
-- Estado: 3 pruebas pasan.
+- `test/import_service_test.dart`: valida contrato de columnas obligatorias, separación de `numero_socio` frente a `worker_code`, CSV con campos entre comillas/comas internas, obligatoriedad de `modalidad` y normalización/canonización de alias (`turno` → `modalidad`, `n1` → `N1`).
+- Estado: 5 pruebas pasan.
 - Acción recomendada: ampliar cobertura de rutas por rol, reglas Firestore, voto, asistencia e importación con datos representativos.
 
 ### F. Validación de reglas Firestore
 
-- `firebase deploy --only firestore --dry-run` se ejecutó el 2026-05-01: correcto (compilación local).
-- `firebase deploy --only firestore` (sin dry-run) al proyecto **`sistema-integrado-sindicato`** el mismo día: **deploy complete** según ejecución en entorno de desarrollo; conviene repetir después de cada cambio de `firestore.rules`.
+- `firebase deploy --only firestore --dry-run` se ejecutó nuevamente el 2026-05-01: correcto (compilación local de reglas actuales, incluyendo E-019).
+- `firebase deploy --only firestore` (sin dry-run) al proyecto **`sistema-integrado-sindicato`** se ejecutó previamente el mismo día: **deploy complete** según ejecución en entorno de desarrollo. Tras E-019 se validó con dry-run, pero queda pendiente repetir deploy real antes de pruebas operativas con `ADMIN`.
 - Limitación: no sustituye pruebas con Firebase Emulator; para emuladores suele hacer falta Java 21+ local.
 
 ### G. Bitácora de correcciones
@@ -1472,6 +1473,7 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Permisos `ADMIN` alineados con UI de socios: `members.create` e `import_logs.create` pasan a `isAdmin()`; `delete` de socios se conserva sólo `SUPERADMIN`. Se corrige texto del perfil QR sobre columnas de importación y se agregan pruebas puras de `modalidad` (`turno` → `modalidad`, `n1` → `N1`). | `firestore.rules`, `lib/features/profile/user_profile_screen.dart`, `lib/services/import_service.dart`, `test/import_service_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5); `firebase deploy --only firestore --dry-run` OK | Aplicado localmente |
 | 2026-05-01 | **Sólo expediente:** convención de mantenimiento (§2); coherencia **Editar elección** ↔ **E-008** (bloqueo eliminación candidato con votos); matriz §6 Exportar/Manual/Scanner; limitación modo **Combinado** en texto §4 Exportar. Sin cambios en `lib/`. | `expediente_tecnico_aplicacion.md` | Revisión interna línea contra línea; sin ejecución de QA en esta edición editorial | Documentación |
 | 2026-05-01 | Export reporte: lecturas de subcolecciones `asistencias` por evento en paralelo (`Future.wait`) dentro de `fetchAllAttendanceExportsRows`. | `lib/services/attendance_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub` OK | Aplicado localmente |
 | 2026-05-01 | Exportar asistencias: segmento Legacy / Reporte / Ambos; `fetchAllAttendanceExportsRows` en `AttendanceService` (subcolecciones + `members`); expediente §4 export, H-004, TC-032/033. | `lib/services/attendance_service.dart`, `lib/features/asistencia/exportar_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` OK | Aplicado localmente |

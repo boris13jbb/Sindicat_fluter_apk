@@ -20,11 +20,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final MembersService _membersService = MembersService();
-  
+
   /// Socio vinculado al usuario (padrón `members`), si existe.
   Member? _currentMember;
   bool _isLoadingMember = true;
-  bool _noMembersInDatabase = false; // Flag para detectar si no hay miembros en BD
+  bool _noMembersInDatabase =
+      false; // Flag para detectar si no hay miembros en BD
 
   @override
   void initState() {
@@ -50,7 +51,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       debugPrint('   - Email: ${user.email}');
       debugPrint('   - EmployeeNumber: ${user.employeeNumber ?? "N/A"}');
       debugPrint('   - DisplayName: ${user.displayName ?? "N/A"}');
-      
+
       Member? foundMember;
       String searchMethod = 'ninguno';
 
@@ -58,13 +59,19 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       if (user.email.isNotEmpty) {
         debugPrint('\n📧 Estrategia 1: Búsqueda por email...');
         try {
-          final membersByEmail = await _membersService.searchMembers(user.email);
-          debugPrint('   Resultados de searchMembers: ${membersByEmail.length} encontrados');
+          final membersByEmail = await _membersService.searchMembers(
+            user.email,
+          );
+          debugPrint(
+            '   Resultados de searchMembers: ${membersByEmail.length} encontrados',
+          );
           if (membersByEmail.isNotEmpty) {
             foundMember = membersByEmail.first;
             searchMethod = 'email';
             debugPrint('   ✅ Encontrado por email: ${foundMember.fullName}');
-            debugPrint('      Email del miembro: ${foundMember.email ?? "N/A"}');
+            debugPrint(
+              '      Email del miembro: ${foundMember.email ?? "N/A"}',
+            );
           }
         } catch (e) {
           debugPrint('   ❌ Error en búsqueda por email: $e');
@@ -72,19 +79,26 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       }
 
       // ESTRATEGIA 2: Buscar por employeeNumber/workerCode
-      if (foundMember == null && 
-          user.employeeNumber != null && 
+      if (foundMember == null &&
+          user.employeeNumber != null &&
           user.employeeNumber!.isNotEmpty) {
         debugPrint('\n🔢 Estrategia 2: Búsqueda por employeeNumber...');
         try {
-          final memberByWorkerCode = await _membersService.getMemberByWorkerCode(user.employeeNumber!);
+          final memberByWorkerCode = await _membersService
+              .getMemberByWorkerCode(user.employeeNumber!);
           if (memberByWorkerCode != null) {
             foundMember = memberByWorkerCode;
             searchMethod = 'employeeNumber';
-            debugPrint('   ✅ Encontrado por employeeNumber: ${foundMember.fullName}');
-            debugPrint('      WorkerCode del miembro: ${foundMember.workerCode ?? "N/A"}');
+            debugPrint(
+              '   ✅ Encontrado por employeeNumber: ${foundMember.fullName}',
+            );
+            debugPrint(
+              '      WorkerCode del miembro: ${foundMember.workerCode ?? "N/A"}',
+            );
           } else {
-            debugPrint('   ❌ No se encontró miembro con workerCode=${user.employeeNumber}');
+            debugPrint(
+              '   ❌ No se encontró miembro con workerCode=${user.employeeNumber}',
+            );
           }
         } catch (e) {
           debugPrint('   ❌ Error en búsqueda por employeeNumber: $e');
@@ -95,12 +109,16 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       if (foundMember == null) {
         debugPrint('\n🆔 Estrategia 3: Búsqueda por userId como documentId...');
         try {
-          final memberByDoc = await _membersService.getMemberByDocument(user.id);
+          final memberByDoc = await _membersService.getMemberByDocument(
+            user.id,
+          );
           if (memberByDoc != null) {
             foundMember = memberByDoc;
             searchMethod = 'userId';
             debugPrint('   ✅ Encontrado por userId: ${foundMember.fullName}');
-            debugPrint('      DocumentId del miembro: ${foundMember.documentId ?? "N/A"}');
+            debugPrint(
+              '      DocumentId del miembro: ${foundMember.documentId ?? "N/A"}',
+            );
           } else {
             debugPrint('   ❌ No se encontró miembro con documentId=${user.id}');
           }
@@ -117,21 +135,33 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           debugPrint('   Intento: getActiveMembers() con filtro status=active');
           final allMembersStream = _membersService.getActiveMembers();
           var allMembers = await allMembersStream.first;
-          
-          debugPrint('   Total miembros con status=active: ${allMembers.length}');
-          
+
+          debugPrint(
+            '   Total miembros con status=active: ${allMembers.length}',
+          );
+
           // Si no hay activos, intentamos getAllMembers() sin filtro
           if (allMembers.isEmpty) {
             debugPrint('   ⚠️ getActiveMembers() retornó 0 miembros.');
-            debugPrint('   Intento fallback: getAllMembers() SIN filtro de status...');
-            
-            final allMembersUnfiltered = await _membersService.getAllMembers().first;
-            debugPrint('   📦 getAllMembers() retornó ${allMembersUnfiltered.length} miembros');
-            
+            debugPrint(
+              '   Intento fallback: getAllMembers() SIN filtro de status...',
+            );
+
+            final allMembersUnfiltered = await _membersService
+                .getAllMembers()
+                .first;
+            debugPrint(
+              '   📦 getAllMembers() retornó ${allMembersUnfiltered.length} miembros',
+            );
+
             if (allMembersUnfiltered.isNotEmpty) {
-              debugPrint('   💡 ENCONTRADOS ${allMembersUnfiltered.length} miembros SIN filtrar por status');
-              debugPrint('   ⚠️ Esto sugiere que los miembros existen pero su campo status no es "active"');
-              
+              debugPrint(
+                '   💡 ENCONTRADOS ${allMembersUnfiltered.length} miembros SIN filtrar por status',
+              );
+              debugPrint(
+                '   ⚠️ Esto sugiere que los miembros existen pero su campo status no es "active"',
+              );
+
               // Mostrar distribución de status
               final statusCounts = <String, int>{};
               for (final m in allMembersUnfiltered) {
@@ -142,14 +172,22 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               statusCounts.forEach((status, count) {
                 debugPrint('      - "$status": $count miembros');
               });
-              
+
               // Usamos todos los miembros para la búsqueda (fallback)
               allMembers = allMembersUnfiltered;
-              debugPrint('   ✅ Continuando escaneo con ${allMembers.length} miembros (todos los status)');
+              debugPrint(
+                '   ✅ Continuando escaneo con ${allMembers.length} miembros (todos los status)',
+              );
             } else {
-              debugPrint('   ❌ NO se encontraron miembros en absoluto (colección vacía)');
-              debugPrint('   🚨 DIAGNÓSTICO: La base de datos NO tiene ningún socio importado');
-              debugPrint('   📋 Acción requerida: Importar socios desde CSV/Excel');
+              debugPrint(
+                '   ❌ NO se encontraron miembros en absoluto (colección vacía)',
+              );
+              debugPrint(
+                '   🚨 DIAGNÓSTICO: La base de datos NO tiene ningún socio importado',
+              );
+              debugPrint(
+                '   📋 Acción requerida: Importar socios desde CSV/Excel',
+              );
               if (mounted) {
                 setState(() {
                   _noMembersInDatabase = true;
@@ -157,114 +195,138 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               }
             }
           } else {
-            debugPrint('   ✅ Encontrados ${allMembers.length} miembros activos');
+            debugPrint(
+              '   ✅ Encontrados ${allMembers.length} miembros activos',
+            );
           }
-          
-            // Mostrar primeros 5 miembros para diagnóstico
-            debugPrint('\n   📋 Primeros 5 miembros activos:');
-            for (var i = 0; i < allMembers.length && i < 5; i++) {
-              final m = allMembers[i];
-              debugPrint('   [$i] ${m.fullName}');
-              debugPrint('       - workerCode: ${m.workerCode ?? "N/A"}');
-              debugPrint('       - documentId: ${m.documentId ?? "N/A"}');
-              debugPrint('       - email: ${m.email ?? "N/A"}');
-              debugPrint('       - memberNumber: ${m.memberNumber}');
+
+          // Mostrar primeros 5 miembros para diagnóstico
+          debugPrint('\n   📋 Primeros 5 miembros activos:');
+          for (var i = 0; i < allMembers.length && i < 5; i++) {
+            final m = allMembers[i];
+            debugPrint('   [$i] ${m.fullName}');
+            debugPrint('       - workerCode: ${m.workerCode ?? "N/A"}');
+            debugPrint('       - documentId: ${m.documentId ?? "N/A"}');
+            debugPrint('       - email: ${m.email ?? "N/A"}');
+            debugPrint('       - memberNumber: ${m.memberNumber}');
+          }
+          if (allMembers.length > 5) {
+            debugPrint('   ... y ${allMembers.length - 5} más');
+          }
+
+          // Buscar por email (comparación case-insensitive)
+          debugPrint('\n   🔍 Buscando coincidencias de email...');
+          for (final member in allMembers) {
+            if (member.email != null && member.email!.isNotEmpty) {
+              final memberEmail = member.email!.toLowerCase().trim();
+              final userEmail = user.email.toLowerCase().trim();
+
+              if (memberEmail == userEmail) {
+                foundMember = member;
+                searchMethod = 'email_exact';
+                debugPrint('   ✅ COINCIDENCIA EXACTA de email encontrada!');
+                debugPrint('      Email usuario: "$userEmail"');
+                debugPrint('      Email miembro: "$memberEmail"');
+                break;
+              } else if (memberEmail.contains(userEmail) ||
+                  userEmail.contains(memberEmail)) {
+                debugPrint('   ⚠️ Coincidencia PARCIAL de email (no usada):');
+                debugPrint(
+                  '      Usuario: "$userEmail" vs Miembro: "$memberEmail"',
+                );
+              }
             }
-            if (allMembers.length > 5) {
-              debugPrint('   ... y ${allMembers.length - 5} más');
-            }
-            
-            // Buscar por email (comparación case-insensitive)
-            debugPrint('\n   🔍 Buscando coincidencias de email...');
+          }
+
+          // Buscar por employeeNumber/workerCode
+          if (foundMember == null &&
+              user.employeeNumber != null &&
+              user.employeeNumber!.isNotEmpty) {
+            debugPrint('\n   🔍 Buscando coincidencias de employeeNumber...');
+            final userEmpNum = user.employeeNumber!.toLowerCase().trim();
+
             for (final member in allMembers) {
-              if (member.email != null && member.email!.isNotEmpty) {
-                final memberEmail = member.email!.toLowerCase().trim();
-                final userEmail = user.email.toLowerCase().trim();
-                
-                if (memberEmail == userEmail) {
+              // Comparar con workerCode
+              if (member.workerCode != null && member.workerCode!.isNotEmpty) {
+                final workerCode = member.workerCode!.toLowerCase().trim();
+                if (workerCode == userEmpNum) {
                   foundMember = member;
-                  searchMethod = 'email_exact';
-                  debugPrint('   ✅ COINCIDENCIA EXACTA de email encontrada!');
-                  debugPrint('      Email usuario: "$userEmail"');
-                  debugPrint('      Email miembro: "$memberEmail"');
-                  break;
-                } else if (memberEmail.contains(userEmail) || userEmail.contains(memberEmail)) {
-                  debugPrint('   ⚠️ Coincidencia PARCIAL de email (no usada):');
-                  debugPrint('      Usuario: "$userEmail" vs Miembro: "$memberEmail"');
-                }
-              }
-            }
-            
-            // Buscar por employeeNumber/workerCode
-            if (foundMember == null && user.employeeNumber != null && user.employeeNumber!.isNotEmpty) {
-              debugPrint('\n   🔍 Buscando coincidencias de employeeNumber...');
-              final userEmpNum = user.employeeNumber!.toLowerCase().trim();
-              
-              for (final member in allMembers) {
-                // Comparar con workerCode
-                if (member.workerCode != null && member.workerCode!.isNotEmpty) {
-                  final workerCode = member.workerCode!.toLowerCase().trim();
-                  if (workerCode == userEmpNum) {
-                    foundMember = member;
-                    searchMethod = 'workerCode_exact';
-                    debugPrint('   ✅ COINCIDENCIA EXACTA de workerCode encontrada!');
-                    debugPrint('      User employeeNumber: "$userEmpNum"');
-                    debugPrint('      Member workerCode: "$workerCode"');
-                    break;
-                  }
-                }
-                
-                // Comparar con documentId
-                if (member.documentId != null && member.documentId!.isNotEmpty) {
-                  final docId = member.documentId!.toLowerCase().trim();
-                  if (docId == userEmpNum) {
-                    foundMember = member;
-                    searchMethod = 'documentId_exact';
-                    debugPrint('   ✅ COINCIDENCIA EXACTA de documentId encontrada!');
-                    debugPrint('      User employeeNumber: "$userEmpNum"');
-                    debugPrint('      Member documentId: "$docId"');
-                    break;
-                  }
-                }
-              }
-            }
-            
-            // ESTRATEGIA 5: Búsqueda por nombre (si displayName existe)
-            if (foundMember == null && user.displayName != null && user.displayName!.isNotEmpty) {
-              debugPrint('\n   👤 Estrategia 5: Búsqueda por nombre/displayName...');
-              final userName = user.displayName!.toLowerCase().trim();
-              
-              for (final member in allMembers) {
-                final memberFullName = member.fullName.toLowerCase().trim();
-                final memberFirstName = member.firstName.toLowerCase().trim();
-                
-                // Coincidencia exacta del nombre completo
-                if (memberFullName == userName) {
-                  foundMember = member;
-                  searchMethod = 'fullName_exact';
-                  debugPrint('   ✅ COINCIDENCIA EXACTA de nombre completo!');
-                  debugPrint('      User displayName: "$userName"');
-                  debugPrint('      Member fullName: "$memberFullName"');
+                  searchMethod = 'workerCode_exact';
+                  debugPrint(
+                    '   ✅ COINCIDENCIA EXACTA de workerCode encontrada!',
+                  );
+                  debugPrint('      User employeeNumber: "$userEmpNum"');
+                  debugPrint('      Member workerCode: "$workerCode"');
                   break;
                 }
-                
-                // Coincidencia parcial: el nombre del usuario está contenido en el nombre del miembro
-                if (memberFullName.contains(userName) || userName.contains(memberFirstName)) {
-                  debugPrint('   ⚠️ Coincidencia PARCIAL de nombre detectada (no usada automáticamente):');
-                  debugPrint('      User: "$userName"');
-                  debugPrint('      Member: "$memberFullName"');
-                  debugPrint('      💡 Si este es tu socio, verifica que el email o workerCode coincidan');
+              }
+
+              // Comparar con documentId
+              if (member.documentId != null && member.documentId!.isNotEmpty) {
+                final docId = member.documentId!.toLowerCase().trim();
+                if (docId == userEmpNum) {
+                  foundMember = member;
+                  searchMethod = 'documentId_exact';
+                  debugPrint(
+                    '   ✅ COINCIDENCIA EXACTA de documentId encontrada!',
+                  );
+                  debugPrint('      User employeeNumber: "$userEmpNum"');
+                  debugPrint('      Member documentId: "$docId"');
+                  break;
                 }
               }
             }
-          
+          }
+
+          // ESTRATEGIA 5: Búsqueda por nombre (si displayName existe)
+          if (foundMember == null &&
+              user.displayName != null &&
+              user.displayName!.isNotEmpty) {
+            debugPrint(
+              '\n   👤 Estrategia 5: Búsqueda por nombre/displayName...',
+            );
+            final userName = user.displayName!.toLowerCase().trim();
+
+            for (final member in allMembers) {
+              final memberFullName = member.fullName.toLowerCase().trim();
+              final memberFirstName = member.firstName.toLowerCase().trim();
+
+              // Coincidencia exacta del nombre completo
+              if (memberFullName == userName) {
+                foundMember = member;
+                searchMethod = 'fullName_exact';
+                debugPrint('   ✅ COINCIDENCIA EXACTA de nombre completo!');
+                debugPrint('      User displayName: "$userName"');
+                debugPrint('      Member fullName: "$memberFullName"');
+                break;
+              }
+
+              // Coincidencia parcial: el nombre del usuario está contenido en el nombre del miembro
+              if (memberFullName.contains(userName) ||
+                  userName.contains(memberFirstName)) {
+                debugPrint(
+                  '   ⚠️ Coincidencia PARCIAL de nombre detectada (no usada automáticamente):',
+                );
+                debugPrint('      User: "$userName"');
+                debugPrint('      Member: "$memberFullName"');
+                debugPrint(
+                  '      💡 Si este es tu socio, verifica que el email o workerCode coincidan',
+                );
+              }
+            }
+          }
+
           // Verificar si hay algún miembro en la base de datos (después del escaneo)
           if (foundMember == null && allMembers.isEmpty) {
             try {
               final allCheck = await _membersService.getAllMembers().first;
               if (allCheck.isEmpty) {
-                debugPrint('\n   🚨 DIAGNÓSTICO FINAL: La base de datos NO tiene ningún socio importado');
-                debugPrint('   📋 Acción requerida: Importar socios desde CSV/Excel');
+                debugPrint(
+                  '\n   🚨 DIAGNÓSTICO FINAL: La base de datos NO tiene ningún socio importado',
+                );
+                debugPrint(
+                  '   📋 Acción requerida: Importar socios desde CSV/Excel',
+                );
                 if (mounted) {
                   setState(() {
                     _noMembersInDatabase = true;
@@ -281,7 +343,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         }
       }
 
-        // RESULTADO FINAL
+      // RESULTADO FINAL
       debugPrint('\n${'=' * 60}');
       if (foundMember != null) {
         debugPrint('✅ RESULTADO: Socio encontrado vía "$searchMethod"');
@@ -292,10 +354,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         debugPrint('   email: ${foundMember.email ?? "N/A"}');
         debugPrint('   status: ${foundMember.status.displayName}');
         debugPrint('=' * 60 + '\n');
-        
+
         // VERIFICAR si el workerCode existe
         if (foundMember.workerCode == null || foundMember.workerCode!.isEmpty) {
-          debugPrint('   ⚠️ ADVERTENCIA: El socio encontrado NO tiene workerCode asignado');
+          debugPrint(
+            '   ⚠️ ADVERTENCIA: El socio encontrado NO tiene workerCode asignado',
+          );
           debugPrint('   💡 Sin workerCode, NO se puede generar el código QR');
         }
       } else {
@@ -304,7 +368,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         debugPrint('   1. Búsqueda por email (searchMembers)');
         debugPrint('   2. Búsqueda por employeeNumber/workerCode');
         debugPrint('   3. Búsqueda por userId como documentId');
-        debugPrint('   4. Escaneo completo con comparación exacta (email, workerCode, documentId)');
+        debugPrint(
+          '   4. Escaneo completo con comparación exacta (email, workerCode, documentId)',
+        );
         debugPrint('   5. Búsqueda por nombre/displayName');
         debugPrint('\n   Datos del usuario que se usaron para buscar:');
         debugPrint('   - Email: "${user.email}"');
@@ -313,10 +379,18 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         debugPrint('   - DisplayName: "${user.displayName ?? "N/A"}"');
         debugPrint('\n   💡 Posibles causas:');
         debugPrint('   1. El usuario no ha sido importado como socio aún');
-        debugPrint('   2. El email del usuario no coincide con el email del socio importado');
-        debugPrint('   3. El employeeNumber del usuario no coincide con workerCode del socio');
-        debugPrint('   4. El campo email está vacío en el registro del socio importado');
-        debugPrint('   5. El displayName del usuario no coincide con fullName del socio');
+        debugPrint(
+          '   2. El email del usuario no coincide con el email del socio importado',
+        );
+        debugPrint(
+          '   3. El employeeNumber del usuario no coincide con workerCode del socio',
+        );
+        debugPrint(
+          '   4. El campo email está vacío en el registro del socio importado',
+        );
+        debugPrint(
+          '   5. El displayName del usuario no coincide con fullName del socio',
+        );
         debugPrint('   6. El socio existe pero está marcado como inactivo');
         debugPrint('=' * 60 + '\n');
       }
@@ -358,7 +432,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             onPressed: () async {
               await Provider.of<AuthProvider>(context, listen: false).signOut();
               if (context.mounted) {
-                Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                Navigator.of(
+                  context,
+                ).pushNamedAndRemoveUntil('/login', (route) => false);
               }
             },
           ),
@@ -373,10 +449,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          _buildInfoTab(),
-          _buildQRCodeTab(),
-        ],
+        children: [_buildInfoTab(), _buildQRCodeTab()],
       ),
     );
   }
@@ -420,7 +493,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                 if (user.displayName != null && user.displayName!.isNotEmpty)
                   _buildInfoRow('Nombre', user.displayName!),
                 _buildInfoRow('Rol', user.role.displayName),
-                if (user.employeeNumber != null && user.employeeNumber!.isNotEmpty)
+                if (user.employeeNumber != null &&
+                    user.employeeNumber!.isNotEmpty)
                   _buildInfoRow('N° Empleado', user.employeeNumber!),
               ]),
 
@@ -489,7 +563,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Mensaje específico si no hay miembros en la BD
                   if (_noMembersInDatabase)
                     Container(
@@ -503,7 +577,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.warning_amber_rounded, color: Colors.red.shade700),
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.red.shade700,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -528,8 +605,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             '   • numero_socio\n'
                             '   • nombres\n'
                             '   • apellidos\n'
-                            '   • documento (cédula)\n'
-                            '   • worker_code (código de trabajador) - OBLIGATORIO para QR\n'
+                            '   • modalidad\n'
+                            '   • worker_code (código de trabajador, recomendado para QR)\n'
+                            '   • documento (opcional)\n'
                             '   • email (opcional pero recomendado)',
                             textAlign: TextAlign.left,
                             style: TextStyle(
@@ -554,7 +632,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                         children: [
                           Row(
                             children: [
-                              Icon(Icons.info_outline, color: Colors.orange.shade700),
+                              Icon(
+                                Icons.info_outline,
+                                color: Colors.orange.shade700,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -586,7 +667,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     'Contacta al administrador para verificar tu registro.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
                   ),
                 ],
@@ -598,16 +681,21 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         // Si hay socio, mostrar su código QR
         if (_currentMember != null) {
           // Verificar que workerCode existe antes de generar QR
-          if (_currentMember!.workerCode == null || _currentMember!.workerCode!.isEmpty) {
+          if (_currentMember!.workerCode == null ||
+              _currentMember!.workerCode!.isEmpty) {
             debugPrint('⚠️ Socio encontrado pero sin workerCode:');
             debugPrint('   Member ID: ${_currentMember!.id}');
             debugPrint('   Nombre: ${_currentMember!.fullName}');
             debugPrint('   Email: ${_currentMember!.email ?? "N/A"}');
-            debugPrint('   workerCode: ${_currentMember!.workerCode ?? "NULO"}');
+            debugPrint(
+              '   workerCode: ${_currentMember!.workerCode ?? "NULO"}',
+            );
             debugPrint('   workerCode en DB: "${_currentMember!.workerCode}"');
-            debugPrint('   💡 SOLUCIÓN: Actualiza el campo workerCode en Firestore para este socio');
+            debugPrint(
+              '   💡 SOLUCIÓN: Actualiza el campo workerCode en Firestore para este socio',
+            );
             debugPrint('=' * 60 + '\n');
-            
+
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -671,7 +759,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       'El admin debe actualizar tu registro con el Número de Trabajador.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
                     ),
                   ],
@@ -679,7 +769,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               ),
             );
           }
-          
+
           // Generar QR de forma segura
           String qrData;
           try {
@@ -711,14 +801,13 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               ),
             );
           }
-          
-          
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
                 const SizedBox(height: 16),
-                
+
                 // Tarjeta del código QR
                 Card(
                   elevation: 4,
@@ -737,13 +826,16 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                         const SizedBox(height: 8),
                         Text(
                           'Escanea este código para registrar tu asistencia',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.7),
+                              ),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 24),
-                        
+
                         // Código QR
                         Container(
                           padding: const EdgeInsets.all(16),
@@ -751,7 +843,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outline.withValues(alpha: 0.3),
                             ),
                           ),
                           child: QrImageView(
@@ -770,9 +864,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                             backgroundColor: Colors.white,
                           ),
                         ),
-                        
+
                         const SizedBox(height: 24),
-                        
+
                         // Información del socio
                         Divider(),
                         const SizedBox(height: 16),
@@ -788,9 +882,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // Nota informativa
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -808,9 +902,12 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       Expanded(
                         child: Text(
                           'Este código QR contiene tu información de identificación. Preséntalo al escáner de asistencia para registrar tu presencia en eventos.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onPrimaryContainer,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onPrimaryContainer,
+                              ),
                         ),
                       ),
                     ],
@@ -838,30 +935,24 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             width: 120,
             child: Text(
               label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w500,
-                fontSize: 14,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 14),
-            ),
-          ),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 14))),
         ],
       ),
     );
   }
 
   /// Widget para tarjeta de información
-  Widget _buildInfoCard(BuildContext context, String title, List<Widget> children) {
+  Widget _buildInfoCard(
+    BuildContext context,
+    String title,
+    List<Widget> children,
+  ) {
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -869,9 +960,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           children: [
             Text(
               title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             const Divider(),

@@ -52,11 +52,7 @@ class ImportService {
   ];
 
   /// Columnas obligatorias (modalidad se valida aparte con [Modalidad.tryParse])
-  static const requiredColumns = [
-    'numero_socio',
-    'nombres',
-    'apellidos',
-  ];
+  static const requiredColumns = ['numero_socio', 'nombres', 'apellidos'];
 
   /// Mapeo de columnas alternativas a columnas estándar
   static const Map<String, List<String>> columnMappings = {
@@ -87,13 +83,7 @@ class ImportService {
       'legajo',
       'trabajador',
     ],
-    'modalidad': [
-      'modalidad',
-      'mod',
-      'modulo',
-      'modalidad_turno',
-      'turno',
-    ],
+    'modalidad': ['modalidad', 'mod', 'modulo', 'modalidad_turno', 'turno'],
     'departamento': ['departamento', 'depto', 'area', 'seccion'],
     'nivel': ['nivel', 'grado', 'categoria', 'cargo'],
   };
@@ -110,7 +100,7 @@ class ImportService {
   static const optionalColumns = ['departamento', 'nivel', 'mod'];
 
   /// Normalizar headers: mapea columnas alternativas a nombres estándar
-  List<String> normalizeHeaders(List<String> headers) {
+  static List<String> normalizeHeadersStatic(List<String> headers) {
     final normalized = <String>[];
     bool hasNames = false;
     bool hasLastNames = false;
@@ -159,7 +149,10 @@ class ImportService {
   }
 
   /// Separar nombre completo en nombres y apellidos
-  Map<String, String> splitFullName(String fullName) {
+  List<String> normalizeHeaders(List<String> headers) =>
+      normalizeHeadersStatic(headers);
+
+  static Map<String, String> splitFullNameStatic(String fullName) {
     final parts = fullName.trim().split(RegExp(r'\s+'));
 
     if (parts.length == 1) {
@@ -178,6 +171,9 @@ class ImportService {
   }
 
   /// Parsear archivo CSV con soporte de comillas, separadores y saltos RFC 4180.
+  Map<String, String> splitFullName(String fullName) =>
+      splitFullNameStatic(fullName);
+
   static List<List<String>> parseCsv(
     Uint8List bytes, {
     String delimiter = ',',
@@ -202,7 +198,7 @@ class ImportService {
   }
 
   /// Validar una fila de datos
-  RowValidationResult validateRow(
+  static RowValidationResult validateRowStatic(
     List<String> row,
     List<String> headers,
     int rowIndex, {
@@ -229,7 +225,7 @@ class ImportService {
     if (hasFullNameColumn && fullNameIndex >= 0 && fullNameIndex < row.length) {
       final fullName = row[fullNameIndex].trim();
       if (fullName.isNotEmpty) {
-        final split = splitFullName(fullName);
+        final split = splitFullNameStatic(fullName);
         data['nombres'] = split['nombres'];
         data['apellidos'] = split['apellidos'];
         debugPrint(
@@ -284,6 +280,22 @@ class ImportService {
       isValid: errors.isEmpty,
       errors: errors,
       data: data,
+    );
+  }
+
+  RowValidationResult validateRow(
+    List<String> row,
+    List<String> headers,
+    int rowIndex, {
+    bool hasFullNameColumn = false,
+    int fullNameIndex = -1,
+  }) {
+    return validateRowStatic(
+      row,
+      headers,
+      rowIndex,
+      hasFullNameColumn: hasFullNameColumn,
+      fullNameIndex: fullNameIndex,
     );
   }
 
@@ -559,8 +571,9 @@ class ImportService {
             documentId ??
             DateTime.now().millisecondsSinceEpoch.toString();
 
-        final modalidadSocio =
-            Modalidad.tryParse(validation.data['modalidad'] as String?);
+        final modalidadSocio = Modalidad.tryParse(
+          validation.data['modalidad'] as String?,
+        );
 
         final member = Member(
           id: memberId,
@@ -911,8 +924,9 @@ class ImportService {
             documentId ??
             DateTime.now().millisecondsSinceEpoch.toString();
 
-        final modalidadSocio =
-            Modalidad.tryParse(validation.data['modalidad'] as String?);
+        final modalidadSocio = Modalidad.tryParse(
+          validation.data['modalidad'] as String?,
+        );
 
         final member = Member(
           id: memberId,

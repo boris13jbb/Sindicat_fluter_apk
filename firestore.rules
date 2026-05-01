@@ -71,6 +71,66 @@ service cloud.firestore {
       return isAuthenticated() && getUserRole() in ['SUPERADMIN', 'ADMIN', 'OPERADOR_ASISTENCIA'];
     }
 
+    function isValidAuditLogCreate() {
+      return request.resource.data.keys().hasOnly([
+          'action',
+          'entityType',
+          'entityId',
+          'userId',
+          'userName',
+          'timestamp',
+          'changes',
+          'description',
+          'platform',
+          'ipAddress',
+        ])
+        && request.resource.data.keys().hasAll([
+          'action',
+          'entityType',
+          'entityId',
+          'userId',
+          'timestamp',
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.action in [
+          'create',
+          'update',
+          'delete',
+          'vote',
+          'import_',
+          'login',
+          'logout',
+          'attendance',
+        ]
+        && request.resource.data.entityType in [
+          'member',
+          'election',
+          'candidate',
+          'vote',
+          'attendanceEvent',
+          'attendanceRecord',
+          'user',
+          'import_',
+        ]
+        && request.resource.data.entityId is string
+        && request.resource.data.timestamp is number
+        && (!('userName' in request.resource.data) ||
+          request.resource.data.userName == null ||
+          request.resource.data.userName is string)
+        && (!('description' in request.resource.data) ||
+          request.resource.data.description == null ||
+          request.resource.data.description is string)
+        && (!('platform' in request.resource.data) ||
+          request.resource.data.platform == null ||
+          request.resource.data.platform is string)
+        && (!('ipAddress' in request.resource.data) ||
+          request.resource.data.ipAddress == null ||
+          request.resource.data.ipAddress is string)
+        && (!('changes' in request.resource.data) ||
+          request.resource.data.changes == null ||
+          request.resource.data.changes is map);
+    }
+
     // ==================== USUARIOS ====================
     
     match /users/{userId} {
@@ -119,7 +179,7 @@ service cloud.firestore {
     
     match /members/{memberId} {
       allow read: if isAuthenticated();
-      allow create: if isSuperAdmin();
+      allow create: if isAdmin();
       allow update: if isSuperAdmin() || isAdmin();
       allow delete: if isSuperAdmin();
     }
@@ -246,7 +306,7 @@ service cloud.firestore {
     
     match /audit_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated(); // Solo append
+      allow create: if isAuthenticated() && isValidAuditLogCreate(); // Solo append
       allow update, delete: if false; // Inmutables
     }
 
@@ -254,7 +314,7 @@ service cloud.firestore {
     
     match /import_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isSuperAdmin();
+      allow create: if isAdmin();
       allow update, delete: if false;
     }
 
