@@ -870,6 +870,18 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                         // Información del socio
                         Divider(),
                         const SizedBox(height: 16),
+                        if (_currentMember!.modalidad != null)
+                          _buildInfoRow(
+                            'Modalidad',
+                            JustificacionHelper.etiquetaModalidad(
+                              _currentMember!.modalidad!,
+                            ),
+                          )
+                        else
+                          _buildInfoRow(
+                            'Modalidad',
+                            'Sin asignar — un administrador puede completarla en Gestión de Socios',
+                          ),
                         _buildInfoRow('Nombre', _currentMember!.fullName),
                         if (_currentMember!.workerCode != null)
                           _buildInfoRow(
