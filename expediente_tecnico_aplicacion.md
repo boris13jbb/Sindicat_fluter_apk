@@ -38,7 +38,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 | Comando | Resultado | Observación |
 |---|---|---|
 | `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
-| `flutter test --no-pub --reporter expanded` | Correcto | 8 pruebas pasan: smoke de login sin sesión, configuración de importación, parser CSV, modalidad de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
+| `flutter test --no-pub --reporter expanded` | Correcto | 10 pruebas pasan: smoke de login sin sesión, scanner, configuración de importación, parser CSV, modalidad de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
 | `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members`/`import_logs` y endurecer contrato de `audit_logs`. |
 | Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
 
@@ -75,6 +75,7 @@ Aplicación
 │   └── Registro de Auditoría
 ├── Perfil
 │   ├── Información de cuenta
+│   ├── Resumen de asistencia y faltas del socio
 │   └── Código QR del socio
 ├── Votación
 │   ├── Listado de elecciones
@@ -114,7 +115,7 @@ Aplicación
 |---|---|---|---|---|
 | Autenticación | Controlar acceso y sesión | Login, Registro | Iniciar sesión, registrarse, recuperar contraseña, cerrar sesión | Firebase Auth, `users`, `AuthProvider` |
 | Inicio | Navegar a módulos según rol | Home | Abrir voto, asistencia, socios, auditoría, perfil | `AuthProvider`, `UserRole` |
-| Perfil | Mostrar datos de cuenta y QR del socio | Mi Perfil | Ver información, ver QR, cerrar sesión | `users`, `members`, `QREncodingHelper` |
+| Perfil | Mostrar datos de cuenta, resumen de asistencia y QR del socio | Mi Perfil | Ver información, ver resumen de asistencias/faltas, ver QR, cerrar sesión | `users`, `members`, `attendance_events`, subcolecciones `asistencias`, `eventos`, `personas`, `QREncodingHelper` |
 | Elecciones | Administración y consulta de elecciones | Elecciones, Crear, Editar, Agregar Candidato | CRUD de elecciones y candidatos | `elections`, `candidates`, `AuditService` |
 | Votación | Emitir un voto único por usuario | Votar | Seleccionar candidato, confirmar voto, ver resultados | `votes`, `candidates`, `elections`, `asistencias`, `members` |
 | Resultados | Visualizar y exportar conteos | Resultados | Ver ranking, exportar CSV/PDF | `elections`, `candidates`, `printing` |
@@ -265,9 +266,9 @@ Aplicación
 
 **Ruta o ubicación:** `/profile`.
 
-**Objetivo de la pantalla:** mostrar información de cuenta y QR personal de asistencia.
+**Objetivo de la pantalla:** mostrar información de cuenta, información sindical vinculada al padrón, resumen global de asistencia/faltas y QR personal de asistencia.
 
-**Elementos visibles:** app bar, logout, tabs `Información` y `Código QR`, avatar, datos de cuenta, datos de socio (**modalidad visible solo como `Modalidad {letra}`** vía `JustificacionHelper.etiquetaModalidad`, p. ej. `Modalidad N`; sin texto descriptivo *Turno Mañana/Tarde/Noche*), QR o mensajes de indisponibilidad.
+**Elementos visibles:** app bar, logout, tabs `Información` y `Código QR`, avatar, datos de cuenta, datos de socio (**modalidad visible solo como `Modalidad {letra}`** vía `JustificacionHelper.etiquetaModalidad`, p. ej. `Modalidad N`; sin texto descriptivo *Turno Mañana/Tarde/Noche*), tarjeta **Resumen de Asistencia** con eventos convocados, asistencias, faltas injustificadas, eventos no convocados y últimos eventos, QR o mensajes de indisponibilidad.
 
 **Acciones disponibles:** alternar pestañas, cerrar sesión, volver.
 
@@ -275,24 +276,26 @@ Aplicación
 1. Carga usuario actual.
 2. Busca socio por email, employeeNumber/workerCode, documentId, escaneo completo y displayName.
 3. En pestaña información muestra cuenta y socio si existe (**valor de modalidad** desde `members.modalidad`; en UI sólo formato **«Modalidad X»**, no etiquetas narrativas de turno).
-4. En QR genera código si existe `workerCode`.
-5. Si no encuentra socio, muestra causas posibles.
+4. Si hay socio vinculado, `UserProfileScreen` escucha `AttendanceService.watchMemberAttendanceSummary(member.id)` y actualiza en tiempo real la tarjeta de resumen.
+5. El resumen cruza `attendance_events/{id}/asistencias`, `attendance_events.miembrosConvocados`, `attendance_events.modalidadesNoConvocadas` y fallback legacy `eventos`/`asistencias`/`personas`.
+6. En QR genera código si existe `workerCode`.
+7. Si no encuentra socio, muestra causas posibles.
 
-**Validaciones esperadas:** usuario autenticado, socio activo, `workerCode` obligatorio para QR.
+**Validaciones esperadas:** usuario autenticado, socio activo, `workerCode` obligatorio para QR; el resumen sólo debe exponerse al socio dueño o a roles administrativos/operativos autorizados desde servicio.
 
-**Datos utilizados:** `users`, `members`, `QREncodingHelper`.
+**Datos utilizados:** `users`, `members`, `attendance_events`, `attendance_events/{id}/asistencias`, `eventos`, `asistencias`, `personas`, `QREncodingHelper`.
 
-**Estados posibles:** cargando socio, socio encontrado, socio no encontrado, sin socios, socio sin workerCode, error de generación QR.
+**Estados posibles:** cargando socio, socio encontrado, socio no encontrado, sin socios, socio sin workerCode, calculando resumen, resumen disponible, error/permisos del resumen, error de generación QR.
 
-**Observaciones técnicas o funcionales:** la pantalla contiene mucha lógica de búsqueda y diagnóstico dentro de la UI.
+**Observaciones técnicas o funcionales:** el resumen se implementa como stream combinado: cambios en eventos, asistencias nuevas, eventos legacy o datos del socio disparan recalculo. Las faltas contabilizadas son injustificadas: asistencia ausente con `justificacion` se muestra como **Ausente justificado** y no suma a `totalFaltas`; socios en `modalidadesNoConvocadas` o fuera de una lista explícita `miembrosConvocados` se muestran como **No convocado** y tampoco suman faltas. Por compatibilidad, legacy considera convocados a todos los socios salvo eventos ya normalizados con `modalidadesNoConvocadas`. La pantalla aún contiene mucha lógica de búsqueda y diagnóstico dentro de la UI.
 
 **Problemas encontrados:** uso intensivo de `debugPrint`; lógica compleja en widget; mensajes al usuario incluyen pasos administrativos extensos.
 
-**Huecos o pendientes por corregir:** falta endpoint/servicio único para resolver socio actual.
+**Huecos o pendientes por corregir:** falta vínculo canónico `users.memberId` para reemplazar heurísticas de usuario↔socio y permitir reglas Firestore más estrictas en lectura de resúmenes.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** mover resolución de socio a servicio dedicado y simplificar mensajes visibles.
+**Recomendación:** mover resolución de socio a servicio dedicado, persistir relación usuario-socio canónica y cubrir el resumen con pruebas de integración/emulator.
 
 ### Pantalla: Listado de Elecciones
 
@@ -663,7 +666,8 @@ Aplicación
 1. Sincroniza `members` → `personas`.
 2. Resuelve **`eventId` efectivo** (legacy desde argumento/selección; reporte desde `widget.attendanceEventId`).
 3. Llama **`registrarAsistenciaDesdeEscaneo`** con **`registrosAttendanceEvents: true`** si el contexto es `attendance_events` (escribe subcolección y resuelve `personaId` en `members`); si no, flujo **`createAsistencia`** legacy.
-4. **`ScannerQRScreen`** recibe **`eventId`** y el mismo flag para el callback.
+4. En caso de éxito, **muestra inmediatamente los datos del socio desde `members`**, incluyendo **Modalidad** (vía `JustificacionHelper.etiquetaModalidad`) con fallback **“Sin asignar”** si el socio no tiene modalidad.
+5. **`ScannerQRScreen`** recibe **`eventId`** y el mismo flag para el callback.
 
 **Validaciones esperadas:** evento resuelto, código no vacío, socio encontrado en modelo reporte (`members`).
 
@@ -696,7 +700,7 @@ Aplicación
 2. `MobileScanner` detecta barcode.
 3. Bloquea duplicados por 2 segundos.
 4. Ejecuta callback de registro.
-5. Muestra éxito o error y reanuda escaneo.
+5. Muestra **overlay temporal** con nombre/identificadores y **Modalidad** (desde `members`) y reanuda escaneo.
 
 **Validaciones esperadas:** permiso de cámara, plataforma compatible, evento válido.
 
@@ -1210,6 +1214,7 @@ Aplicación
 | Registro | Crear usuario | Crea Firebase Auth y `users` | Funcional/parcial | Email validado localmente, padrón activo requerido y reglas restringen rol `VOTER`; falta prueba con Firebase real/emulator | Media |
 | Home | Navegación por rol | Muestra módulos según rol | Funcional/parcial | Guard de rutas implementado; falta prueba manual por rol real | Media |
 | Perfil | Información socio | Muestra **«Modalidad X»** desde `members` (`etiquetaModalidad`) | Funcional/parcial | Matching heurístico usuario↔socio; si no hay `modalidad`, mensaje de pendiente administrativo (sin texto largo de turno) | Media |
+| Perfil | Resumen de asistencia | Stream reactivo con eventos convocados, asistencias, faltas injustificadas, no convocados y últimos eventos | Funcional/parcial | Cruza modelo nuevo y legacy; respeta `miembrosConvocados` y `modalidadesNoConvocadas`; falta prueba con Firebase real/emulator y vínculo canónico `users.memberId` | Alta |
 | Perfil | QR personal | Genera QR desde socio | Parcial | Depende de matching heurístico con `members` y de `workerCode` | Media |
 | Elecciones | Listar elecciones | Streams Firestore | Funcional/parcial | Votantes filtran `isVisibleToVoters`, `isActive` y rango de fechas; falta prueba con datos reales | Media |
 | Elecciones | Crear/editar | CRUD elección | Funcional | Requiere unificar estados | Media |
@@ -1256,13 +1261,14 @@ Aplicación
 | E-022 | Asistencia legacy / Auditoría | Corregido localmente: trazabilidad y borrado consistente | `AsistenciaService` registra auditoría al crear/actualizar/eliminar eventos legacy y al crear/eliminar asistencias legacy; `deleteAsistencia` elimina también la réplica `eventos/{id}/asistencias/{asistenciaId}` cuando el registro global contiene `eventoId`. | Reduce registros huérfanos y mejora trazabilidad operativa de asistencia clásica. | Media/Alta | Validar borrado desde UI con datos reales y revisar registros legacy sin `eventoId`. |
 | E-023 | Socios / Rendimiento | Corregido localmente: paginación básica del padrón | `MembersService.getMembersPage()` expone páginas con `limit` y cursor; `/members` carga 50 socios iniciales, permite **Cargar más socios**, refresca tras alta/edición/cambio de estado y conserva búsqueda/exportación completa como fallback funcional. | Reduce lecturas iniciales y mejora uso del padrón con muchos socios sin cambiar contrato de import/export. | Media | Validar con Firestore real, volumen representativo e índices; implementar búsqueda backend/indexada si el padrón crece mucho. |
 | E-024 | Asistencia / Modalidades no convocadas | Corregido localmente: selector múltiple y exclusión de faltantes | `CrearEventoAsistenciaScreen` reemplaza `Modalidad` simple por chips de **Modalidades no convocadas**; `EventoAsistencia` persiste `modalidadesNoConvocadas: List<String>` y lee `modalidad` legacy como respaldo; `AttendanceService.generateAttendanceReport` excluye esas modalidades del cálculo de faltantes y las muestra como **No convocado / Justificado por modalidad**. | Evita contar como ausentes injustificados a socios que no debían asistir por modalidad/turno. | Alta | Validar con padrón real que todos los socios tengan `members.modalidad`; probar evento con D/N1/N2 excluidas y datos reales de asistencia. |
+| E-025 | Perfil / Asistencia | Corregido localmente: resumen reactivo de asistencias y faltas por socio | `AttendanceService.watchMemberAttendanceSummary(memberId)` combina `attendance_events`, subcolección `asistencias`, `eventos`, `asistencias` legacy y `personas`; `UserProfileScreen` muestra eventos convocados, asistencias, faltas injustificadas, no convocados por modalidad/lista explícita y últimos eventos. | El socio puede auditar su estado de asistencia desde el perfil y el dato se actualiza al registrar eventos/asistencias nuevas. | Alta | Validar con Firebase real/emulator, eventos con `miembrosConvocados` explícitos/vacíos, `modalidadesNoConvocadas`, ausencias justificadas y datos legacy. |
 
 ### Clasificación por tipo
 
-- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022 y E-024; pendientes funcionales relevantes: reporte con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
+- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024 y E-025; pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
 - Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012 queda corregido localmente con pendiente de validación manual.
 - Errores de navegación: E-014 corregido localmente, pendiente validación manual.
-- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**) y E-024 (**modalidades no convocadas opcionales**); faltan pruebas con archivos reales y emulator.
+- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**), E-024 (**modalidades no convocadas opcionales**) y E-025 (**faltas injustificadas vs ausencias justificadas/no convocados**); faltan pruebas con archivos reales y emulator.
 - Errores de permisos: E-001, E-002, E-014, E-019 y E-020 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
 - Errores de rendimiento: E-015 parcialmente mitigado por E-023 en el listado de socios; persisten lecturas completas en búsqueda/exportación y pantallas de asistencia/auditoría.
 - Errores de contenido: instrucciones contradictorias de importación/QR corregidas en perfil; mantener revisión de copy operativo con usuarios reales.
@@ -1272,6 +1278,7 @@ Aplicación
 | ID | Hueco detectado | Módulo relacionado | Riesgo | Recomendación | Prioridad |
 |---|---|---|---|---|---|
 | H-013 | **Cerrado flujo escritura modelo nuevo en app (2026-05-01):** crear (`attendance_events`), detalle con FAB manual/QR, rutas **`AsistenciaEventRouteArgs`**, home segmentado. Persiste decisión organizativa si operación continúa usando solo legacy. | Asistencia / reporte nuevo | Divergencias si el mismo día se mezclan registros inconsistentes fuera del flujo indicado | Comunicación operativa: eventos nuevos uso tab **Reporte** y detalle modelo nuevo | Baja/Media |
+| H-014 | Falta vínculo canónico `users.memberId` para consultas de perfil/resumen | Perfil / Seguridad | El servicio puede proteger por heurísticas, pero reglas Firestore no pueden restringir con precisión cada lectura de resumen por socio sin relación directa | Agregar `memberId` en `users/{uid}` al registrarse/importar o migrar, y luego endurecer reglas `members`/`collectionGroup('asistencias')` | Alta |
 | H-001 | Falta validación manual/test específico del guard por rol | Navegación | Regresión futura en acceso a pantallas por URL/ruta | Crear pruebas widget por rol y ejecutar con cuentas reales | Media |
 | H-002 | Cobertura baja de login/voto/asistencia | QA | Regresiones no detectadas en flujos críticos | Crear tests de widgets y servicios con mocks/emulator | Alta |
 | H-003 | No hay Firebase Emulator tests para reglas | Seguridad | Reglas rotas en producción | Agregar suite de reglas y Java 21+ local | Alta |
@@ -1290,6 +1297,7 @@ Aplicación
 | Área | Problema detectado | Solución sugerida | Beneficio esperado | Prioridad |
 |---|---|---|---|---|
 | Seguridad | Reglas de voto y usuarios corregidas localmente, sin pruebas emulator | Mantener reglas con `diff`, validar con emulator y casos negativos | Voto funcional y menor riesgo de manipulación | Alta |
+| Seguridad | Resumen de asistencia en perfil protegido en servicio, pero sin `users.memberId` canónico para reglas por socio | Persistir relación usuario-socio y endurecer lecturas Firestore por propietario/rol | Menor exposición de datos de asistencia entre socios | Alta |
 | Arquitectura | Legacy + `attendance_events` con rutas y servicios diferenciados | Comunicar proceso operativo por tab; opcional migración de datos | Menos confusión campo vs reporte consolidado | Alta (gestión) |
 | QA | Cobertura automatizada mínima | Ampliar pruebas reales de autenticación, home, rutas y formularios | Suite útil y confiable | Alta |
 | UX | Rutas administrativas ya guardadas localmente, sin test por rol | Cubrir `_RouteGuard` con pruebas y matriz rol-ruta | Experiencia clara y segura | Media |
@@ -1315,9 +1323,10 @@ Aplicación
 | Estados vacíos | Completo/parcial | Implementados en listados principales. |
 | Mensajes al usuario | Parcial | Presentes, pero algunos son excesivos o inconsistentes. |
 | Navegación consistente | Parcial | Rutas nombradas claras; guard y adaptación de operador implementados; falta prueba manual. |
+| Resumen asistencia en perfil | Parcial | Implementado con stream nuevo + legacy y exclusión por modalidad; falta validación Firebase real/emulator y datos representativos. |
 | Auditoría | Parcial | `audit_logs` activo; Historial de Eventos ya se alimenta desde `audit_logs`; `events` queda legacy. |
 | Exportaciones | Parcial | CSV/PDF/XLSX real; falta prueba manual de apertura y filtros por evento/fecha. |
-| Pruebas automatizadas | Parcial | 8 pruebas pasan; cobertura aún mínima para flujos críticos. |
+| Pruebas automatizadas | Parcial | 10 pruebas pasan; cobertura aún mínima para flujos críticos. |
 | Análisis estático | Completo/parcial | `flutter analyze --no-pub` sin issues al 2026-05-01. |
 
 ## 11. Casos de prueba sugeridos
@@ -1341,6 +1350,7 @@ Aplicación
 | TC-015 | Resultados visibilidad | Votante intenta ver resultados antes de tiempo | Respeta `showResultsAutomatically` | Media |
 | TC-016 | Crear evento asistencia | Operador/admin crea evento y opcionalmente marca modalidades D/N1/N2 como no convocadas | Evento aparece en dashboard y persiste `modalidadesNoConvocadas` | Alta |
 | TC-016B | Reporte con modalidades no convocadas | Crear evento legacy con D/N1/N2 excluidas; tener socios activos en esas modalidades sin asistencia | Esos socios aparecen como No convocado / Justificado por modalidad y no suman en faltantes | Alta |
+| TC-016C | Resumen de asistencia en perfil | Entrar como socio; crear/registrar eventos nuevo y legacy con presente, ausente justificado, ausente sin justificación, modalidad no convocada y evento con `miembrosConvocados` que no incluya al socio | La tarjeta del perfil se actualiza en tiempo real; presentes suman asistencias, no convocados por modalidad/lista explícita no suman faltas y sólo ausentes injustificados suman `Faltas injustificadas` | Alta |
 | TC-017 | Scanner sin evento inicial | Abrir scanner desde dashboard, seleccionar evento, ingresar código | Botón registrar se habilita y guarda | Alta |
 | TC-018 | Scanner QR duplicado | Escanear mismo QR dos veces | Segundo intento informa duplicado | Alta |
 | TC-019 | Registro manual existente | Seleccionar socio, guardar asistencia | Crea registro con justificación | Alta |
@@ -1445,7 +1455,9 @@ Prioridades antes de entrega o producción:
 | `PersonaAsistencia` | `lib/core/models/asistencia/persona.dart` | nombres, apellidos, identificador, codigoQR |
 | `AsistenciaRegistro` | `lib/core/models/asistencia/asistencia.dart` | eventoId, personaId, metodoRegistro, justificacion, asistio |
 | `AsistenciaEventRouteArgs` | `lib/features/asistencia/route_args.dart` | `evento` (legacy), `attendanceEventId` (reporte), `isAttendanceReport` |
-| `AttendanceEvent` (DTO Firestore `attendance_events`) | `lib/services/attendance_service.dart` | nombre, fecha, lugar, tipo, miembrosConvocados, activo, creadoPor, estado |
+| `AttendanceEvent` (DTO Firestore `attendance_events`) | `lib/services/attendance_service.dart` | nombre, fecha, lugar, tipo, miembrosConvocados, modalidadesNoConvocadas, activo, creadoPor, estado |
+| `MemberAttendanceSummary` | `lib/services/attendance_service.dart` | totalConvocados, totalAsistencias, totalFaltas, totalNoConvocado, detalles |
+| `AsistenciaDetalle` | `lib/services/attendance_service.dart` | eventId, eventName, fecha, estado, justificacion, isLegacy |
 | `AuditLog` | `lib/core/models/audit_log.dart` | action, entityType, entityId, userId, timestamp |
 | `VotoEvent` | `lib/core/models/voto_event.dart` | type, entityType, result, timestamp |
 | `ImportLog` | `lib/core/models/import_log.dart` | fileName, totalRows, successfulImports, errors, duplicates |
@@ -1467,7 +1479,8 @@ Resultado actual:
 - `test/widget_test.dart`: valida que se muestre Login cuando no hay sesión activa.
 - `test/import_service_test.dart`: valida contrato de columnas obligatorias, separación de `numero_socio` frente a `worker_code`, CSV con campos entre comillas/comas internas, obligatoriedad de `modalidad` y normalización/canonización de alias (`turno` → `modalidad`, `n1` → `N1`).
 - `test/evento_asistencia_test.dart`: valida serialización canónica de `modalidadesNoConvocadas`, lectura de `modalidad` legacy como exclusión única y descarte de valores inválidos/duplicados.
-- Estado: 5 pruebas pasan.
+- `test/scanner_screen_test.dart`: valida que el scanner muestre nombre/modalidad al registrar por código y no bloquee registros cuando la modalidad está sin asignar.
+- Estado: 10 pruebas pasan.
 - Acción recomendada: ampliar cobertura de rutas por rol, reglas Firestore, voto, asistencia e importación con datos representativos.
 
 ### F. Validación de reglas Firestore
@@ -1482,6 +1495,7 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Perfil de socio agrega **Resumen de Asistencia** reactivo: `MemberAttendanceSummary`/`AsistenciaDetalle`, `AttendanceService.watchMemberAttendanceSummary(memberId)` combina `attendance_events`, subcolección `asistencias`, `eventos`, `asistencias` legacy y `personas`; `UserProfileScreen` muestra convocados, asistencias, faltas injustificadas, no convocados por modalidad/lista explícita y últimos eventos. Se documenta pendiente `users.memberId` para endurecer reglas por propietario. | `lib/services/attendance_service.dart`, `lib/features/profile/user_profile_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (10/10) | Aplicado localmente |
 | 2026-05-01 | Crear Evento legacy cambia `Modalidad` única por **Modalidades no convocadas** multi-selección; se persiste `modalidadesNoConvocadas: List<String>`, se lee `modalidad` legacy como respaldo, el detalle permite editar la lista y el reporte excluye esas modalidades de faltantes mostrándolas como **No convocado / Justificado por modalidad**. | `lib/core/models/asistencia/evento.dart`, `lib/features/asistencia/crear_evento_screen.dart`, `lib/features/asistencia/evento_detail_screen.dart`, `lib/features/attendance/attendance_report_screen.dart`, `lib/services/asistencia_service.dart`, `lib/services/attendance_service.dart`, `test/evento_asistencia_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (8/8) | Aplicado localmente |
 | 2026-05-01 | Paginación básica del padrón de socios: `MembersService.getMembersPage()` con límite/cursor y `/members` carga 50 registros iniciales, permite **Cargar más socios** y refresca tras alta/edición/cambio de estado. Búsqueda/exportación conservan lectura completa como fallback funcional. | `lib/services/members_service.dart`, `lib/features/members/members_list_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5) | Aplicado localmente |
 | 2026-05-01 | Asistencia legacy con auditoría y borrado consistente: eventos legacy registran create/update/delete en `audit_logs`; asistencias legacy registran alta/baja; `deleteAsistencia` elimina colección global y réplica por evento cuando puede resolver `eventoId`. | `lib/services/asistencia_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (5/5) | Aplicado localmente |

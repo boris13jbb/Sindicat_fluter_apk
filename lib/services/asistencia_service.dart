@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import '../core/models/asistencia/asistencia.dart';
 import '../core/models/audit_log.dart';
+import '../core/models/asistencia/registro_asistencia_result.dart';
 import '../core/models/member.dart';
 import '../core/reports/attendance_report_generator.dart';
 import '../core/utils/qr_encoding_helper.dart';
@@ -13,9 +14,10 @@ import 'audit_service.dart';
 import 'auth_service.dart';
 import 'members_service.dart';
 import 'attendance_service.dart';
+import 'asistencia_registro_api.dart';
 
 /// Servicio de asistencia con Firestore (compatible con module-asistencia Android).
-class AsistenciaService {
+class AsistenciaService implements AsistenciaRegistroApi {
   AsistenciaService({FirebaseFirestore? firestore, AuditService? audit})
     : _firestore = firestore ?? FirebaseFirestore.instance,
       _audit = audit ?? AuditService();
@@ -31,6 +33,7 @@ class AsistenciaService {
   static const String _asistencias = 'asistencias';
 
   // ---------- Eventos ----------
+  @override
   Stream<List<EventoAsistencia>> getAllEventos() {
     return _firestore
         .collection(_eventos)
@@ -431,7 +434,8 @@ class AsistenciaService {
 
   /// Si [registrosAttendanceEvents] es `true`, escribe en
   /// `attendance_events/{eventoId}/asistencias`; en ese modo [personaId] debe corresponder al id del doc en **`members`**.
-  Future<String?> registrarAsistenciaDesdeEscaneo(
+  @override
+  Future<RegistroAsistenciaResult> registrarAsistenciaDesdeEscaneo(
     String codigoEscaneado,
     String eventoId,
     MetodoRegistro metodo, {
@@ -697,7 +701,10 @@ class AsistenciaService {
 
     if (persona == null) {
       debugPrint('   ❌ ERROR: No se pudo crear/encontrar persona');
-      return null;
+      return RegistroAsistenciaResult(
+        asistenciaId: null,
+        member: memberEncontrado,
+      );
     }
 
     if (registrosAttendanceEvents) {
@@ -710,7 +717,10 @@ class AsistenciaService {
           '   ❌ Evento tipo reporte: el código no coincide con un socio activo '
           '(id en collection members). Confirme padrón o QR del socio.',
         );
-        return null;
+        return RegistroAsistenciaResult(
+          asistenciaId: null,
+          member: memberEncontrado,
+        );
       }
       if (await attendanceApi.hasAttendanceRecord(
         eventoId,
@@ -719,13 +729,20 @@ class AsistenciaService {
         debugPrint(
           '   ⚠️ Esta persona ya tiene registro en este evento (`attendance_events`).',
         );
-        return null;
+        return RegistroAsistenciaResult(
+          asistenciaId: null,
+          member: memberEncontrado,
+        );
       }
-      return attendanceApi.registerAttendance(
+      final asistenciaId = await attendanceApi.registerAttendance(
         eventId: eventoId,
         personaId: personaIdFirestore,
         asistio: true,
         metodo: metodo,
+      );
+      return RegistroAsistenciaResult(
+        asistenciaId: asistenciaId,
+        member: memberEncontrado,
       );
     }
 
@@ -736,7 +753,10 @@ class AsistenciaService {
     );
     if (existente != null) {
       debugPrint('   ⚠️ Ya existe asistencia para esta persona en este evento');
-      return null;
+      return RegistroAsistenciaResult(
+        asistenciaId: null,
+        member: memberEncontrado,
+      );
     }
 
     // Crear registro de asistencia
@@ -767,7 +787,10 @@ class AsistenciaService {
     debugPrint('      - metodoRegistro: ${metodo.value}');
     debugPrint('=========================================\n');
 
-    return asistenciaId;
+    return RegistroAsistenciaResult(
+      asistenciaId: asistenciaId,
+      member: memberEncontrado,
+    );
   }
 
   Future<String?> _memberFirestoreIdParaReporteAttendance(
@@ -861,6 +884,7 @@ class AsistenciaService {
   /// 1. Los miembros importados estén disponibles en las listas de selección de asistencia
   /// 2. El escáner pueda reconocer sus códigos QR
   /// 3. No se requiera exportación/importación manual entre módulos
+  @override
   Future<Map<String, int>> sincronizarMiembrosConPersonas() async {
     try {
       debugPrint(

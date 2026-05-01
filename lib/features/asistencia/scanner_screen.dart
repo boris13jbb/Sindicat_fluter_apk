@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/models/asistencia/asistencia.dart';
+import '../../core/models/asistencia/registro_asistencia_result.dart';
+import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
+import '../../services/asistencia_registro_api.dart';
 import '../../services/attendance_service.dart';
 
 /// En web/escritorio no hay cámara; se usa un campo para pegar el código QR o barcode.
@@ -12,6 +15,7 @@ class ScannerAsistenciaScreen extends StatefulWidget {
     super.key,
     this.evento,
     this.attendanceEventId,
+    this.service,
   });
 
   /// Evento colección **`eventos`** (legacy).
@@ -20,6 +24,9 @@ class ScannerAsistenciaScreen extends StatefulWidget {
   /// Doc en **`attendance_events`** cuando el registro va al modelo de reporte.
   final String? attendanceEventId;
 
+  /// Inyección opcional para pruebas.
+  final AsistenciaRegistroApi? service;
+
   @override
   State<ScannerAsistenciaScreen> createState() =>
       _ScannerAsistenciaScreenState();
@@ -27,15 +34,56 @@ class ScannerAsistenciaScreen extends StatefulWidget {
 
 class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   final _codigoController = TextEditingController();
-  final _service = AsistenciaService();
+  late final AsistenciaRegistroApi _service;
   bool _loading = false;
   String? _mensaje;
   String?
   _eventoIdSeleccionado; // Cambiado a String (ID) para evitar duplicados en Dropdown
 
+  String _etiquetaModalidad(Member? member) {
+    final mod = member?.modalidad;
+    if (mod == null) {
+      return 'Sin asignar — un administrador debe actualizarla en Gestión de Socios';
+    }
+    return JustificacionHelper.etiquetaModalidad(mod);
+  }
+
+  String _detallesSocio(Member? member) {
+    if (member == null) return 'Socio no encontrado en el padrón (members).';
+
+    final buffer = StringBuffer()
+      ..writeln('Nombre: ${member.fullName}')
+      ..writeln('Código trabajador: ${member.workerCode ?? "-"}')
+      ..writeln('Cédula: ${member.documentId ?? "-"}')
+      ..writeln('Modalidad: ${_etiquetaModalidad(member)}');
+
+    return buffer.toString().trimRight();
+  }
+
+  Future<void> _mostrarResultadoRegistro({
+    required String titulo,
+    required String mensaje,
+  }) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(titulo),
+        content: SingleChildScrollView(child: Text(mensaje)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    _service = widget.service ?? AsistenciaService();
     _sincronizarMiembros();
     if (widget.attendanceEventId != null) _cargarMetaAttendance();
   }
@@ -285,19 +333,20 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
       final metodo = codigo.startsWith('{')
           ? MetodoRegistro.escaneoQr
           : MetodoRegistro.escaneoBarcode;
-      final id = await _service.registrarAsistenciaDesdeEscaneo(
+      final result = await _service.registrarAsistenciaDesdeEscaneo(
         codigo,
         eventoFirestoreId,
         metodo,
         registrosAttendanceEvents: attId != null,
       );
       if (!mounted) return;
-      if (id != null) {
-        setState(() => _mensaje = '✅ Asistencia registrada correctamente');
+      if (result.ok) {
         _codigoController.clear();
-        Future.delayed(const Duration(seconds: 1), () {
-          if (mounted) Navigator.pop(context);
-        });
+        await _mostrarResultadoRegistro(
+          titulo: '✅ Asistencia registrada',
+          mensaje: _detallesSocio(result.member),
+        );
+        if (mounted) Navigator.pop(context);
       } else {
         setState(
           () => _mensaje = attId != null
@@ -334,16 +383,23 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                 ? MetodoRegistro.escaneoQr
                 : MetodoRegistro.escaneoBarcode;
 
-            final id = await _service.registrarAsistenciaDesdeEscaneo(
+            final result = await _service.registrarAsistenciaDesdeEscaneo(
               codigo,
               eventoFirestoreId,
               metodo,
               registrosAttendanceEvents: attId != null,
             );
 
-            if (id == null) {
+            if (!result.ok) {
               throw Exception('Ya registrado');
             }
+
+            await _mostrarResultadoRegistro(
+              titulo: '✅ Asistencia registrada',
+              mensaje: _detallesSocio(result.member),
+            );
+
+            return result;
           },
         ),
       ),
@@ -362,7 +418,8 @@ class ScannerQRScreen extends StatefulWidget {
 
   final String eventId;
   final bool registrosAttendanceEvents;
-  final Future<void> Function(String codigo)? onRegistroExitoso;
+  final Future<RegistroAsistenciaResult> Function(String codigo)?
+  onRegistroExitoso;
 
   @override
   State<ScannerQRScreen> createState() => _ScannerQRScreenState();
@@ -374,6 +431,26 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
   String? _mensaje;
   bool _exito = false;
   DateTime? _ultimoEscaneo;
+
+  String _etiquetaModalidad(Member? member) {
+    final mod = member?.modalidad;
+    if (mod == null) return 'Sin asignar';
+    return JustificacionHelper.etiquetaModalidad(mod);
+  }
+
+  String _overlayDetalle(Member? member) {
+    if (member == null) return 'Socio no encontrado en padrón';
+    final worker = member.workerCode?.isNotEmpty == true
+        ? member.workerCode!
+        : '-';
+    final doc = member.documentId?.isNotEmpty == true ? member.documentId! : '-';
+    return [
+      member.fullName,
+      'Modalidad: ${_etiquetaModalidad(member)}',
+      'Trabajador: $worker',
+      'Cédula: $doc',
+    ].join('\n');
+  }
 
   @override
   void dispose() {
@@ -400,10 +477,12 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
     try {
       // Registrar asistencia
       if (widget.onRegistroExitoso != null) {
-        await widget.onRegistroExitoso!(codigo);
+        final result = await widget.onRegistroExitoso!(codigo);
         setState(() {
-          _exito = true;
-          _mensaje = '✅ Registrado correctamente';
+          _exito = result.ok;
+          _mensaje = result.ok
+              ? _overlayDetalle(result.member)
+              : '⚠️ Ya registrado';
         });
       } else {
         // Si no hay callback, solo mostrar el código
@@ -413,8 +492,8 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
         });
       }
 
-      // Auto-reset después de 1.5 segundos para permitir siguiente escaneo
-      Future.delayed(const Duration(milliseconds: 1500), () {
+      // Auto-reset después de 2.5s para permitir validar nombre/modalidad
+      Future.delayed(const Duration(milliseconds: 2500), () {
         if (mounted) {
           setState(() {
             _escaneando = true;
@@ -519,8 +598,8 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),

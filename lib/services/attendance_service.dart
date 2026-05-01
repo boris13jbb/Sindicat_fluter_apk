@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -110,6 +111,48 @@ class _AttendanceReportEvent {
 
   final AttendanceEvent event;
   final bool isLegacy;
+}
+
+/// Estado resumido de un socio frente a un evento de asistencia.
+class AsistenciaDetalle {
+  const AsistenciaDetalle({
+    required this.eventId,
+    required this.eventName,
+    required this.fecha,
+    required this.estado,
+    this.justificacion,
+    this.isLegacy = false,
+  });
+
+  final String eventId;
+  final String eventName;
+  final int fecha;
+  final String estado;
+  final String? justificacion;
+  final bool isLegacy;
+}
+
+/// Resumen global de asistencia del socio autenticado o consultado por admin.
+class MemberAttendanceSummary {
+  const MemberAttendanceSummary({
+    required this.totalConvocados,
+    required this.totalAsistencias,
+    required this.totalFaltas,
+    this.totalNoConvocado = 0,
+    this.detalles = const [],
+  });
+
+  final int totalConvocados;
+  final int totalAsistencias;
+  final int totalFaltas;
+  final int totalNoConvocado;
+  final List<AsistenciaDetalle> detalles;
+
+  static const empty = MemberAttendanceSummary(
+    totalConvocados: 0,
+    totalAsistencias: 0,
+    totalFaltas: 0,
+  );
 }
 
 /// Servicio para gestión de asistencia con cálculo automático de faltas
@@ -380,6 +423,401 @@ class AttendanceService {
   }
 
   // ==================== CÁLCULO DE FALTAS AUTOMÁTICAS ====================
+
+  /// Stream reactivo del resumen global de asistencia de un socio.
+  ///
+  /// Combina el modelo nuevo (`attendance_events/{id}/asistencias`) con el
+  /// legado (`eventos` + `asistencias` + `personas`). En legacy se cruzan varios
+  /// identificadores porque datos antiguos pueden usar `member.id`, número de
+  /// socio, `workerCode`, documento o `personas/{id}`.
+  Stream<MemberAttendanceSummary> watchMemberAttendanceSummary(
+    String memberId,
+  ) async* {
+    await _ensureCanReadMemberSummary(memberId);
+    yield* _watchMemberAttendanceSummaryUnchecked(memberId);
+  }
+
+  Stream<MemberAttendanceSummary> _watchMemberAttendanceSummaryUnchecked(
+    String memberId,
+  ) {
+    late final StreamController<MemberAttendanceSummary> controller;
+    final subscriptions = <StreamSubscription<dynamic>>[];
+    DocumentSnapshot<Map<String, dynamic>>? memberDoc;
+    QuerySnapshot<Map<String, dynamic>>? attendanceEventsSnap;
+    QuerySnapshot<Map<String, dynamic>>? newAttendancesSnap;
+    QuerySnapshot<Map<String, dynamic>>? legacyEventsSnap;
+    QuerySnapshot<Map<String, dynamic>>? legacyAttendancesSnap;
+    QuerySnapshot<Map<String, dynamic>>? personasSnap;
+    var emission = 0;
+
+    Future<void> emitIfReady() async {
+      if (memberDoc == null ||
+          attendanceEventsSnap == null ||
+          newAttendancesSnap == null ||
+          legacyEventsSnap == null ||
+          legacyAttendancesSnap == null ||
+          personasSnap == null) {
+        return;
+      }
+
+      final currentEmission = ++emission;
+      try {
+        final summary = _buildMemberAttendanceSummary(
+          memberDoc: memberDoc!,
+          attendanceEventsSnap: attendanceEventsSnap!,
+          newAttendancesSnap: newAttendancesSnap!,
+          legacyEventsSnap: legacyEventsSnap!,
+          legacyAttendancesSnap: legacyAttendancesSnap!,
+          personasSnap: personasSnap!,
+        );
+        if (!controller.isClosed && currentEmission == emission) {
+          controller.add(summary);
+        }
+      } catch (e, st) {
+        if (!controller.isClosed && currentEmission == emission) {
+          controller.addError(e, st);
+        }
+      }
+    }
+
+    controller = StreamController<MemberAttendanceSummary>.broadcast(
+      onListen: () {
+        subscriptions.add(
+          _firestore.collection('members').doc(memberId).snapshots().listen((
+            snap,
+          ) {
+            memberDoc = snap;
+            emitIfReady();
+          }, onError: controller.addError),
+        );
+        subscriptions.add(
+          _firestore.collection('attendance_events').snapshots().listen((snap) {
+            attendanceEventsSnap = snap;
+            emitIfReady();
+          }, onError: controller.addError),
+        );
+        subscriptions.add(
+          _firestore
+              .collectionGroup('asistencias')
+              .where('personaId', isEqualTo: memberId)
+              .snapshots()
+              .listen((snap) {
+                newAttendancesSnap = snap;
+                emitIfReady();
+              }, onError: controller.addError),
+        );
+        subscriptions.add(
+          _firestore.collection('eventos').snapshots().listen((snap) {
+            legacyEventsSnap = snap;
+            emitIfReady();
+          }, onError: controller.addError),
+        );
+        subscriptions.add(
+          _firestore.collection('asistencias').snapshots().listen((snap) {
+            legacyAttendancesSnap = snap;
+            emitIfReady();
+          }, onError: controller.addError),
+        );
+        subscriptions.add(
+          _firestore.collection('personas').snapshots().listen((snap) {
+            personasSnap = snap;
+            emitIfReady();
+          }, onError: controller.addError),
+        );
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+        subscriptions.clear();
+      },
+    );
+
+    return controller.stream;
+  }
+
+  Future<void> _ensureCanReadMemberSummary(String memberId) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) {
+      throw Exception('Usuario no autenticado');
+    }
+
+    final userDoc = await _firestore.collection('users').doc(uid).get();
+    final userData = userDoc.data() ?? {};
+    final role = ((userData['role'] as String?) ?? 'USER').toUpperCase();
+    if (role == 'SUPERADMIN' ||
+        role == 'ADMIN' ||
+        role == 'OPERADOR_ASISTENCIA') {
+      return;
+    }
+
+    final memberDoc = await _firestore
+        .collection('members')
+        .doc(memberId)
+        .get();
+    final memberData = memberDoc.data();
+    if (memberData == null) {
+      throw Exception('Socio no encontrado');
+    }
+    final member = Member.fromMap(memberData, memberDoc.id);
+    final employeeNumber = (userData['employeeNumber'] as String?) ?? '';
+    final email =
+        (userData['email'] as String?) ?? _auth.currentUser?.email ?? '';
+    final displayName =
+        (userData['displayName'] as String?) ??
+        _auth.currentUser?.displayName ??
+        '';
+
+    final allowed =
+        _sameToken(uid, member.id) ||
+        _sameToken(uid, member.documentId) ||
+        _sameToken(employeeNumber, member.workerCode) ||
+        _sameToken(employeeNumber, member.memberNumber) ||
+        _sameToken(employeeNumber, member.documentId) ||
+        _sameToken(email, member.email) ||
+        _sameToken(displayName, member.fullName);
+
+    if (!allowed) {
+      throw Exception('No tiene permisos para consultar este resumen');
+    }
+  }
+
+  bool _sameToken(String? a, String? b) {
+    final aa = a?.trim().toLowerCase() ?? '';
+    final bb = b?.trim().toLowerCase() ?? '';
+    return aa.isNotEmpty && bb.isNotEmpty && aa == bb;
+  }
+
+  bool _hasAttendanceJustification(AsistenciaRegistro? asistencia) {
+    return asistencia?.justificacion?.trim().isNotEmpty == true;
+  }
+
+  MemberAttendanceSummary _buildMemberAttendanceSummary({
+    required DocumentSnapshot<Map<String, dynamic>> memberDoc,
+    required QuerySnapshot<Map<String, dynamic>> attendanceEventsSnap,
+    required QuerySnapshot<Map<String, dynamic>> newAttendancesSnap,
+    required QuerySnapshot<Map<String, dynamic>> legacyEventsSnap,
+    required QuerySnapshot<Map<String, dynamic>> legacyAttendancesSnap,
+    required QuerySnapshot<Map<String, dynamic>> personasSnap,
+  }) {
+    final memberData = memberDoc.data();
+    if (!memberDoc.exists || memberData == null) {
+      return MemberAttendanceSummary.empty;
+    }
+
+    final member = Member.fromMap(memberData, memberDoc.id);
+    final memberKeys = _memberAttendanceKeys(member);
+    final legacyPersonaIds = _legacyPersonaIdsForMember(
+      member,
+      personasSnap.docs,
+    );
+
+    final attendanceByEvent = <String, AsistenciaRegistro>{};
+    for (final doc in newAttendancesSnap.docs) {
+      final data = doc.data();
+      final eventId =
+          doc.reference.parent.parent?.id ?? data['eventoId']?.toString() ?? '';
+      if (eventId.isEmpty) continue;
+      attendanceByEvent[eventId] = AsistenciaRegistro.fromMap(data, doc.id);
+    }
+
+    final legacyAttendanceByEvent = <String, AsistenciaRegistro>{};
+    for (final doc in legacyAttendancesSnap.docs) {
+      final registro = AsistenciaRegistro.fromMap(doc.data(), doc.id);
+      if (registro.eventoId.isEmpty) continue;
+      final personaKey = _norm(registro.personaId);
+      if (legacyPersonaIds.contains(personaKey)) {
+        legacyAttendanceByEvent[registro.eventoId] = registro;
+      }
+    }
+
+    final detalles = <AsistenciaDetalle>[];
+    var totalConvocados = 0;
+    var totalAsistencias = 0;
+    var totalFaltas = 0;
+    var totalNoConvocado = 0;
+
+    for (final doc in attendanceEventsSnap.docs) {
+      final event = AttendanceEvent.fromMap(doc.data(), doc.id);
+      if (!event.activo) continue;
+
+      final specificList = event.miembrosConvocados.isNotEmpty;
+      final explicitlyConvoked =
+          !specificList ||
+          event.miembrosConvocados.any((id) => _norm(id) == _norm(member.id));
+      if (!explicitlyConvoked) {
+        totalNoConvocado++;
+        detalles.add(
+          AsistenciaDetalle(
+            eventId: event.id,
+            eventName: event.nombre,
+            fecha: event.fecha,
+            estado: 'No convocado',
+            justificacion: 'No incluido en convocatoria',
+          ),
+        );
+        continue;
+      }
+
+      final excludedByModalidad =
+          member.modalidad != null &&
+          event.modalidadesNoConvocadas.contains(member.modalidad!.value);
+      if (excludedByModalidad) {
+        totalNoConvocado++;
+        detalles.add(
+          AsistenciaDetalle(
+            eventId: event.id,
+            eventName: event.nombre,
+            fecha: event.fecha,
+            estado: 'No convocado',
+            justificacion: 'Justificado por modalidad',
+          ),
+        );
+        continue;
+      }
+
+      totalConvocados++;
+      final asistencia = attendanceByEvent[event.id];
+      if (asistencia?.asistio == true) {
+        totalAsistencias++;
+        detalles.add(
+          AsistenciaDetalle(
+            eventId: event.id,
+            eventName: event.nombre,
+            fecha: event.fecha,
+            estado: 'Presente',
+            justificacion: asistencia?.justificacion,
+          ),
+        );
+      } else {
+        final isJustified = _hasAttendanceJustification(asistencia);
+        if (!isJustified) totalFaltas++;
+        detalles.add(
+          AsistenciaDetalle(
+            eventId: event.id,
+            eventName: event.nombre,
+            fecha: event.fecha,
+            estado: isJustified ? 'Ausente justificado' : 'Ausente',
+            justificacion: asistencia?.justificacion,
+          ),
+        );
+      }
+    }
+
+    for (final doc in legacyEventsSnap.docs) {
+      final event = EventoAsistencia.fromMap(doc.data(), doc.id);
+      final excludedByModalidad =
+          member.modalidad != null &&
+          event.modalidadesNoConvocadas.contains(member.modalidad);
+      if (excludedByModalidad) {
+        totalNoConvocado++;
+        detalles.add(
+          AsistenciaDetalle(
+            eventId: event.id,
+            eventName: event.nombre,
+            fecha: event.fecha,
+            estado: 'No convocado',
+            justificacion: 'Justificado por modalidad',
+            isLegacy: true,
+          ),
+        );
+        continue;
+      }
+
+      totalConvocados++;
+      final asistencia =
+          legacyAttendanceByEvent[event.id] ??
+          _legacyAttendanceFromNewGroupFallback(
+            event.id,
+            memberKeys,
+            newAttendancesSnap.docs,
+          );
+      if (asistencia?.asistio == true) {
+        totalAsistencias++;
+        detalles.add(
+          AsistenciaDetalle(
+            eventId: event.id,
+            eventName: event.nombre,
+            fecha: event.fecha,
+            estado: 'Presente',
+            justificacion: asistencia?.justificacion,
+            isLegacy: true,
+          ),
+        );
+      } else {
+        final isJustified = _hasAttendanceJustification(asistencia);
+        if (!isJustified) totalFaltas++;
+        detalles.add(
+          AsistenciaDetalle(
+            eventId: event.id,
+            eventName: event.nombre,
+            fecha: event.fecha,
+            estado: isJustified ? 'Ausente justificado' : 'Ausente',
+            justificacion: asistencia?.justificacion,
+            isLegacy: true,
+          ),
+        );
+      }
+    }
+
+    detalles.sort((a, b) => b.fecha.compareTo(a.fecha));
+    return MemberAttendanceSummary(
+      totalConvocados: totalConvocados,
+      totalAsistencias: totalAsistencias,
+      totalFaltas: totalFaltas,
+      totalNoConvocado: totalNoConvocado,
+      detalles: detalles,
+    );
+  }
+
+  Set<String> _memberAttendanceKeys(Member member) {
+    return {
+      _norm(member.id),
+      _norm(member.memberNumber),
+      _norm(member.workerCode),
+      _norm(member.documentId),
+    }..remove('');
+  }
+
+  Set<String> _legacyPersonaIdsForMember(
+    Member member,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> personaDocs,
+  ) {
+    final keys = _memberAttendanceKeys(member);
+    final ids = <String>{...keys};
+    for (final doc in personaDocs) {
+      final persona = PersonaAsistencia.fromMap(doc.data(), doc.id);
+      final personaKeys = {
+        _norm(persona.id),
+        _norm(persona.identificador),
+        _norm(persona.codigoQR),
+      }..remove('');
+      if (personaKeys.any(keys.contains)) {
+        ids.add(_norm(persona.id));
+      }
+    }
+    return ids;
+  }
+
+  AsistenciaRegistro? _legacyAttendanceFromNewGroupFallback(
+    String eventId,
+    Set<String> memberKeys,
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    for (final doc in docs) {
+      final data = doc.data();
+      final parentEventId =
+          doc.reference.parent.parent?.id ?? data['eventoId']?.toString() ?? '';
+      if (parentEventId != eventId) continue;
+      final registro = AsistenciaRegistro.fromMap(data, doc.id);
+      if (memberKeys.contains(_norm(registro.personaId))) {
+        return registro;
+      }
+    }
+    return null;
+  }
+
+  String _norm(String? value) => value?.trim().toLowerCase() ?? '';
 
   /// Obtener reporte completo de asistencia con faltas calculadas
   Future<AttendanceReport> generateAttendanceReport(String eventId) async {
