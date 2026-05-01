@@ -94,6 +94,13 @@ class AttendanceEvent {
   }
 }
 
+class _AttendanceReportEvent {
+  const _AttendanceReportEvent({required this.event, required this.isLegacy});
+
+  final AttendanceEvent event;
+  final bool isLegacy;
+}
+
 /// Servicio para gestión de asistencia con cálculo automático de faltas
 class AttendanceService {
   AttendanceService({
@@ -136,6 +143,35 @@ class AttendanceService {
       debugPrint('Error obteniendo evento: $e');
       return null;
     }
+  }
+
+  Future<_AttendanceReportEvent?> _getEventForReport(String eventId) async {
+    final event = await getEventById(eventId);
+    if (event != null) {
+      return _AttendanceReportEvent(event: event, isLegacy: false);
+    }
+
+    final legacyDoc = await _firestore.collection('eventos').doc(eventId).get();
+    final legacyData = legacyDoc.data();
+    if (legacyData == null) return null;
+
+    final legacyEvent = EventoAsistencia.fromMap(legacyData, legacyDoc.id);
+    return _AttendanceReportEvent(
+      event: AttendanceEvent(
+        id: legacyEvent.id,
+        nombre: legacyEvent.nombre,
+        descripcion: legacyEvent.descripcion ?? '',
+        fecha: legacyEvent.fecha,
+        lugar: 'No identificado',
+        tipo: legacyEvent.tipoReunion.value.toLowerCase(),
+        activo: true,
+        miembrosConvocados: const [],
+        creadoPor: '',
+        createdAt: legacyEvent.fechaCreacion ?? legacyEvent.fecha,
+        estado: 'programado',
+      ),
+      isLegacy: true,
+    );
   }
 
   /// Crear nuevo evento
@@ -280,51 +316,27 @@ class AttendanceService {
   Future<AttendanceReport> generateAttendanceReport(String eventId) async {
     try {
       // 1. Obtener evento
-      final event = await getEventById(eventId);
-      if (event == null) {
+      final reportEvent = await _getEventForReport(eventId);
+      if (reportEvent == null) {
         throw Exception('Evento no encontrado');
       }
+      final event = reportEvent.event;
 
       // 2. Obtener miembros convocados (padrón)
-      final membersConvoked = <Member>[];
-      if (event.miembrosConvocados.isNotEmpty) {
-        final membersSnapshot = await _firestore
-            .collection('members')
-            .where('id', whereIn: event.miembrosConvocados)
-            .where('status', isEqualTo: MemberStatus.active.name)
-            .get();
-
-        for (final doc in membersSnapshot.docs) {
-          membersConvoked.add(Member.fromMap(doc.data(), doc.id));
-        }
-      } else {
-        // Si no hay miembros específicos, tomar todos los activos
-        final allMembersSnapshot = await _firestore
-            .collection('members')
-            .where('status', isEqualTo: MemberStatus.active.name)
-            .get();
-
-        for (final doc in allMembersSnapshot.docs) {
-          membersConvoked.add(Member.fromMap(doc.data(), doc.id));
-        }
-      }
+      final membersConvoked = await _loadConvokedMembers(
+        event.miembrosConvocados,
+      );
 
       // 3. Obtener asistencias reales
-      final attendancesSnapshot = await _firestore
-          .collection('attendance_events')
-          .doc(eventId)
-          .collection('asistencias')
-          .get();
-
-      final attendances = attendancesSnapshot.docs
-          .map((doc) => AsistenciaRegistro.fromMap(doc.data(), doc.id))
-          .toList();
+      final attendances = await _loadAttendancesForReport(
+        eventId,
+        reportEvent.isLegacy,
+      );
 
       // 4. Calcular presentes y faltantes
-      final attendedMemberIds = attendances
-          .where((a) => a.asistio)
-          .map((a) => a.personaId)
-          .toSet();
+      final attendedMemberIds = reportEvent.isLegacy
+          ? await _resolveLegacyAttendedMemberIds(attendances, membersConvoked)
+          : attendances.where((a) => a.asistio).map((a) => a.personaId).toSet();
 
       final presentMembers = <Member>[];
       final absentMembers = <Member>[];
@@ -359,6 +371,119 @@ class AttendanceService {
       debugPrint('Error generando reporte: $e');
       rethrow;
     }
+  }
+
+  Future<List<Member>> _loadConvokedMembers(List<String> memberIds) async {
+    final members = <Member>[];
+    if (memberIds.isEmpty) {
+      final allMembersSnapshot = await _firestore
+          .collection('members')
+          .where('status', isEqualTo: MemberStatus.active.name)
+          .get();
+
+      for (final doc in allMembersSnapshot.docs) {
+        members.add(Member.fromMap(doc.data(), doc.id));
+      }
+      return members;
+    }
+
+    const batchSize = 30;
+    for (var i = 0; i < memberIds.length; i += batchSize) {
+      final end = i + batchSize < memberIds.length
+          ? i + batchSize
+          : memberIds.length;
+      final batch = memberIds.sublist(i, end);
+      final snapshot = await _firestore
+          .collection('members')
+          .where(FieldPath.documentId, whereIn: batch)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        final member = Member.fromMap(doc.data(), doc.id);
+        if (member.status == MemberStatus.active) {
+          members.add(member);
+        }
+      }
+    }
+    return members;
+  }
+
+  Future<List<AsistenciaRegistro>> _loadAttendancesForReport(
+    String eventId,
+    bool isLegacy,
+  ) async {
+    if (!isLegacy) {
+      final attendancesSnapshot = await _firestore
+          .collection('attendance_events')
+          .doc(eventId)
+          .collection('asistencias')
+          .get();
+
+      return attendancesSnapshot.docs
+          .map((doc) => AsistenciaRegistro.fromMap(doc.data(), doc.id))
+          .toList();
+    }
+
+    final globalSnapshot = await _firestore
+        .collection('asistencias')
+        .where('eventoId', isEqualTo: eventId)
+        .get();
+    if (globalSnapshot.docs.isNotEmpty) {
+      return globalSnapshot.docs
+          .map((doc) => AsistenciaRegistro.fromMap(doc.data(), doc.id))
+          .toList();
+    }
+
+    final subcollectionSnapshot = await _firestore
+        .collection('eventos')
+        .doc(eventId)
+        .collection('asistencias')
+        .get();
+    return subcollectionSnapshot.docs
+        .map((doc) => AsistenciaRegistro.fromMap(doc.data(), doc.id))
+        .toList();
+  }
+
+  Future<Set<String>> _resolveLegacyAttendedMemberIds(
+    List<AsistenciaRegistro> attendances,
+    List<Member> members,
+  ) async {
+    final presentPersonaIds = attendances
+        .where((a) => a.asistio)
+        .map((a) => a.personaId)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (presentPersonaIds.isEmpty || members.isEmpty) return {};
+
+    final identifiers = <String>{...presentPersonaIds};
+    final personaDocs = await Future.wait(
+      presentPersonaIds.map(
+        (id) => _firestore.collection('personas').doc(id).get(),
+      ),
+    );
+
+    for (final doc in personaDocs) {
+      final data = doc.data();
+      if (data == null) continue;
+      final persona = PersonaAsistencia.fromMap(data, doc.id);
+      final identificador = persona.identificador?.trim();
+      if (identificador != null && identificador.isNotEmpty) {
+        identifiers.add(identificador);
+      }
+    }
+
+    return members
+        .where((member) {
+          final memberIdentifiers = <String>{
+            member.id,
+            member.memberNumber,
+            if (member.workerCode?.isNotEmpty == true) member.workerCode!,
+            if (member.documentId?.isNotEmpty == true) member.documentId!,
+          };
+          return memberIdentifiers.any(identifiers.contains);
+        })
+        .map((member) => member.id)
+        .toSet();
   }
 }
 

@@ -34,6 +34,11 @@ class HomeScreen extends StatelessWidget {
       body: Consumer<AuthProvider>(
         builder: (_, auth, __) {
           final user = auth.user;
+          final isAdmin =
+              user?.role == UserRole.admin || user?.role == UserRole.superadmin;
+          final canManageAttendance =
+              isAdmin || user?.role == UserRole.operadorAsistencia;
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: Column(
@@ -75,8 +80,7 @@ class HomeScreen extends StatelessWidget {
                   icon: Icons.how_to_vote,
                   onTap: () => Navigator.pushNamed(context, '/voto/elections'),
                 ),
-                if (user?.role == UserRole.admin ||
-                    user?.role == UserRole.superadmin) ...[
+                if (canManageAttendance) ...[
                   const SizedBox(height: 16),
                   _ModuleCard(
                     title: 'Sistema de Asistencia',
@@ -86,8 +90,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ],
                 // 🆕 Nuevos módulos de gestión sindical
-                if (user?.role == UserRole.admin ||
-                    user?.role == UserRole.superadmin) ...[
+                if (isAdmin) ...[
                   const SizedBox(height: 16),
                   _ModuleCard(
                     title: 'Gestión de Socios',
@@ -96,8 +99,7 @@ class HomeScreen extends StatelessWidget {
                     onTap: () => Navigator.pushNamed(context, '/members'),
                   ),
                 ],
-                if (user?.role == UserRole.admin ||
-                    user?.role == UserRole.superadmin) ...[
+                if (isAdmin) ...[
                   const SizedBox(height: 16),
                   _ModuleCard(
                     title: 'Registro de Auditoría',

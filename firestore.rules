@@ -18,6 +18,35 @@ service cloud.firestore {
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
+
+    function electionIsOpen(electionId) {
+      let election = get(/databases/$(database)/documents/elections/$(electionId)).data;
+      return election.isActive == true
+        && election.isVisibleToVoters == true
+        && election.startDate is number
+        && election.endDate is number
+        && election.startDate <= request.time.toMillis()
+        && election.endDate >= request.time.toMillis();
+    }
+
+    function candidateExists(electionId, candidateId) {
+      return exists(/databases/$(database)/documents/elections/$(electionId)/candidates/$(candidateId));
+    }
+
+    function userVoteId(electionId) {
+      return electionId + '_' + request.auth.uid;
+    }
+
+    function userVotePath(electionId) {
+      return /databases/$(database)/documents/elections/$(electionId)/votes/$(userVoteId(electionId));
+    }
+
+    function ownVoteCreatedInRequest(electionId) {
+      return !exists(userVotePath(electionId))
+        && existsAfter(userVotePath(electionId))
+        && getAfter(userVotePath(electionId)).data.electionId == electionId
+        && getAfter(userVotePath(electionId)).data.userId == request.auth.uid;
+    }
     
     // Obtener rol del usuario (maneja caso donde documento no existe)
     function getUserRole() {
@@ -105,9 +134,12 @@ service cloud.firestore {
       // Esto permite que usuarios VOTER incrementen totalVotes sin poder modificar otros campos
       allow update: if isAdmin() || (
         isAuthenticated() && 
+        electionIsOpen(electionId) &&
+        ownVoteCreatedInRequest(electionId) &&
         changedKeys().hasOnly(['totalVotes', 'updatedAt']) &&
         request.resource.data.totalVotes is number &&
-        request.resource.data.totalVotes == resource.data.totalVotes + 1
+        request.resource.data.totalVotes == resource.data.totalVotes + 1 &&
+        request.resource.data.updatedAt is number
       );
       
       allow delete: if isSuperAdmin();
@@ -121,6 +153,9 @@ service cloud.firestore {
         // Esto permite que usuarios VOTER incrementen voteCount sin poder modificar otros campos
         allow update: if isAdmin() || (
           isAuthenticated() && 
+          electionIsOpen(electionId) &&
+          ownVoteCreatedInRequest(electionId) &&
+          getAfter(userVotePath(electionId)).data.candidateId == candidateId &&
           changedKeys().hasOnly(['voteCount']) &&
           request.resource.data.voteCount is number &&
           request.resource.data.voteCount == resource.data.voteCount + 1
@@ -135,7 +170,7 @@ service cloud.firestore {
         // Admin/superadmin pueden leer todos los votos para reportes
         allow read: if isAdmin() || (
           isAuthenticated() &&
-          resource.data.userId == request.auth.uid
+          voteId == userVoteId(electionId)
         );
         allow create: if isAuthenticated()
                 && request.resource.data.keys().hasOnly([
@@ -144,9 +179,13 @@ service cloud.firestore {
                   'candidateId',
                   'votedAt',
                 ])
+                && electionIsOpen(electionId)
                 && request.resource.data.electionId == electionId
                 && request.resource.data.userId == request.auth.uid
-                && voteId == request.resource.data.electionId + '_' + request.resource.data.userId;
+                && request.resource.data.candidateId is string
+                && candidateExists(electionId, request.resource.data.candidateId)
+                && request.resource.data.votedAt == request.time
+                && voteId == userVoteId(electionId);
         allow update, delete: if false; // Los votos son inmutables
       }
     }

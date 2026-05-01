@@ -107,8 +107,8 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
-    final isAdmin = user?.role == UserRole.admin ||
-        user?.role == UserRole.superadmin;
+    final isAdmin =
+        user?.role == UserRole.admin || user?.role == UserRole.superadmin;
     if (!isAdmin) {
       return const Scaffold(body: Center(child: Text('Acceso denegado')));
     }
@@ -412,12 +412,32 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
     BuildContext context,
     Candidate c,
   ) async {
+    if (c.voteCount > 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('No se puede eliminar'),
+          content: Text(
+            'El candidato "${c.name}" tiene ${c.voteCount} voto(s) registrados. '
+            'Para conservar la trazabilidad del resultado, no se permite eliminarlo.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar candidato'),
         content: Text(
-          '¿Eliminar a "${c.name}"? Se perderán sus votos asociados.',
+          '¿Eliminar a "${c.name}"? Esta acción no se puede deshacer.',
         ),
         actions: [
           TextButton(
@@ -435,11 +455,19 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
       ),
     );
     if (ok == true && context.mounted) {
-      await _electionService.deleteCandidate(widget.electionId, c.id);
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Candidato eliminado')));
+      try {
+        await _electionService.deleteCandidate(widget.electionId, c.id);
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Candidato eliminado')));
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Error: $e')));
+        }
       }
     }
   }

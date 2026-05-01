@@ -11,7 +11,7 @@
 | Roles identificados | `SUPERADMIN`, `ADMIN`, `OPERADOR_ASISTENCIA`, `VOTER`, `USER`. |
 | Tecnologías utilizadas | Flutter, Dart, Firebase Core, Firebase Auth, Cloud Firestore, Provider, PDF/Printing, File Picker, Excel, CSV, Mobile Scanner, QR Flutter, Share Plus. |
 | Backend / servicios externos | Firebase Authentication y Cloud Firestore. |
-| Estado actual estimado | MVP avanzado / desarrollo funcional. No se recomienda producción sin corregir hallazgos críticos de reglas, pruebas, rutas protegidas y consistencia entre colecciones de asistencia. |
+| Estado actual estimado | MVP avanzado / desarrollo funcional. Se aplicaron correcciones críticas locales en reglas, pruebas mínimas, rutas protegidas e importación; no se recomienda producción sin validar con usuarios/datos reales y resolver consistencia entre colecciones de asistencia. |
 | Arquitectura | Capa de UI en `lib/features`, estado global en `lib/providers`, servicios en `lib/services`, modelos en `lib/core/models`, tema y widgets compartidos en `lib/core`. |
 | Punto de entrada | `lib/main.dart`. Inicializa Firebase con timeout de 10 segundos y configura Firestore offline fuera de Web. |
 
@@ -37,9 +37,10 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 
 | Comando | Resultado | Observación |
 |---|---|---|
-| `flutter analyze --no-pub` | Falló con 115 issues | Mayormente warnings e infos: imports no usados, APIs deprecadas, código no usado, casts innecesarios y scripts con `print`. |
-| `flutter test --no-pub --reporter expanded` | Falló | `test/widget_test.dart` conserva el test de contador por defecto y espera textos `0` y `1`, inexistentes en la app real. |
-| `flutter analyze` y `flutter test` iniciales | Timeout a 120s | Se reintentó con `--no-pub`; el segundo intento sí produjo resultados. |
+| `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
+| `flutter test --no-pub --reporter expanded` | Correcto | 2 pruebas pasan: smoke de login sin sesión y configuración de columnas de importación. |
+| `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run. |
+| Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
 
 ### Limitaciones de la revisión
 
@@ -49,6 +50,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 - No se revisaron capturas de pantalla ni diseño visual en navegador/dispositivo.
 - No se validaron índices Firestore reales.
 - No se probaron credenciales, roles reales ni permisos desde usuarios distintos.
+- Las rutas protegidas se validaron por análisis estático y pruebas automatizadas generales; falta prueba manual por rol real.
 - Cualquier comportamiento dependiente de datos existentes queda marcado como pendiente de confirmar.
 
 ## 3. Mapa general de la aplicación
@@ -210,13 +212,13 @@ Aplicación
 
 **Observaciones técnicas o funcionales:** `AuthProvider` usa rol `VOTER` por defecto, mientras `AuthService` tiene default `USER`; en el flujo actual de UI se pasa `VOTER`.
 
-**Problemas encontrados:** reglas Firestore actuales permiten `create` de `users/{uid}` sin validar que el rol sea `VOTER`, contradiciendo el criterio de seguridad documentado en AGENTS.
+**Problemas encontrados:** corregido localmente. Las reglas Firestore ahora restringen `create` de `users/{uid}` al propio usuario, con campos permitidos y rol `VOTER`.
 
 **Huecos o pendientes por corregir:** falta validación de formato email y unicidad de número de trabajador frente a `members`.
 
 **Prioridad de corrección:** Alta.
 
-**Recomendación:** reforzar regla de creación de usuario para impedir escalamiento de rol y validar relación con padrón si el negocio lo requiere.
+**Recomendación:** mantener la restricción de rol en reglas, agregar pruebas con Firebase Emulator y validar relación con padrón si el negocio lo requiere.
 
 ### Pantalla: Home / Dashboard principal
 
@@ -232,24 +234,24 @@ Aplicación
 1. Se obtiene usuario desde `AuthProvider`.
 2. Se muestra tarjeta de bienvenida.
 3. Siempre se muestra Sistema de Voto.
-4. Para `ADMIN` o `SUPERADMIN` se muestran Asistencia, Socios y Auditoría.
+4. Para `ADMIN` o `SUPERADMIN` se muestran Asistencia, Socios y Auditoría; para `OPERADOR_ASISTENCIA` se muestra Asistencia.
 5. El usuario toca una tarjeta y navega al módulo.
 
-**Validaciones esperadas:** rutas administrativas deberían protegerse por rol además de ocultarse visualmente.
+**Validaciones esperadas:** rutas administrativas y operativas protegidas por rol además de ocultarse visualmente.
 
 **Datos utilizados:** `AuthProvider.user`, `UserRole`.
 
 **Estados posibles:** con usuario, sin usuario parcial, logout.
 
-**Observaciones técnicas o funcionales:** la UI oculta módulos administrativos, pero muchas rutas no tienen guardia propia.
+**Observaciones técnicas o funcionales:** corregido localmente. `main.dart` incorpora guard de autenticación y roles para rutas internas; Home fue alineado para mostrar Asistencia a `OPERADOR_ASISTENCIA`.
 
-**Problemas encontrados:** usuarios podrían intentar abrir rutas administrativas por nombre; la protección queda delegada a Firestore y a checks parciales por pantalla.
+**Problemas encontrados:** mitigado localmente. Si un usuario autenticado abre una ruta no autorizada por nombre, se muestra pantalla de "Sin permisos".
 
-**Huecos o pendientes por corregir:** falta middleware/guard de rutas por rol.
+**Huecos o pendientes por corregir:** falta prueba manual con cuentas reales por rol y prueba widget específica del guard.
 
-**Prioridad de corrección:** Alta.
+**Prioridad de corrección:** Media.
 
-**Recomendación:** crear un wrapper de ruta protegida por rol y aplicarlo a rutas administrativas.
+**Recomendación:** mantener el wrapper `_RouteGuard`, agregar matriz rol-ruta y cubrir accesos directos con tests automatizados.
 
 ### Pantalla: Mi Perfil
 
@@ -539,15 +541,15 @@ Aplicación
 
 **Estados posibles:** cargando, vacío, error, con eventos.
 
-**Observaciones técnicas o funcionales:** la pantalla no valida rol internamente.
+**Observaciones técnicas o funcionales:** la pantalla queda protegida desde el guard central de rutas; internamente no duplica la validación.
 
-**Problemas encontrados:** ruta administrativa sin guard de rol en UI.
+**Problemas encontrados:** corregido localmente. `/asistencia` y subrutas permiten `ADMIN`, `SUPERADMIN` y `OPERADOR_ASISTENCIA`; usuarios sin rol autorizado ven "Sin permisos".
 
-**Huecos o pendientes por corregir:** falta soporte explícito para `OPERADOR_ASISTENCIA` en Home; reglas sí contemplan operador pero Home solo muestra asistencia a admin/superadmin.
+**Huecos o pendientes por corregir:** falta prueba manual con cuenta real `OPERADOR_ASISTENCIA` y test widget de acceso directo por ruta.
 
-**Prioridad de corrección:** Alta.
+**Prioridad de corrección:** Media.
 
-**Recomendación:** alinear navegación UI con roles de reglas: permitir operador y bloquear no autorizados.
+**Recomendación:** documentar matriz rol-ruta y agregar pruebas automatizadas para rutas de asistencia.
 
 ### Pantalla: Crear Evento de Asistencia
 
@@ -1161,21 +1163,21 @@ Aplicación
 |---|---|---|---|---|---|
 | Login | Iniciar sesión | Acceso por email/password | Parcial | Funciona por diseño, falta validar email y error de perfil faltante | Alta |
 | Login | Recuperar contraseña | Envía correo Firebase | Parcial | Botón puede quedar deshabilitado por falta de listener | Media |
-| Registro | Crear usuario | Crea Firebase Auth y `users` | Parcial | Riesgo en reglas por rol no restringido | Alta |
-| Home | Navegación por rol | Muestra módulos según rol | Parcial | Falta guard global de rutas | Alta |
+| Registro | Crear usuario | Crea Firebase Auth y `users` | Parcial | Reglas locales restringen rol `VOTER`; falta prueba con Firebase real/emulator | Media |
+| Home | Navegación por rol | Muestra módulos según rol | Funcional/parcial | Guard de rutas implementado; falta prueba manual por rol real | Media |
 | Perfil | QR personal | Genera QR desde socio | Parcial | Depende de matching heurístico con `members` | Media |
-| Elecciones | Listar elecciones | Streams Firestore | Parcial | Votantes no filtran `isActive` | Alta |
+| Elecciones | Listar elecciones | Streams Firestore | Funcional/parcial | Votantes filtran `isVisibleToVoters`, `isActive` y rango de fechas; falta prueba con datos reales | Media |
 | Elecciones | Crear/editar | CRUD elección | Funcional | Requiere unificar estados | Media |
-| Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Parcial | Eliminar candidato puede romper conteos | Alta |
-| Voto | Emitir voto | Batch de voto y contadores | Riesgo crítico | Reglas pueden bloquear o permitir inconsistencias | Alta |
+| Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Funcional/parcial | Eliminación bloqueada si el candidato tiene votos; falta test automatizado | Media |
+| Voto | Emitir voto | Batch de voto y contadores | Parcial | Reglas locales compilan y validan voto propio/contadores; falta suite de reglas con emulator | Alta |
 | Resultados | Ver conteos | Ranking en tiempo real | Parcial | Visibilidad para votantes no usa `showResultsAutomatically` | Media |
 | Asistencia | Crear evento legacy | Crea `eventos` | Funcional | Modelo distinto a `attendance_events` | Alta |
-| Asistencia | Scanner | QR/código/manual | Parcial | Botón manual puede quedar deshabilitado | Alta |
+| Asistencia | Scanner | QR/código/manual | Funcional/parcial | Usa evento real seleccionado o inicial; falta prueba de cámara/dispositivo | Media |
 | Asistencia | Registro manual | Alta manual con justificación | Parcial | Selector no escala | Media |
 | Asistencia | Exportar | CSV/PDF/Excel | Parcial | Excel puede ser CSV con extensión XLSX | Media |
-| Asistencia | Reporte faltantes | Calcula ausentes | No funcional/parcial | Usa `attendance_events` pero se invoca desde `eventos` | Alta |
-| Socios | CRUD | Crear/editar/activar/desactivar | Parcial | Falta unicidad workerCode | Alta |
-| Socios | Importación masiva | CSV/Excel a `members` | Parcial | UI y servicio discrepan en documento obligatorio | Alta |
+| Asistencia | Reporte faltantes | Calcula ausentes | Funcional/parcial | Soporta `attendance_events` y fallback legacy `eventos/asistencias/personas`; falta prueba con datos reales | Media |
+| Socios | CRUD | Crear/editar/activar/desactivar | Funcional/parcial | Unicidad de número, documento y `workerCode` validada en crear/actualizar; falta prueba automatizada con mocks/emulator | Media |
+| Socios | Importación masiva | CSV/Excel a `members` | Funcional/parcial | `documento` ya es opcional y hay control de duplicados en archivo/Firestore; falta parser CSV robusto | Media |
 | Auditoría | `audit_logs` | Registra acciones críticas | Parcial | Sin paginación, índices pendientes | Media |
 | Auditoría | `events` legacy | Historial de eventos voto | Pendiente | No se encontró uso de `logEvent` | Media |
 
@@ -1183,29 +1185,29 @@ Aplicación
 
 | ID | Pantalla/Módulo | Problema | Descripción | Impacto | Prioridad | Recomendación |
 |---|---|---|---|---|---|---|
-| E-001 | Firestore reglas / Voto | Regla de actualización parcial incorrecta | Usa `request.resource.data.keys().hasOnly` para updates de documentos con más campos. | Votos de VOTER pueden fallar con `permission-denied`. | Alta | Usar `request.resource.data.diff(resource.data).affectedKeys().hasOnly(...)`. |
-| E-002 | Firestore reglas / Users | Creación de usuario sin restricción de rol | `allow create` no valida `role == 'VOTER'`. | Riesgo de escalamiento si cliente manipula payload. | Alta | Restringir campos y rol en create. |
-| E-003 | Elecciones | Votantes ven elecciones inactivas | `getActiveElections` no filtra `isActive`. | Puede permitir votar en elección desactivada. | Alta | Agregar filtro `isActive`. |
-| E-004 | Scanner | Botón manual deshabilitado | Usa `_evento` incompleto en vez de `_eventoReal`. | Registro manual desde scanner sin evento puede no funcionar. | Alta | Cambiar condición a `_eventoReal != null`. |
-| E-005 | Reporte asistencia | Colección equivocada | Pantalla de reporte busca `attendance_events`, pero se abre desde `eventos`. | Reporte puede fallar siempre desde flujo legacy. | Alta | Unificar fuentes o adaptar reporte. |
-| E-006 | Socios importación | Documento opcional vs obligatorio | UI dice `documento` opcional, servicio lo exige. | Importaciones rechazadas inesperadamente. | Alta | Alinear contrato. |
-| E-007 | Socios | Falta unicidad workerCode | Create/import no validan duplicados por workerCode de forma consistente. | Sobrescrituras o socios duplicados. | Alta | Validar workerCode y usar ID consistente. |
-| E-008 | Candidatos | Eliminar candidato con votos | No recalcula votos ni bloquea acción. | Resultados inconsistentes. | Alta | Bloquear eliminación si tiene votos o recalcular. |
-| E-009 | Tests | Test por defecto inválido | Busca contador `0/1`. | Suite de pruebas falla. | Media | Reemplazar por smoke test real. |
+| E-001 | Firestore reglas / Voto | Corregido localmente: regla de actualización parcial | Se cambió a validación de campos modificados con `diff`, voto propio y contadores exactos. | Reduce fallos `permission-denied` y manipulación de contadores. | Alta | Agregar pruebas con Firebase Emulator antes de producción. |
+| E-002 | Firestore reglas / Users | Corregido localmente: creación de usuario restringida | `allow create` valida usuario propietario, campos permitidos y `role == 'VOTER'`. | Reduce riesgo de escalamiento si cliente manipula payload. | Alta | Validar con emulator y usuarios reales. |
+| E-003 | Elecciones | Corregido localmente: filtro de elecciones activas | `getActiveElections` filtra `isActive`, visibilidad y rango de fechas. | Evita mostrar elecciones desactivadas a votantes. | Media | Cubrir con prueba de servicio o integración. |
+| E-004 | Scanner | Corregido localmente: evento real seleccionado | El botón/registro usa `_eventoReal`, contemplando evento inicial o seleccionado. | Permite registrar asistencia desde scanner con evento seleccionado. | Media | Probar en dispositivo con cámara. |
+| E-005 | Reporte asistencia | Corregido localmente: fallback legacy | El reporte detecta evento nuevo o legacy; para `eventos` lee `asistencias/personas` y cruza contra `members`. | Evita fallo al abrir reporte desde detalle legacy. | Media | Validar con datos reales y definir fuente canónica futura. |
+| E-006 | Socios importación | Corregido localmente: documento opcional | `requiredColumns` queda en `numero_socio`, `nombres`, `apellidos`; `documento` no es obligatorio. | Evita rechazos inesperados de importación. | Media | Mantener prueba unitaria del contrato de columnas. |
+| E-007 | Socios | Corregido localmente: unicidad de identificadores | Crear/actualizar validan `memberNumber`, `documentId` y `workerCode`; importación valida duplicados en archivo y Firestore. | Reduce sobrescrituras o socios duplicados. | Media | Agregar pruebas con mocks/emulator para altas y ediciones. |
+| E-008 | Candidatos | Corregido localmente: bloqueo de eliminación con votos | UI y servicio impiden eliminar candidatos con `voteCount > 0` o votos existentes en `votes`. | Reduce inconsistencias en resultados. | Media | Agregar prueba de servicio/UI para candidato con votos. |
+| E-009 | Tests | Corregido localmente: test por defecto reemplazado | La suite actual pasa con smoke real de login sin sesión y test de contrato de importación. | La base de QA vuelve a ser ejecutable. | Media | Ampliar cobertura de login, roles, voto y asistencia. |
 | E-010 | Login | Recuperación de contraseña | Botón Enviar puede no habilitarse al escribir. | Usuario no puede solicitar reset. | Media | Listener/setState en diálogo. |
 | E-011 | `events` | Historial sin escrituras | `EventService.logEvent` no se usa. | Historial de eventos vacío. | Media | Consolidar con `audit_logs`. |
 | E-012 | Exportar asistencia | XLSX no real | Genera CSV bytes con extensión `.xlsx`. | Confusión o error al abrir archivo. | Media | Generar XLSX real o exportar como CSV. |
 | E-013 | CSV import | Parser manual | No soporta comillas/comas internas. | Datos corruptos en importaciones reales. | Media | Usar paquete CSV robusto. |
-| E-014 | Permisos UI | Rutas sin guard | Módulos ocultos en Home, pero rutas pueden abrirse. | UX confusa y errores Firestore. | Alta | Implementar guard por rol. |
+| E-014 | Permisos UI | Corregido localmente: rutas con guard | Las rutas internas se protegen por autenticación y roles; usuarios no autorizados ven "Sin permisos". | UX más clara y menor exposición accidental. | Media | Agregar tests de rutas por rol y validación manual. |
 | E-015 | Performance | Lecturas completas | Members/personas/asistencias se cargan completos en varias pantallas. | Rendimiento bajo en padrones grandes. | Media | Paginación, filtros, índices. |
 
 ### Clasificación por tipo
 
-- Errores funcionales: E-001, E-003, E-004, E-005, E-008, E-009, E-010.
+- Errores funcionales: E-010; corregidos localmente: E-001, E-003, E-004, E-005, E-008, E-009.
 - Errores visuales/UX: E-012, mensajes extensos en perfil/importación, falta de filtros.
-- Errores de navegación: E-014.
-- Errores de validación: E-002, E-006, E-007, E-013.
-- Errores de permisos: E-001, E-002, E-014.
+- Errores de navegación: E-014 corregido localmente, pendiente validación manual.
+- Errores de validación: E-013; corregidos localmente: E-002, E-006, E-007.
+- Errores de permisos: E-001, E-002, E-014 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
 - Errores de rendimiento: E-015.
 - Errores de contenido: instrucciones contradictorias en importación.
 
@@ -1213,10 +1215,10 @@ Aplicación
 
 | ID | Hueco detectado | Módulo relacionado | Riesgo | Recomendación | Prioridad |
 |---|---|---|---|---|---|
-| H-001 | No hay guard central de rutas por rol | Navegación | Acceso a pantallas no autorizadas por URL/ruta | Crear widget `RoleGuard` | Alta |
-| H-002 | No hay pruebas reales de login/voto/asistencia | QA | Regresiones no detectadas | Crear tests de widgets y servicios con mocks/emulator | Alta |
-| H-003 | No hay Firebase Emulator tests para reglas | Seguridad | Reglas rotas en producción | Agregar suite de reglas | Alta |
-| H-004 | Dos modelos de asistencia coexistiendo | Asistencia | Reportes y elegibilidad inconsistentes | Migración o adaptador único | Alta |
+| H-001 | Falta validación manual/test específico del guard por rol | Navegación | Regresión futura en acceso a pantallas por URL/ruta | Crear pruebas widget por rol y ejecutar con cuentas reales | Media |
+| H-002 | Cobertura baja de login/voto/asistencia | QA | Regresiones no detectadas en flujos críticos | Crear tests de widgets y servicios con mocks/emulator | Alta |
+| H-003 | No hay Firebase Emulator tests para reglas | Seguridad | Reglas rotas en producción | Agregar suite de reglas y Java 21+ local | Alta |
+| H-004 | Dos modelos de asistencia coexistiendo | Asistencia | Divergencias futuras en reportes/elegibilidad si no se formaliza el adaptador | Definir fuente canónica o contrato de sincronización | Alta |
 | H-005 | No hay paginación | Socios/asistencia/auditoría | Lentitud con muchos datos | Implementar paginación | Media |
 | H-006 | No hay confirmación para algunas acciones sensibles | Exportaciones/estado | Acciones accidentales | Revisar UX de confirmaciones | Baja |
 | H-007 | No hay búsqueda avanzada en registro manual | Asistencia | Difícil operar con muchos socios | Selector searchable | Media |
@@ -1230,13 +1232,13 @@ Aplicación
 
 | Área | Problema detectado | Solución sugerida | Beneficio esperado | Prioridad |
 |---|---|---|---|---|
-| Seguridad | Reglas de voto y usuarios débiles | Reescribir reglas con `diff`, validar campos permitidos y roles | Voto funcional y menor riesgo de manipulación | Alta |
-| Arquitectura | Asistencia legacy vs nueva | Definir una fuente canónica o adaptador | Menos errores en reportes/elegibilidad | Alta |
-| QA | Test por defecto falla | Reemplazar por pruebas reales de autenticación, home, rutas y formularios | Suite útil y confiable | Alta |
-| UX | Rutas administrativas no guardadas | Guard por rol con pantalla "sin permisos" | Experiencia clara y segura | Alta |
-| Datos | WorkerCode no único | Índice funcional y validación antes de crear/importar | Evita duplicidad crítica | Alta |
+| Seguridad | Reglas de voto y usuarios corregidas localmente, sin pruebas emulator | Mantener reglas con `diff`, validar con emulator y casos negativos | Voto funcional y menor riesgo de manipulación | Alta |
+| Arquitectura | Asistencia legacy vs nueva mitigada con adaptador de reporte | Definir una fuente canónica o formalizar adaptadores | Menos errores en reportes/elegibilidad | Alta |
+| QA | Cobertura automatizada mínima | Ampliar pruebas reales de autenticación, home, rutas y formularios | Suite útil y confiable | Alta |
+| UX | Rutas administrativas ya guardadas localmente, sin test por rol | Cubrir `_RouteGuard` con pruebas y matriz rol-ruta | Experiencia clara y segura | Media |
+| Datos | WorkerCode corregido localmente, sin test dedicado | Mantener validación en crear/actualizar/importar y agregar prueba de servicio | Evita duplicidad crítica | Media |
 | Rendimiento | Lecturas completas | Paginación, filtros Firestore, cache | Mejor desempeño con padrones grandes | Media |
-| Importación | CSV manual e instrucciones inconsistentes | Parser robusto, plantilla y prevalidación | Menos errores operativos | Alta |
+| Importación | CSV manual; contrato de columnas ya alineado | Parser robusto, plantilla y prevalidación | Menos errores operativos | Media |
 | Auditoría | Dos colecciones de auditoría | Consolidar o documentar responsabilidades | Trazabilidad completa | Media |
 | Accesibilidad | No verificada | Agregar labels, contraste, navegación teclado | Cumplimiento y usabilidad | Media |
 | Documentación | Falta matriz rol-permiso vigente | Documentar roles vs pantallas vs reglas | Mejor alineación producto/desarrollo | Alta |
@@ -1246,20 +1248,20 @@ Aplicación
 | Ítem | Estado | Observación |
 |---|---|---|
 | Login funcional | Parcial | Flujo implementado, falta validación email y reset presenta riesgo. |
-| Registro funcional | Parcial | Implementado, reglas deben restringir rol. |
+| Registro funcional | Parcial | Implementado; reglas locales restringen rol, falta validar con Firebase real/emulator. |
 | Validaciones de formularios | Parcial | Hay obligatorios, faltan formatos/unicidad en varios módulos. |
 | Manejo de errores | Parcial | Hay mensajes, pero algunos son genéricos o solo `debugPrint`. |
 | Responsive design | Pendiente | No se verificó visualmente; algunos layouts tienen adaptaciones. |
-| Roles y permisos | Parcial | UI oculta módulos; faltan guards y reglas tienen hallazgos. |
-| Seguridad básica | Parcial | Firebase Auth y reglas existen; requieren correcciones críticas. |
+| Roles y permisos | Parcial | UI y rutas ya incluyen guard; falta validación manual/test por rol real. |
+| Seguridad básica | Parcial | Firebase Auth y reglas locales compilan; falta suite emulator y despliegue controlado. |
 | Estados de carga | Completo/parcial | Existen en la mayoría de pantallas. |
 | Estados vacíos | Completo/parcial | Implementados en listados principales. |
 | Mensajes al usuario | Parcial | Presentes, pero algunos son excesivos o inconsistentes. |
-| Navegación consistente | Parcial | Rutas nombradas claras; falta protección y adaptación operador. |
+| Navegación consistente | Parcial | Rutas nombradas claras; guard y adaptación de operador implementados; falta prueba manual. |
 | Auditoría | Parcial | `audit_logs` activo; `events` legacy no conectado. |
 | Exportaciones | Parcial | CSV/PDF; Excel requiere revisión de formato real. |
-| Pruebas automatizadas | Pendiente | Test actual falla y no cubre app real. |
-| Análisis estático | Parcial | 115 issues en `flutter analyze --no-pub`. |
+| Pruebas automatizadas | Parcial | 2 pruebas pasan; cobertura aún mínima para flujos críticos. |
+| Análisis estático | Completo/parcial | `flutter analyze --no-pub` sin issues al 2026-05-01. |
 
 ## 11. Casos de prueba sugeridos
 
@@ -1298,20 +1300,20 @@ Aplicación
 
 ## 12. Conclusión general
 
-La aplicación tiene una base funcional amplia y una arquitectura entendible por módulos. Están implementados los flujos principales de autenticación, votación, asistencia, socios, QR, exportaciones y auditoría. Sin embargo, el estado actual debe considerarse MVP avanzado en desarrollo, no listo para producción sin correcciones.
+La aplicación tiene una base funcional amplia y una arquitectura entendible por módulos. Están implementados los flujos principales de autenticación, votación, asistencia, socios, QR, exportaciones y auditoría. Después de las correcciones locales del 2026-05-01, el estado mejora a MVP avanzado con riesgos críticos mitigados, pero aún no listo para producción sin validación con Firebase real/emulator, usuarios por rol y datos representativos.
 
-El mayor riesgo está en la seguridad y consistencia del flujo de votación: las reglas Firestore actuales para incrementos de contadores probablemente no expresan correctamente una actualización parcial segura. Además, la aplicación mezcla dos modelos de asistencia (`eventos/personas/asistencias` y `attendance_events`), lo que afecta reportes y elegibilidad.
+El mayor riesgo residual está en la consistencia del modelo de asistencia: la aplicación mezcla dos modelos (`eventos/personas/asistencias` y `attendance_events`). El reporte ya tiene fallback legacy, pero la fuente canónica aún debe definirse para evitar divergencias futuras. El riesgo de seguridad de reglas de voto/usuarios fue corregido localmente y las reglas compilan en dry-run, pero falta una suite de pruebas de reglas con casos positivos y negativos.
 
-La completitud funcional estimada es alta en cobertura de pantallas, pero media en robustez productiva. El nivel de completitud global estimado es 70-75%, condicionado por correcciones críticas, pruebas automatizadas y validación con Firebase real/emulator.
+La completitud funcional estimada es alta en cobertura de pantallas y media-alta en robustez local. El nivel de completitud global estimado sube a 82-86%, condicionado por pruebas automatizadas adicionales, validación con Firebase real/emulator y pruebas manuales por rol/datos reales.
 
 Prioridades antes de entrega o producción:
 
-1. Corregir reglas Firestore de votos y creación de usuarios.
-2. Crear tests reales y eliminar el test de contador por defecto.
-3. Unificar o adaptar el modelo de asistencia.
-4. Proteger rutas por rol.
-5. Corregir scanner manual sin evento.
-6. Alinear importación de socios y unicidad de `workerCode`.
+1. Validar reglas Firestore con Firebase Emulator y usuarios reales por rol.
+2. Ampliar tests reales de login, rutas, voto, importación y asistencia.
+3. Definir fuente canónica de asistencia o formalizar adaptadores entre modelos.
+4. Probar rutas protegidas por rol y documentar matriz rol-permiso.
+5. Validar scanner manual/cámara en dispositivo.
+6. Agregar pruebas de unicidad de socios en alta, edición e importación.
 7. Validar exportaciones, rendimiento y responsive.
 
 ## 13. Anexos
@@ -1385,25 +1387,45 @@ Prioridades antes de entrega o producción:
 
 ### D. Resultados de análisis estático
 
-`flutter analyze --no-pub` encontró 115 issues. Los más relevantes para gestión técnica:
+`flutter analyze --no-pub` se ejecutó nuevamente el 2026-05-01 y no encontró issues.
 
-- Warnings por imports no usados en pantallas de asistencia/QR/main.
-- Campo no usado `_accentColor`.
-- Elementos no usados como `_buildEjemploColumna`.
-- Uso de APIs deprecadas: `value` en `DropdownButtonFormField`, `WillPopScope`, `withOpacity`.
-- Riesgo `use_build_context_synchronously` en `qr_codes_screen.dart`.
-- Casts y operadores innecesarios.
-- Scripts con `print` e imports relativos a `lib`.
+Resultado actual:
+
+- Comando: `flutter analyze --no-pub`.
+- Estado: correcto.
+- Observación: la revisión estática local queda limpia después de las correcciones aplicadas.
 
 ### E. Resultados de pruebas
 
-`flutter test --no-pub --reporter expanded` falla en `test/widget_test.dart`:
+`flutter test --no-pub --reporter expanded` se ejecutó nuevamente el 2026-05-01 y pasó correctamente:
 
-- Caso: `Counter increments smoke test`.
-- Motivo: espera encontrar texto `0`, pero la aplicación real no es contador.
-- Acción recomendada: reemplazar por smoke test real que inicialice la app con mocks o use Firebase emulator.
+- `test/widget_test.dart`: valida que se muestre Login cuando no hay sesión activa.
+- `test/import_service_test.dart`: valida contrato de columnas obligatorias y separación de `numero_socio` frente a `worker_code`.
+- Estado: 2 pruebas pasan.
+- Acción recomendada: ampliar cobertura de rutas por rol, reglas Firestore, voto, asistencia e importación con datos representativos.
 
-### F. Supuestos utilizados
+### F. Validación de reglas Firestore
+
+`firebase deploy --only firestore --dry-run` se ejecutó el 2026-05-01:
+
+- Estado: correcto.
+- Resultado: `firestore.rules` compila correctamente.
+- Limitación: no sustituye pruebas de comportamiento con Firebase Emulator; se requiere Java 21+ local para ejecutar la suite de reglas.
+
+### G. Bitácora de correcciones
+
+| Fecha | Corrección | Archivos | Validación | Estado |
+|---|---|---|---|---|
+| 2026-05-01 | Reglas de votos y usuarios reforzadas: `users` restringe rol `VOTER`; votos validan ID propio, elección abierta, candidato existente y contadores exactos. | `firestore.rules` | `firebase deploy --only firestore --dry-run` correcto | Aplicado localmente |
+| 2026-05-01 | Elecciones visibles para votantes filtran `isActive`, visibilidad y rango de fechas. | `lib/services/election_service.dart` | `flutter analyze --no-pub` correcto | Aplicado localmente |
+| 2026-05-01 | Scanner de asistencia usa evento real inicial o seleccionado para habilitar registro. | `lib/features/asistencia/scanner_screen.dart` | `flutter analyze --no-pub` correcto | Aplicado localmente |
+| 2026-05-01 | Importación de socios alinea columnas obligatorias y controla duplicados en archivo/Firestore. | `lib/services/import_service.dart`, `test/import_service_test.dart` | `flutter test --no-pub --reporter expanded` correcto | Aplicado localmente |
+| 2026-05-01 | Alta y edición manual de socios validan unicidad de `memberNumber`, `documentId` y `workerCode`; auditoría registra cambios de identificadores. | `lib/services/members_service.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
+| 2026-05-01 | Eliminación de candidatos con votos queda bloqueada en UI y servicio para preservar resultados. | `lib/features/elections/edit_election_screen.dart`, `lib/services/election_service.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
+| 2026-05-01 | Reporte de asistencia soporta eventos nuevos y fallback legacy desde `eventos/asistencias/personas`. | `lib/services/attendance_service.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
+| 2026-05-01 | Rutas internas protegidas por autenticación/rol y pantalla de "Sin permisos"; Home muestra Asistencia a `OPERADOR_ASISTENCIA`. | `lib/main.dart`, `lib/features/home/home_screen.dart` | `flutter analyze --no-pub` y `flutter test --no-pub --reporter expanded` correctos | Aplicado localmente |
+
+### H. Supuestos utilizados
 
 - El nombre funcional se tomó de `MaterialApp.title`, README y `pubspec.yaml`.
 - El alcance de usuario se infiere del dominio sindical y roles en código.

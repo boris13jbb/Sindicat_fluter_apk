@@ -202,6 +202,40 @@ class MembersService {
     }
   }
 
+  bool _isDifferentMember(Member? existingMember, String? excludingId) {
+    return existingMember != null && existingMember.id != excludingId;
+  }
+
+  Future<void> _ensureUniqueMemberFields(
+    Member member, {
+    String? excludingId,
+  }) async {
+    final existingMember = await getMemberByNumber(member.memberNumber);
+    if (_isDifferentMember(existingMember, excludingId)) {
+      throw Exception(
+        'Ya existe un socio con el número ${member.memberNumber}',
+      );
+    }
+
+    final documentId = member.documentId?.trim();
+    if (documentId != null && documentId.isNotEmpty) {
+      final existingByDoc = await getMemberByDocument(documentId);
+      if (_isDifferentMember(existingByDoc, excludingId)) {
+        throw Exception('Ya existe un socio con el documento $documentId');
+      }
+    }
+
+    final workerCode = member.workerCode?.trim();
+    if (workerCode != null && workerCode.isNotEmpty) {
+      final existingByWorkerCode = await getMemberByWorkerCode(workerCode);
+      if (_isDifferentMember(existingByWorkerCode, excludingId)) {
+        throw Exception(
+          'Ya existe un socio con el código de trabajador $workerCode',
+        );
+      }
+    }
+  }
+
   /// Crear un nuevo socio
   Future<String> createMember(Member member) async {
     try {
@@ -210,23 +244,7 @@ class MembersService {
         throw Exception('Usuario no autenticado');
       }
 
-      // Verificar que no exista un socio con el mismo número
-      final existingMember = await getMemberByNumber(member.memberNumber);
-      if (existingMember != null) {
-        throw Exception(
-          'Ya existe un socio con el número ${member.memberNumber}',
-        );
-      }
-
-      // Verificar duplicado por documento si existe
-      if (member.documentId != null && member.documentId!.isNotEmpty) {
-        final existingByDoc = await getMemberByDocument(member.documentId!);
-        if (existingByDoc != null) {
-          throw Exception(
-            'Ya existe un socio con el documento ${member.documentId}',
-          );
-        }
-      }
+      await _ensureUniqueMemberFields(member);
 
       final memberRef = _firestore.collection('members').doc();
       final newMember = member.copyWith(
@@ -286,7 +304,27 @@ class MembersService {
             'after': member.lastName,
           };
         }
+        if (oldMember.memberNumber != member.memberNumber) {
+          changes['memberNumber'] = {
+            'before': oldMember.memberNumber,
+            'after': member.memberNumber,
+          };
+        }
+        if (oldMember.workerCode != member.workerCode) {
+          changes['workerCode'] = {
+            'before': oldMember.workerCode,
+            'after': member.workerCode,
+          };
+        }
+        if (oldMember.documentId != member.documentId) {
+          changes['documentId'] = {
+            'before': oldMember.documentId,
+            'after': member.documentId,
+          };
+        }
       }
+
+      await _ensureUniqueMemberFields(member, excludingId: member.id);
 
       final updatedMember = member.copyWith(updatedAt: DateTime.now());
 

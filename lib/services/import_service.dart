@@ -390,6 +390,7 @@ class ImportService {
       int errorsCount = 0;
       final errorDetails = <String>[];
       final duplicateNumbers = <String>[];
+      final memberNumbersInFile = <String>{};
       final workerCodesInFile = <String>{};
       final documentIdsInFile = <String>{};
 
@@ -409,6 +410,15 @@ class ImportService {
         if (memberNumber == null) {
           errorsCount++;
           errorDetails.add('Fila ${i + 2}: Número de socio inválido');
+          continue;
+        }
+
+        if (!memberNumbersInFile.add(memberNumber)) {
+          duplicatesCount++;
+          duplicateNumbers.add(memberNumber);
+          errorDetails.add(
+            'Fila ${i + 2}: Número de socio duplicado en el archivo: $memberNumber',
+          );
           continue;
         }
 
@@ -727,6 +737,7 @@ class ImportService {
       int errorsCount = 0;
       final errorDetails = <String>[];
       final duplicateNumbers = <String>[];
+      final memberNumbersInFile = <String>{};
       final workerCodesInFile = <String>{};
       final documentIdsInFile = <String>{};
 
@@ -746,6 +757,15 @@ class ImportService {
         if (memberNumber == null) {
           errorsCount++;
           errorDetails.add('Fila ${i + 2}: Número de socio inválido');
+          continue;
+        }
+
+        if (!memberNumbersInFile.add(memberNumber)) {
+          duplicatesCount++;
+          duplicateNumbers.add(memberNumber);
+          errorDetails.add(
+            'Fila ${i + 2}: Número de socio duplicado en el archivo: $memberNumber',
+          );
           continue;
         }
 

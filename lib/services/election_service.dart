@@ -306,6 +306,30 @@ class ElectionService {
         .collection('candidates')
         .doc(candidateId)
         .get();
+    final candidateData = candidateDoc.data();
+    if (candidateData == null) {
+      throw Exception('Candidato no encontrado');
+    }
+
+    final voteCount = (candidateData['voteCount'] as num?)?.toInt() ?? 0;
+    if (voteCount > 0) {
+      throw Exception(
+        'No se puede eliminar un candidato con votos registrados',
+      );
+    }
+
+    final existingVote = await _firestore
+        .collection('elections')
+        .doc(electionId)
+        .collection('votes')
+        .where('candidateId', isEqualTo: candidateId)
+        .limit(1)
+        .get();
+    if (existingVote.docs.isNotEmpty) {
+      throw Exception(
+        'No se puede eliminar un candidato con votos registrados',
+      );
+    }
 
     await _firestore
         .collection('elections')
@@ -320,7 +344,7 @@ class ElectionService {
       entityType: AuditEntityType.candidate,
       entityId: candidateId,
       description:
-          'Candidato eliminado: ${candidateDoc.data()?['name'] ?? candidateId}',
+          'Candidato eliminado: ${candidateData['name'] ?? candidateId}',
       platform: 'flutter',
     );
   }

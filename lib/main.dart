@@ -33,6 +33,7 @@ import 'features/attendance/attendance_report_screen.dart';
 import 'features/audit/audit_logs_screen.dart';
 import 'features/profile/user_profile_screen.dart';
 import 'core/models/asistencia/evento.dart';
+import 'core/models/user_role.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -88,6 +89,19 @@ void main() async {
   runApp(const MyApp());
 }
 
+const _adminRoles = {UserRole.superadmin, UserRole.admin};
+const _attendanceRoles = {
+  UserRole.superadmin,
+  UserRole.admin,
+  UserRole.operadorAsistencia,
+};
+
+Widget _authGuard(Widget child) => _RouteGuard(child: child);
+
+Widget _roleGuard(Widget child, Set<UserRole> allowedRoles) {
+  return _RouteGuard(allowedRoles: allowedRoles, child: child);
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -112,64 +126,170 @@ class MyApp extends StatelessWidget {
         routes: {
           '/login': (_) => const LoginScreen(),
           '/signup': (_) => const SignUpScreen(),
-          '/home': (_) => const HomeScreen(),
-          '/voto/elections': (_) => const ElectionsScreen(),
-          '/voto/create_election': (_) => const CreateElectionScreen(),
+          '/home': (_) => _authGuard(const HomeScreen()),
+          '/voto/elections': (_) => _authGuard(const ElectionsScreen()),
+          '/voto/create_election': (_) =>
+              _roleGuard(const CreateElectionScreen(), _adminRoles),
           '/voto/voting': (ctx) {
             final id = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
-            return VotingScreen(electionId: id);
+            return _authGuard(VotingScreen(electionId: id));
           },
           '/voto/results': (ctx) {
             final id = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
-            return ElectionResultsScreen(electionId: id);
+            return _authGuard(ElectionResultsScreen(electionId: id));
           },
           '/voto/add_candidate': (ctx) {
             final id = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
-            return AddCandidateScreen(electionId: id);
+            return _roleGuard(AddCandidateScreen(electionId: id), _adminRoles);
           },
           '/voto/edit_election': (ctx) {
             final id = ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
-            return EditElectionScreen(electionId: id);
+            return _roleGuard(EditElectionScreen(electionId: id), _adminRoles);
           },
-          '/voto/event_history': (_) => const EventHistoryScreen(),
-          '/asistencia': (_) => const AsistenciaHomeScreen(),
+          '/voto/event_history': (_) =>
+              _roleGuard(const EventHistoryScreen(), _adminRoles),
+          '/asistencia': (_) =>
+              _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles),
           '/asistencia/crear_evento': (_) =>
-              const CrearEventoAsistenciaScreen(),
+              _roleGuard(const CrearEventoAsistenciaScreen(), _attendanceRoles),
           '/asistencia/evento_detail': (ctx) {
             final evento =
                 ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
-            if (evento == null) return const AsistenciaHomeScreen();
-            return EventoDetailScreen(evento: evento);
+            if (evento == null) {
+              return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
+            }
+            return _roleGuard(
+              EventoDetailScreen(evento: evento),
+              _attendanceRoles,
+            );
           },
-          '/asistencia/personas': (_) => const PersonasAsistenciaScreen(),
+          '/asistencia/personas': (_) =>
+              _roleGuard(const PersonasAsistenciaScreen(), _attendanceRoles),
           '/asistencia/registro_manual': (ctx) {
             final evento =
                 ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
-            if (evento == null) return const AsistenciaHomeScreen();
-            return RegistroManualScreen(evento: evento);
+            if (evento == null) {
+              return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
+            }
+            return _roleGuard(
+              RegistroManualScreen(evento: evento),
+              _attendanceRoles,
+            );
           },
-          '/asistencia/asistencias': (_) => const AsistenciasListScreen(),
-          '/asistencia/exportar': (_) => const ExportarAsistenciaScreen(),
+          '/asistencia/asistencias': (_) =>
+              _roleGuard(const AsistenciasListScreen(), _attendanceRoles),
+          '/asistencia/exportar': (_) =>
+              _roleGuard(const ExportarAsistenciaScreen(), _attendanceRoles),
           '/asistencia/scanner': (ctx) {
             final evento =
                 ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;
-            return ScannerAsistenciaScreen(evento: evento);
+            return _roleGuard(
+              ScannerAsistenciaScreen(evento: evento),
+              _attendanceRoles,
+            );
           },
           '/asistencia/importar_personas': (_) =>
-              const ImportarPersonasScreen(),
-          '/asistencia/qr_codes': (_) => const QRCodesScreen(),
+              _roleGuard(const ImportarPersonasScreen(), _attendanceRoles),
+          '/asistencia/qr_codes': (_) =>
+              _roleGuard(const QRCodesScreen(), _attendanceRoles),
           // 🆕 Rutas de gestión sindical
-          '/members': (_) => const MembersListScreen(),
-          '/members/import': (_) => const ImportMembersScreen(),
+          '/members': (_) => _roleGuard(const MembersListScreen(), _adminRoles),
+          '/members/import': (_) =>
+              _roleGuard(const ImportMembersScreen(), _adminRoles),
           '/attendance/report': (ctx) {
             final eventId =
                 ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
-            if (eventId.isEmpty) return const AsistenciaHomeScreen();
-            return AttendanceReportScreen(eventId: eventId);
+            if (eventId.isEmpty) {
+              return _roleGuard(const AsistenciaHomeScreen(), _attendanceRoles);
+            }
+            return _roleGuard(
+              AttendanceReportScreen(eventId: eventId),
+              _attendanceRoles,
+            );
           },
-          '/audit/logs': (_) => const AuditLogsScreen(),
-          '/profile': (_) => const UserProfileScreen(),
+          '/audit/logs': (_) =>
+              _roleGuard(const AuditLogsScreen(), _adminRoles),
+          '/profile': (_) => _authGuard(const UserProfileScreen()),
         },
+      ),
+    );
+  }
+}
+
+class _RouteGuard extends StatelessWidget {
+  const _RouteGuard({required this.child, this.allowedRoles});
+
+  final Widget child;
+  final Set<UserRole>? allowedRoles;
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, auth, _) {
+        if (auth.isLoading) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = auth.user;
+        if (!auth.isSignedIn || user == null) {
+          return const LoginScreen();
+        }
+
+        final roles = allowedRoles;
+        if (roles == null || roles.contains(user.role)) {
+          return child;
+        }
+
+        return const _AccessDeniedScreen();
+      },
+    );
+  }
+}
+
+class _AccessDeniedScreen extends StatelessWidget {
+  const _AccessDeniedScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Sin permisos')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_outline, size: 56, color: colorScheme.error),
+                const SizedBox(height: 16),
+                Text(
+                  'No tienes permisos para acceder a esta pantalla.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Si necesitas acceso, solicita la actualización de tu rol a un administrador.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(
+                    context,
+                  ).pushNamedAndRemoveUntil('/home', (route) => false),
+                  icon: const Icon(Icons.home_outlined),
+                  label: const Text('Volver al inicio'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
