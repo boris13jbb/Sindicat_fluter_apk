@@ -67,8 +67,8 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
-    final isAdmin = user?.role == UserRole.admin ||
-        user?.role == UserRole.superadmin;
+    final isAdmin =
+        user?.role == UserRole.admin || user?.role == UserRole.superadmin;
     if (!isAdmin) {
       return Scaffold(
         appBar: AppBar(title: const Text('Crear Elección')),
@@ -201,22 +201,14 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                 FilledButton(
                   onPressed: () async {
                     if (_formKey.currentState?.validate() != true) return;
-                    if (_startDate == null || _endDate == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Selecciona fechas de inicio y fin'),
-                        ),
-                      );
-                      return;
-                    }
-                    if (_endDate!.isBefore(_startDate!)) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'La fecha de fin debe ser posterior al inicio',
-                          ),
-                        ),
-                      );
+                    final scheduleError = validateElectionDateRange(
+                      startDate: _startDate,
+                      endDate: _endDate,
+                    );
+                    if (scheduleError != null) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text(scheduleError)));
                       return;
                     }
                     if (_requireAttendance && _eventoAsistenciaId == null) {

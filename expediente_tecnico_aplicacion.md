@@ -38,7 +38,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 | Comando | Resultado | Observación |
 |---|---|---|
 | `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
-| `flutter test --no-pub --reporter expanded` | Correcto | 24 pruebas pasan: smoke de login sin sesión, contrato `AppUser.memberId`, matriz local de acceso por rol, visibilidad de resultados por rol/estado, regla `canVoteInElection`, scanner, configuración de importación, parser CSV, modalidad de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
+| `flutter test --no-pub --reporter expanded` | Correcto | 36 pruebas pasan: smoke de login sin sesión, error/reintento de `AppBootstrap`, contrato `AppUser.memberId`, matriz local de acceso por rol, validaciones de candidatos, visibilidad de resultados por rol/estado, regla `canVoteInElection`, serialización de `Election.status`, validación de fechas de elección, scanner, configuración de importación, parser CSV, modalidad de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
 | `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members`/`import_logs`, endurecer `audit_logs` y validar `users.memberId`. |
 | Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
 
@@ -170,15 +170,15 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Estados posibles:** inicializando servicios, error de inicialización con reintento, autenticado, no autenticado.
 
-**Observaciones técnicas o funcionales:** corregido localmente. `AppBootstrap` usa `FutureBuilder` para separar el arranque Firebase de la app autenticada; muestra pantalla de carga, pantalla de error de conexión con reintento y detalle sólo en debug.
+**Observaciones técnicas o funcionales:** corregido localmente. `AppBootstrap` usa `FutureBuilder` para separar el arranque Firebase de la app autenticada; muestra pantalla de carga, pantalla de error de conexión con reintento y detalle sólo en debug. Corregido localmente (**E-037**): el inicializador puede inyectarse en pruebas sin alterar producción y la prueba widget valida error inicial, botón **Reintentar** y éxito posterior.
 
 **Problemas encontrados:** mitigado localmente el flujo en el que Firebase fallaba y la app continuaba hacia pantallas que dependen de Firebase sin mensaje claro.
 
-**Huecos o pendientes por corregir:** falta prueba widget dedicada de error/reintento inyectando inicializador fallido.
+**Huecos o pendientes por corregir:** queda pendiente validación manual en Windows/Web con red deshabilitada o configuración Firebase inválida.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** cubrir `AppBootstrap` con prueba widget/fake inicializador y validar en Windows/Web con red deshabilitada.
+**Recomendación:** mantener la inyección de inicializador sólo como punto de test y validar en plataforma real antes de entrega operativa.
 
 ### Pantalla: Login
 
@@ -374,15 +374,15 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Estados posibles:** sin permiso, cargando, formulario inválido, éxito, error.
 
-**Observaciones técnicas o funcionales:** usa eventos de asistencia legacy (`eventos`), mientras el reporte nuevo usa `attendance_events`.
+**Observaciones técnicas o funcionales:** usa eventos de asistencia legacy (`eventos`), mientras el reporte nuevo usa `attendance_events`. Corregido localmente (**E-034**): `Election.toMap()` ya no persiste siempre `status: DRAFT`; deriva `DRAFT`, `ACTIVE` o `CLOSED` desde `isActive` y fecha de fin para mantener coherencia con el ciclo operativo actual. Corregido localmente (**E-035**): la validación de calendario queda centralizada en `validateElectionDateRange`/`validateElectionTimestampRange` y se aplica en UI y servicio.
 
-**Problemas encontrados:** no se valida que la fecha inicio sea anterior a fin hasta guardar; no se valida duración mínima o estado inicial.
+**Problemas encontrados:** corregido localmente el rango de fechas: fin debe ser posterior a inicio y la duración mínima efectiva es 1 minuto. Queda pendiente definir reglas de estado inicial más avanzadas si negocio exige borrador programado, publicación diferida u otros estados.
 
-**Huecos o pendientes por corregir:** falta definición funcional clara de `status: DRAFT` frente a `isActive`.
+**Huecos o pendientes por corregir:** queda pendiente definir si producto necesita estados adicionales explícitos como `SCHEDULED`, `PAUSED` o `ARCHIVED`; la incoherencia técnica `status: DRAFT` frente a `isActive` fue corregida localmente con E-034.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** definir ciclo de vida de elección y unificar estados.
+**Recomendación:** mantener `isActive` como contrato operativo mientras no exista flujo formal de ciclo de vida; si se agregan estados nuevos, actualizar reglas Firestore, UI, reportes y pruebas del modelo.
 
 ### Pantalla: Editar Elección
 
@@ -407,11 +407,11 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Estados posibles:** cargando, acceso denegado, datos, sin candidatos, error, éxito.
 
-**Observaciones técnicas o funcionales:** mitigado (**E-008** / bitácora): la **eliminación** de un candidato **con votos** queda **bloqueada** en UI y en `ElectionService` (no se permite dejar contadores incoherentes por borrado accidental).
+**Observaciones técnicas o funcionales:** mitigado (**E-008** / bitácora): la **eliminación** de un candidato **con votos** queda **bloqueada** en UI y en `ElectionService` (no se permite dejar contadores incoherentes por borrado accidental). Corregido localmente (**E-035**): al guardar cambios se valida rango de fechas y evento vinculado cuando `requireAttendance` está activo; `ElectionService.updateElection` repite la validación para accesos programáticos. Corregido localmente (**E-036**): el diálogo de edición de candidato permite actualizar descripción, URL de imagen y orden con validación de URL http(s) y orden no negativo.
 
 **Problemas encontrados:** puede seguir existiendo riesgo menor en **edición** de nombre/orden con elección ya en curso; está fuera del bloqueo explícito de eliminación.
 
-**Huecos o pendientes por corregir:** prueba automatizada (widget o servicio) que confirme rechazo al eliminar candidato con `voteCount > 0`; validación de URL y duplicidad de nombres si negocio lo exige.
+**Huecos o pendientes por corregir:** prueba automatizada (widget o servicio) que confirme rechazo al eliminar candidato con `voteCount > 0`; duplicidad de nombres si negocio lo exige.
 
 **Prioridad de corrección:** Media.
 
@@ -442,13 +442,13 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Observaciones técnicas o funcionales:** se garantiza campo `order`.
 
-**Problemas encontrados:** no hay validación de URL ni duplicidad de candidato.
+**Problemas encontrados:** corregido localmente (**E-036**) el campo URL de imagen y orden: alta/edición validan URL http(s) y orden entero no negativo. No se valida duplicidad de candidato porque no hay regla de negocio confirmada sobre nombres repetidos.
 
-**Huecos o pendientes por corregir:** falta edición de imagen/orden en el diálogo de edición.
+**Huecos o pendientes por corregir:** pendiente confirmar si deben bloquearse nombres duplicados por elección.
 
 **Prioridad de corrección:** Baja.
 
-**Recomendación:** validar URL y permitir ordenar candidatos desde edición.
+**Recomendación:** mantener validadores compartidos en `Candidate`; si se decide bloquear duplicados, hacerlo en servicio con consulta por elección antes de crear/actualizar.
 
 ### Pantalla: Votar
 
@@ -1247,7 +1247,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | Perfil | QR personal | Genera QR desde socio | Parcial | Depende de matching heurístico con `members` y de `workerCode` | Media |
 | Elecciones | Listar elecciones | Streams Firestore | Funcional/parcial | Votantes filtran `isVisibleToVoters`, `isActive` y rango de fechas; falta prueba con datos reales | Media |
 | Elecciones | Crear/editar | CRUD elección | Funcional | Requiere unificar estados | Media |
-| Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Funcional/parcial | Eliminación bloqueada si el candidato tiene votos; falta test automatizado | Media |
+| Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Funcional/parcial | Eliminación bloqueada si el candidato tiene votos; alta/edición validan URL de imagen y orden; falta test automatizado de eliminación con votos | Media |
 | Voto | Emitir voto | Batch de voto y contadores | Parcial | UI, servicio y reglas locales validan elección activa, visible, en rango, asistencia legacy/reporte cuando aplica, voto propio y contadores; falta suite de reglas con emulator | Alta |
 | Resultados | Ver conteos | Ranking en tiempo real | Funcional/parcial | Visibilidad para votantes centralizada y testeada; exportación CSV/PDF pide confirmación previa; falta prueba widget/Firebase real | Media |
 | Asistencia | Crear evento legacy | Crea `eventos` con `modalidadesNoConvocadas` | Funcional | Selector múltiple de modalidades no convocadas; lista vacía significa sin exclusiones | Alta |
@@ -1299,13 +1299,17 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | E-031 | Votación / Elecciones | Corregido localmente: regla única para permitir votar | Se agrega `canVoteInElection`/`ElectionVotingStatus`; listado, tarjetas, pantalla directa de voto y `VoteService.castVote` bloquean elecciones inactivas, ocultas, no iniciadas o finalizadas antes de permitir el batch. | Reduce divergencias UI-servicio-reglas y evita intentos de voto por ruta directa sobre elecciones no votables. | Alta | Mantener prueba pura y validar con Firebase real/emulator por rol. |
 | E-032 | Votación / Asistencia | Corregido localmente: elegibilidad por asistencia escucha legacy y reporte | `VoteService.watchUserEligibilityForElection` recalcula al cambiar `asistencias` legacy o `attendance_events/{eventoAsistenciaId}/asistencias`; `VotingScreen` lo usa cuando `requireAttendance` está activo y bloquea elecciones sin evento vinculado. | Evita que una elección vinculada a modelo reporte quede bloqueada en UI aunque el socio ya tenga asistencia válida; mantiene validación final en `castVote`. | Alta | Validar con eventos reales legacy/reporte y suite emulator cuando esté disponible. |
 | E-033 | Arranque / Firebase | Corregido localmente: error de inicialización visible y reintentable | `main.dart` incorpora `AppBootstrap`: inicializa Firebase antes de crear `AuthProvider`, muestra carga, muestra error con botón **Reintentar** y no entra al flujo de login si Firebase no está disponible. | Evita estados rotos o mensajes confusos cuando hay timeout/red/configuración Firebase incorrecta. | Media/Alta | Agregar prueba widget con inicializador fake y validar en plataforma real con red desconectada. |
+| E-034 | Votación / Elecciones | Corregido localmente: `status` de elección coherente con `isActive` | `ElectionStatus` define `DRAFT`, `ACTIVE` y `CLOSED`; `Election.toMap()` deriva el estado persistido según `isActive` y `endDate`, evitando guardar elecciones activas como `DRAFT`. Se agrega `test/election_model_test.dart`. | Reduce ambigüedad en reportes, integraciones y mantenimiento de datos históricos sin cambiar la regla efectiva de votación. | Media | Definir con producto si se requiere ciclo de vida más fino (`SCHEDULED`, `PAUSED`, `ARCHIVED`) y desplegar migración si se decide normalizar históricos. |
+| E-035 | Votación / Elecciones | Corregido localmente: validación centralizada de calendario electoral | `validateElectionDateRange`/`validateElectionTimestampRange` rechazan fechas faltantes, fin igual/anterior al inicio y duración menor a 1 minuto; crear/editar elección y `ElectionService.createElection/updateElection` aplican el mismo contrato. | Evita elecciones inválidas por UI o llamadas de servicio, y asegura que el requisito de asistencia no se guarde sin evento vinculado. | Media/Alta | Validar manualmente formularios en móvil/web y mantener pruebas si se agregan estados o duración configurable. |
+| E-036 | Candidatos | Corregido localmente: edición completa de URL de imagen y orden | `AddCandidateScreen` y el diálogo de edición comparten validadores de `Candidate`: URL opcional sólo http(s), orden entero no negativo y parseo seguro. El diálogo permite corregir imagen/orden sin borrar el candidato. | Permite mantener boletas ordenadas y corregir datos visuales sin operaciones destructivas sobre candidatos existentes. | Baja/Media | Confirmar política de nombres duplicados y validar manualmente en boletas con candidatos existentes. |
+| E-037 | Arranque / Firebase | Corregido localmente: prueba widget de error y reintento | `AppBootstrap` permite inyectar un inicializador y `readyApp` para pruebas; `test/widget_test.dart` simula fallo inicial, verifica pantalla de error/reintento y confirma render exitoso tras reintentar. | Reduce riesgo de regresión en el arranque cuando Firebase falla por red, timeout o configuración. | Media | Validar manualmente en Windows/Web con red desconectada y conservar la prueba al modificar el bootstrap. |
 
 ### Clasificación por tipo
 
-- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024, E-025, E-026, E-027, E-028, E-031, E-032 y E-033; pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
+- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024, E-025, E-026, E-027, E-028, E-031, E-032, E-033, E-034, E-035, E-036 y E-037; pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
 - Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012 y E-029 quedan corregidos localmente con pendiente de validación manual.
 - Errores de navegación: E-014 y E-027 corregidos localmente, pendiente validación manual con cuentas reales.
-- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**), E-024 (**modalidades no convocadas opcionales**), E-025 (**faltas injustificadas vs ausencias justificadas/no convocados**) y E-028 (**publicación de resultados**); faltan pruebas con archivos reales y emulator.
+- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**), E-024 (**modalidades no convocadas opcionales**), E-025 (**faltas injustificadas vs ausencias justificadas/no convocados**), E-028 (**publicación de resultados**), E-035 (**fechas/evento requerido en elecciones**) y E-036 (**URL/orden de candidatos**); faltan pruebas con archivos reales y emulator.
 - Errores de permisos: E-001, E-002, E-014, E-019, E-020, E-026 y E-027 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
 - Errores de rendimiento: E-015 parcialmente mitigado por E-023 en el listado de socios y E-030 en auditoría; persisten lecturas completas en búsqueda/exportación y algunas pantallas de asistencia.
 - Errores de contenido: instrucciones contradictorias de importación/QR corregidas en perfil; mantener revisión de copy operativo con usuarios reales.
@@ -1513,14 +1517,16 @@ Resultado actual:
 
 `flutter test --no-pub --reporter expanded` se ejecutó nuevamente el 2026-05-01 y pasó correctamente:
 
-- `test/widget_test.dart`: valida que se muestre Login cuando no hay sesión activa.
+- `test/widget_test.dart`: valida que se muestre Login cuando no hay sesión activa y que `AppBootstrap` muestre error Firebase con **Reintentar** y se recupere al segundo intento.
 - `test/app_user_test.dart`: valida serialización y lectura de `AppUser.memberId`.
+- `test/candidate_model_test.dart`: valida URL de imagen opcional http(s), rechazo de URL inválida y orden entero no negativo.
+- `test/election_model_test.dart`: valida que `Election.toMap()` persista `status` como `ACTIVE`, `DRAFT` o `CLOSED` según `isActive`/fecha de fin, que `fromMap()` tenga fallback seguro y que el rango de fechas electorales rechace ausencias, igualdad, inversión o duración menor a 1 minuto.
 - `test/election_visibility_test.dart`: valida publicación de resultados para admin/votante, estado activo/visible, fecha de cierre y `showResultsAutomatically`.
 - `test/import_service_test.dart`: valida contrato de columnas obligatorias, separación de `numero_socio` frente a `worker_code`, CSV con campos entre comillas/comas internas, obligatoriedad de `modalidad` y normalización/canonización de alias (`turno` → `modalidad`, `n1` → `N1`).
 - `test/evento_asistencia_test.dart`: valida serialización canónica de `modalidadesNoConvocadas`, lectura de `modalidad` legacy como exclusión única y descarte de valores inválidos/duplicados.
 - `test/route_access_test.dart`: valida decisión de acceso por rol para estados de carga, sesión requerida, rutas autenticadas, rutas administrativas y rutas de asistencia.
 - `test/scanner_screen_test.dart`: valida que el scanner muestre nombre/modalidad al registrar por código y no bloquee registros cuando la modalidad está sin asignar.
-- Estado: 24 pruebas pasan.
+- Estado: 36 pruebas pasan.
 - Acción recomendada: ampliar cobertura de reglas Firestore, voto, resumen de asistencia, login e importación con datos representativos/emulator.
 
 ### F. Validación de reglas Firestore
@@ -1535,6 +1541,10 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Se mitiga localmente **E-037**: `AppBootstrap` admite inicializador/`readyApp` inyectables para pruebas y `widget_test` cubre error Firebase, botón **Reintentar** y recuperación exitosa. | `lib/main.dart`, `test/widget_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (36/36) | Aplicado localmente |
+| 2026-05-01 | Se mitiga localmente **E-036**: alta/edición de candidatos validan URL de imagen http(s), orden entero no negativo y el diálogo de edición permite corregir imagen/orden sin borrar candidato. | `lib/core/models/candidate.dart`, `lib/features/elections/add_candidate_screen.dart`, `lib/features/elections/edit_election_screen.dart`, `test/candidate_model_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (35/35) | Aplicado localmente |
+| 2026-05-01 | Se mitiga localmente **E-035**: validación común de calendario electoral y evento requerido por asistencia en crear/editar elección y `ElectionService`; se rechaza fin igual/anterior al inicio y duración menor a 1 minuto. | `lib/core/models/election.dart`, `lib/features/elections/create_election_screen.dart`, `lib/features/elections/edit_election_screen.dart`, `lib/services/election_service.dart`, `test/election_model_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (32/32) | Aplicado localmente |
+| 2026-05-01 | Se mitiga localmente **E-034**: `ElectionStatus` agrega estados `DRAFT`/`ACTIVE`/`CLOSED` y `Election.toMap()` deja de guardar elecciones activas como borrador, derivando el estado desde `isActive` y `endDate`. | `lib/core/models/election.dart`, `test/election_model_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (28/28) | Aplicado localmente |
 | 2026-05-01 | Se mitiga localmente **E-033**: `AppBootstrap` inicializa Firebase antes de `AuthProvider`, muestra carga, error con **Reintentar** y evita entrar al login si Firebase no está disponible. | `lib/main.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (24/24) | Aplicado localmente |
 | 2026-05-01 | Se mitiga localmente **E-032**: elegibilidad de voto por asistencia escucha tanto `asistencias` legacy como `attendance_events/{eventoAsistenciaId}/asistencias`; la pantalla bloquea elecciones que exigen asistencia pero no tienen evento vinculado. | `lib/services/election_service.dart`, `lib/features/voting/voting_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (24/24) | Aplicado localmente |
 | 2026-05-01 | Se mitiga localmente **E-031**: regla única de votación `canVoteInElection`/`ElectionVotingStatus`; listado, tarjetas, pantalla directa `/voto/voting` y `VoteService.castVote` bloquean elecciones inactivas, ocultas, no iniciadas o finalizadas antes de votar. | `lib/core/security/election_visibility.dart`, `lib/services/election_service.dart`, `lib/features/elections/election_card.dart`, `lib/features/voting/voting_screen.dart`, `test/election_visibility_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (24/24) | Aplicado localmente |

@@ -322,7 +322,26 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
 
   Future<void> _handleUpdate() async {
     if (_formKey.currentState?.validate() != true) return;
-    if (_startDate == null || _endDate == null) return;
+    final scheduleError = validateElectionDateRange(
+      startDate: _startDate,
+      endDate: _endDate,
+    );
+    if (scheduleError != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(scheduleError)));
+      return;
+    }
+    if (_requireAttendance && _eventoAsistenciaId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Selecciona un evento de asistencia cuando requieras asistencia',
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     try {
@@ -357,26 +376,57 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
   }
 
   void _showEditCandidateDialog(BuildContext context, Candidate c) {
+    final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: c.name);
     final descController = TextEditingController(text: c.description ?? '');
+    final imageUrlController = TextEditingController(text: c.imageUrl ?? '');
+    final orderController = TextEditingController(text: c.order.toString());
+
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Editar Candidato'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Nombre'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Nombre'),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: descController,
+                  decoration: const InputDecoration(labelText: 'Descripción'),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: imageUrlController,
+                  decoration: const InputDecoration(
+                    labelText: 'URL de imagen (opcional)',
+                    prefixIcon: Icon(Icons.link),
+                  ),
+                  keyboardType: TextInputType.url,
+                  validator: validateCandidateImageUrl,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: orderController,
+                  decoration: const InputDecoration(
+                    labelText: 'Orden en lista',
+                    prefixIcon: Icon(Icons.sort),
+                  ),
+                  keyboardType: TextInputType.number,
+                  validator: validateCandidateOrder,
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: descController,
-              decoration: const InputDecoration(labelText: 'Descripción'),
-              maxLines: 2,
-            ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -385,13 +435,18 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
           ),
           FilledButton(
             onPressed: () async {
-              if (nameController.text.trim().isEmpty) return;
+              if (formKey.currentState?.validate() != true) return;
+              final description = descController.text.trim();
+              final imageUrl = imageUrlController.text.trim();
               await _electionService.updateCandidate(
-                c.copyWith(
+                Candidate(
+                  id: c.id,
+                  electionId: c.electionId,
                   name: nameController.text.trim(),
-                  description: descController.text.trim().isEmpty
-                      ? null
-                      : descController.text.trim(),
+                  description: description.isEmpty ? null : description,
+                  imageUrl: imageUrl.isEmpty ? null : imageUrl,
+                  order: parseCandidateOrder(orderController.text),
+                  voteCount: c.voteCount,
                 ),
               );
               if (context.mounted) {
@@ -405,7 +460,12 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
           ),
         ],
       ),
-    );
+    ).whenComplete(() {
+      nameController.dispose();
+      descController.dispose();
+      imageUrlController.dispose();
+      orderController.dispose();
+    });
   }
 
   Future<void> _confirmDeleteCandidate(

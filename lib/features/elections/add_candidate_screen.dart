@@ -68,6 +68,8 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
                   labelText: 'URL de imagen (opcional)',
                   prefixIcon: Icon(Icons.link),
                 ),
+                keyboardType: TextInputType.url,
+                validator: validateCandidateImageUrl,
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -77,6 +79,7 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
                   prefixIcon: Icon(Icons.sort),
                 ),
                 keyboardType: TextInputType.number,
+                validator: validateCandidateOrder,
               ),
               const SizedBox(height: 24),
               if (_loading)
@@ -107,8 +110,7 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
                               ? null
                               : _descriptionController.text.trim(),
                           imageUrl: imageUrl.isEmpty ? null : imageUrl,
-                          order:
-                              int.tryParse(_orderController.text.trim()) ?? 0,
+                          order: parseCandidateOrder(_orderController.text),
                         ),
                       );
                       if (context.mounted) {

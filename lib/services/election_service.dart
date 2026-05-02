@@ -154,6 +154,7 @@ class ElectionService {
   }
 
   Future<String> createElection(Election election) async {
+    _validateElectionForWrite(election);
     final ref = _firestore.collection('elections').doc();
     final data = election.toMap()..['id'] = ref.id;
     await ref.set(data);
@@ -171,6 +172,7 @@ class ElectionService {
   }
 
   Future<void> updateElection(Election election) async {
+    _validateElectionForWrite(election);
     await _firestore
         .collection('elections')
         .doc(election.id)
@@ -184,6 +186,23 @@ class ElectionService {
       description: 'Elección actualizada: ${election.title}',
       platform: 'flutter',
     );
+  }
+
+  void _validateElectionForWrite(Election election) {
+    final scheduleError = validateElectionTimestampRange(
+      startDate: election.startDate,
+      endDate: election.endDate,
+    );
+    if (scheduleError != null) {
+      throw ArgumentError(scheduleError);
+    }
+    if (election.requireAttendance &&
+        (election.eventoAsistenciaId == null ||
+            election.eventoAsistenciaId!.trim().isEmpty)) {
+      throw ArgumentError(
+        'Selecciona un evento de asistencia cuando requieras asistencia',
+      );
+    }
   }
 
   Future<void> deleteElection(String electionId) async {

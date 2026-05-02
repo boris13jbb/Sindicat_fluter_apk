@@ -1,3 +1,63 @@
+/// Estado persistido de una elección en Firestore.
+///
+/// `isActive` se mantiene como bandera operativa histórica. Este estado evita
+/// que una elección activa se guarde como `DRAFT` en integraciones/reportes.
+enum ElectionStatus {
+  draft('DRAFT'),
+  active('ACTIVE'),
+  closed('CLOSED');
+
+  const ElectionStatus(this.firestoreValue);
+
+  final String firestoreValue;
+
+  static ElectionStatus fromString(String? value) {
+    switch (value?.toUpperCase()) {
+      case 'ACTIVE':
+      case 'ACTIVA':
+        return ElectionStatus.active;
+      case 'CLOSED':
+      case 'FINALIZED':
+      case 'FINALIZADA':
+      case 'FINISHED':
+        return ElectionStatus.closed;
+      case 'DRAFT':
+      case 'BORRADOR':
+      default:
+        return ElectionStatus.draft;
+    }
+  }
+}
+
+String? validateElectionDateRange({
+  required DateTime? startDate,
+  required DateTime? endDate,
+  Duration minimumDuration = const Duration(minutes: 1),
+}) {
+  if (startDate == null || endDate == null) {
+    return 'Selecciona fechas de inicio y fin';
+  }
+  if (!endDate.isAfter(startDate)) {
+    return 'La fecha de fin debe ser posterior al inicio';
+  }
+  if (endDate.difference(startDate) < minimumDuration) {
+    return 'La elección debe durar al menos 1 minuto';
+  }
+  return null;
+}
+
+String? validateElectionTimestampRange({
+  required int startDate,
+  required int endDate,
+  Duration minimumDuration = const Duration(minutes: 1),
+}) {
+  return validateElectionDateRange(
+    startDate: DateTime.fromMillisecondsSinceEpoch(startDate),
+    endDate: DateTime.fromMillisecondsSinceEpoch(endDate),
+    minimumDuration: minimumDuration,
+  );
+}
+
 /// Elección (compatible con Firestore elections).
 class Election {
   const Election({
@@ -14,6 +74,7 @@ class Election {
     this.createdAt,
     required this.createdBy,
     this.totalVotes = 0,
+    this.status = ElectionStatus.draft,
   });
 
   final String id;
@@ -29,6 +90,7 @@ class Election {
   final int? createdAt;
   final String createdBy;
   final int totalVotes;
+  final ElectionStatus status;
 
   bool isCurrentlyActive() {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -37,6 +99,13 @@ class Election {
 
   bool get isEnded => DateTime.now().millisecondsSinceEpoch > endDate;
   bool get isNotStarted => DateTime.now().millisecondsSinceEpoch < startDate;
+
+  ElectionStatus effectiveStatus({DateTime? now}) {
+    if (!isActive) return ElectionStatus.draft;
+    final currentTime = (now ?? DateTime.now()).millisecondsSinceEpoch;
+    if (currentTime > endDate) return ElectionStatus.closed;
+    return ElectionStatus.active;
+  }
 
   factory Election.fromMap(Map<String, dynamic> map, [String? id]) {
     final docId = id ?? map['id'] as String? ?? '';
@@ -55,6 +124,7 @@ class Election {
       createdAt: (map['createdAt'] as num?)?.toInt(),
       createdBy: map['createdBy'] as String? ?? '',
       totalVotes: (map['totalVotes'] as num?)?.toInt() ?? 0,
+      status: ElectionStatus.fromString(map['status'] as String?),
     );
   }
 
@@ -75,7 +145,7 @@ class Election {
       'updatedAt': now,
       'createdBy': createdBy,
       'totalVotes': totalVotes,
-      'status': 'DRAFT',
+      'status': effectiveStatus().firestoreValue,
       'version': 1,
     };
   }
@@ -94,6 +164,7 @@ class Election {
     int? createdAt,
     String? createdBy,
     int? totalVotes,
+    ElectionStatus? status,
   }) {
     return Election(
       id: id ?? this.id,
@@ -110,6 +181,7 @@ class Election {
       createdAt: createdAt ?? this.createdAt,
       createdBy: createdBy ?? this.createdBy,
       totalVotes: totalVotes ?? this.totalVotes,
+      status: status ?? this.status,
     );
   }
 }

@@ -1,3 +1,31 @@
+String? validateCandidateImageUrl(String? value) {
+  final trimmed = value?.trim() ?? '';
+  if (trimmed.isEmpty) return null;
+
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null ||
+      !uri.hasScheme ||
+      (uri.scheme != 'http' && uri.scheme != 'https') ||
+      uri.host.isEmpty) {
+    return 'Ingresa una URL http(s) válida';
+  }
+  return null;
+}
+
+String? validateCandidateOrder(String? value) {
+  final trimmed = value?.trim() ?? '';
+  if (trimmed.isEmpty) return null;
+
+  final order = int.tryParse(trimmed);
+  if (order == null) return 'Ingresa un número entero';
+  if (order < 0) return 'El orden no puede ser negativo';
+  return null;
+}
+
+int parseCandidateOrder(String? value) {
+  return int.tryParse(value?.trim() ?? '') ?? 0;
+}
+
 /// Candidato de una elección (compatible con subcolección candidates).
 class Candidate {
   const Candidate({

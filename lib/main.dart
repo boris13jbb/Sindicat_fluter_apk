@@ -88,7 +88,10 @@ Widget _roleGuard(Widget child, Set<UserRole> allowedRoles) {
 }
 
 class AppBootstrap extends StatefulWidget {
-  const AppBootstrap({super.key});
+  const AppBootstrap({super.key, this.firebaseInitializer, this.readyApp});
+
+  final Future<void> Function()? firebaseInitializer;
+  final Widget? readyApp;
 
   @override
   State<AppBootstrap> createState() => _AppBootstrapState();
@@ -100,13 +103,17 @@ class _AppBootstrapState extends State<AppBootstrap> {
   @override
   void initState() {
     super.initState();
-    _firebaseInit = _initializeFirebase();
+    _firebaseInit = _runFirebaseInitializer();
   }
 
   void _retry() {
     setState(() {
-      _firebaseInit = _initializeFirebase();
+      _firebaseInit = _runFirebaseInitializer();
     });
+  }
+
+  Future<void> _runFirebaseInitializer() {
+    return (widget.firebaseInitializer ?? _initializeFirebase)();
   }
 
   @override
@@ -135,7 +142,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
           );
         }
 
-        return const MyApp();
+        return widget.readyApp ?? const MyApp();
       },
     );
   }
