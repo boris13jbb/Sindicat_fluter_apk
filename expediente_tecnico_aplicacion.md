@@ -13,7 +13,7 @@
 | Backend / servicios externos | Firebase Authentication y Cloud Firestore. |
 | Estado actual estimado | MVP avanzado / desarrollo funcional. Conviven dos modelos de asistencia con contrato UI explícito (`AsistenciaEventRouteArgs`): legacy `eventos` y reporte `attendance_events`; escáner/registro manual escriben en la subcolección correcta según contexto. Sigue recomendándose validación con datos/usuarios reales antes de producción. |
 | Arquitectura | Capa de UI en `lib/features`, estado global en `lib/providers`, servicios en `lib/services`, modelos en `lib/core/models`, tema y widgets compartidos en `lib/core`. |
-| Punto de entrada | `lib/main.dart`. Inicializa Firebase con timeout de 10 segundos y configura Firestore offline fuera de Web. |
+| Punto de entrada | `lib/main.dart`. `AppBootstrap` inicializa Firebase con timeout de 10 segundos, muestra carga/error con reintento y sólo crea `AuthProvider` cuando Firebase está disponible; Firestore offline se configura fuera de Web. |
 
 ## 2. Alcance de la revisión
 
@@ -38,7 +38,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 | Comando | Resultado | Observación |
 |---|---|---|
 | `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
-| `flutter test --no-pub --reporter expanded` | Correcto | 21 pruebas pasan: smoke de login sin sesión, contrato `AppUser.memberId`, matriz local de acceso por rol, visibilidad de resultados por rol/estado, scanner, configuración de importación, parser CSV, modalidad de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
+| `flutter test --no-pub --reporter expanded` | Correcto | 24 pruebas pasan: smoke de login sin sesión, contrato `AppUser.memberId`, matriz local de acceso por rol, visibilidad de resultados por rol/estado, regla `canVoteInElection`, scanner, configuración de importación, parser CSV, modalidad de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
 | `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members`/`import_logs`, endurecer `audit_logs` y validar `users.memberId`. |
 | Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
 
@@ -119,7 +119,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | `/home` | Sí | Sí | Sí | Sí | Sí | Requiere sesión |
 | `/profile` | Sí | Sí | Sí | Sí | Sí | Requiere sesión; datos de socio por `users.memberId`/fallbacks |
 | `/voto/elections` | Sí | Sí | Sí | Sí | Sí | Requiere sesión; servicio filtra elecciones votables |
-| `/voto/voting` | Sí | Sí | Sí | Sí | Sí | Requiere sesión; `VoteService` valida voto único y reglas Firestore |
+| `/voto/voting` | Sí | Sí | Sí | Sí | Sí | Requiere sesión; UI/servicio bloquean elecciones inactivas, ocultas o fuera de fecha; `VoteService` valida voto único y reglas Firestore |
 | `/voto/results` | Sí | Sí | Sí | Sí* | Sí* | Requiere sesión; votantes dependen de visibilidad/fin de elección |
 | `/voto/create_election`, `/voto/edit_election`, `/voto/add_candidate`, `/voto/event_history` | Sí | Sí | No | No | No | `adminRouteRoles` |
 | `/asistencia` y rutas hijas (`crear_evento`, `crear_attendance_event`, `evento_detail`, `attendance_event_detail`, `personas`, `registro_manual`, `asistencias`, `exportar`, `scanner`, `importar_personas`, `qr_codes`, `/attendance/report`) | Sí | Sí | Sí | No | No | `attendanceRouteRoles` |
@@ -156,27 +156,29 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 **Acciones disponibles:** no aplica, es estado automático.
 
 **Flujo paso a paso:**
-1. `main()` inicializa Firebase.
-2. Se crea `AuthProvider` y ejecuta `init()`.
-3. Se escucha `authStateChanges`.
+1. `main()` renderiza `AppBootstrap`.
+2. `AppBootstrap` inicializa Firebase con timeout de 10 segundos.
+3. Si Firebase inicializa correctamente, se crea `MyApp`.
+4. `MyApp` crea `AuthProvider` y ejecuta `init()`.
+5. Se escucha `authStateChanges`.
 4. Si hay usuario, se muestra Home.
 5. Si no hay usuario, se muestra Login.
 
-**Validaciones esperadas:** Firebase debe estar inicializado; si falla, la app continúa pero los servicios Firebase pueden no estar disponibles.
+**Validaciones esperadas:** Firebase debe estar inicializado antes de crear `AuthProvider`; si falla, se muestra pantalla de error con botón **Reintentar** y no se navega a módulos dependientes de Firebase.
 
 **Datos utilizados:** Firebase Auth, documento `users/{uid}`.
 
-**Estados posibles:** cargando, autenticado, no autenticado, error silencioso de Firebase/Auth.
+**Estados posibles:** inicializando servicios, error de inicialización con reintento, autenticado, no autenticado.
 
-**Observaciones técnicas o funcionales:** el arranque captura excepciones de Firebase e imprime diagnóstico, pero no muestra una pantalla funcional de error al usuario final.
+**Observaciones técnicas o funcionales:** corregido localmente. `AppBootstrap` usa `FutureBuilder` para separar el arranque Firebase de la app autenticada; muestra pantalla de carga, pantalla de error de conexión con reintento y detalle sólo en debug.
 
-**Problemas encontrados:** si Firebase falla, la app puede continuar hacia pantallas que dependen de Firebase sin mensaje claro.
+**Problemas encontrados:** mitigado localmente el flujo en el que Firebase fallaba y la app continuaba hacia pantallas que dependen de Firebase sin mensaje claro.
 
-**Huecos o pendientes por corregir:** falta pantalla de error/reintento de inicialización.
+**Huecos o pendientes por corregir:** falta prueba widget dedicada de error/reintento inyectando inicializador fallido.
 
 **Prioridad de corrección:** Media.
 
-**Recomendación:** implementar estado de arranque con error visible, reintento y detalle operativo controlado.
+**Recomendación:** cubrir `AppBootstrap` con prueba widget/fake inicializador y validar en Windows/Web con red deshabilitada.
 
 ### Pantalla: Login
 
@@ -339,15 +341,15 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Estados posibles:** cargando, vacío, con datos, error, reintento.
 
-**Observaciones técnicas o funcionales:** `getActiveElections` filtra fechas en cliente y no valida `isActive`; solo filtra `isVisibleToVoters` y rango de fecha.
+**Observaciones técnicas o funcionales:** corregido localmente. `getActiveElections` reutiliza la regla central `canVoteInElection`, por lo que los votantes sólo reciben elecciones `isActive == true`, `isVisibleToVoters == true` y dentro del rango de fechas. Las tarjetas también usan el mismo estado para no habilitar el botón **Votar** en elecciones inactivas u ocultas.
 
-**Problemas encontrados:** una elección con `isActive=false` podría aparecer al votante si está visible y en rango.
+**Problemas encontrados:** mitigado localmente el caso de elección visible/en rango pero `isActive=false`.
 
-**Huecos o pendientes por corregir:** falta filtro por `isActive == true`.
+**Huecos o pendientes por corregir:** falta prueba widget/integración con Firebase real/emulator para confirmar navegación completa con datos reales.
 
 **Prioridad de corrección:** Alta.
 
-**Recomendación:** ajustar query/filtro de elecciones activas y cubrir con test.
+**Recomendación:** mantener `canVoteInElection` como contrato único de votación y cubrir navegación directa con pruebas de integración cuando el emulator esté disponible.
 
 ### Pantalla: Crear Elección
 
@@ -1167,16 +1169,16 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 1. Votante abre elección.
 2. Sistema verifica si ya votó.
-3. Sistema verifica fechas.
-4. Si se requiere asistencia, verifica registro.
+3. Sistema verifica regla central de votación: activa, visible para votantes y dentro de fechas.
+4. Si se requiere asistencia, verifica registro con stream combinado legacy (`asistencias`) y reporte (`attendance_events/{eventoAsistenciaId}/asistencias`).
 5. Usuario selecciona candidato.
 6. Confirma.
-7. Batch crea voto e incrementa contadores.
+7. `VoteService.castVote` vuelve a validar el estado de la elección antes del batch.
 8. Se muestra éxito.
 
-**Errores posibles:** permiso denegado por reglas, voto duplicado, falta asistencia, elección cerrada, candidato inexistente.
+**Errores posibles:** permiso denegado por reglas, voto duplicado, falta asistencia, elección inactiva u oculta, elección cerrada/no iniciada, candidato inexistente.
 
-**Mejora crítica:** corregir reglas de actualización parcial con `diff`.
+**Mejora crítica:** mantener alineados `canVoteInElection`, `VoteService.castVote` y `firestore.rules/electionIsOpen`.
 
 ### Flujo: Registrar asistencia por QR
 
@@ -1246,7 +1248,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | Elecciones | Listar elecciones | Streams Firestore | Funcional/parcial | Votantes filtran `isVisibleToVoters`, `isActive` y rango de fechas; falta prueba con datos reales | Media |
 | Elecciones | Crear/editar | CRUD elección | Funcional | Requiere unificar estados | Media |
 | Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Funcional/parcial | Eliminación bloqueada si el candidato tiene votos; falta test automatizado | Media |
-| Voto | Emitir voto | Batch de voto y contadores | Parcial | Reglas locales compilan y validan voto propio/contadores; falta suite de reglas con emulator | Alta |
+| Voto | Emitir voto | Batch de voto y contadores | Parcial | UI, servicio y reglas locales validan elección activa, visible, en rango, asistencia legacy/reporte cuando aplica, voto propio y contadores; falta suite de reglas con emulator | Alta |
 | Resultados | Ver conteos | Ranking en tiempo real | Funcional/parcial | Visibilidad para votantes centralizada y testeada; exportación CSV/PDF pide confirmación previa; falta prueba widget/Firebase real | Media |
 | Asistencia | Crear evento legacy | Crea `eventos` con `modalidadesNoConvocadas` | Funcional | Selector múltiple de modalidades no convocadas; lista vacía significa sin exclusiones | Alta |
 | Asistencia | Scanner | QR/código/manual | Funcional/parcial | Legacy y modelo reporte vía rutas/contexto (`AsistenciaEventRouteArgs`); falta prueba de cámara/dispositivo | Media |
@@ -1294,10 +1296,13 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | E-028 | Resultados / Votación | Corregido localmente: visibilidad de resultados centralizada y testeada | Se agrega `canViewElectionResults` en `lib/core/security/election_visibility.dart`; `ElectionResultsScreen` y la pantalla post-voto usan la misma regla. Admins pueden revisar siempre; roles no administrativos sólo ven resultados si la elección está activa, visible, con publicación automática y finalizada. | Evita publicación anticipada u oculta por ruta directa y reduce divergencias entre pantalla de resultados y pantalla de voto registrado. | Media/Alta | Mantener `test/election_visibility_test.dart`; validar navegación real y reglas con usuarios Firebase. |
 | E-029 | Exportaciones / UX | Corregido localmente: confirmación previa en exportaciones sensibles | Exportar socios CSV, asistencia CSV/Excel/PDF y resultados CSV/PDF muestran diálogo de confirmación antes de copiar o compartir. Los textos advierten sobre datos personales/operativos y recomiendan compartir sólo con personal autorizado. | Reduce filtraciones accidentales y acciones involuntarias sobre datos sensibles. | Baja/Media | Validar UX con usuarios reales y extender la misma pauta a nuevas exportaciones futuras. |
 | E-030 | Auditoría / Rendimiento | Corregido localmente: carga incremental en `audit_logs` | `AuditLogsScreen` consume `AuditService.getAuditLogs(limit: ...)` con límite inicial de 50 y permite aumentar de 50 en 50; al cambiar filtros se reinicia el límite. | Reduce lecturas/render inicial en auditoría y conserva acceso gradual a históricos. | Media | Validar con volumen real e índices compuestos para filtros combinados. |
+| E-031 | Votación / Elecciones | Corregido localmente: regla única para permitir votar | Se agrega `canVoteInElection`/`ElectionVotingStatus`; listado, tarjetas, pantalla directa de voto y `VoteService.castVote` bloquean elecciones inactivas, ocultas, no iniciadas o finalizadas antes de permitir el batch. | Reduce divergencias UI-servicio-reglas y evita intentos de voto por ruta directa sobre elecciones no votables. | Alta | Mantener prueba pura y validar con Firebase real/emulator por rol. |
+| E-032 | Votación / Asistencia | Corregido localmente: elegibilidad por asistencia escucha legacy y reporte | `VoteService.watchUserEligibilityForElection` recalcula al cambiar `asistencias` legacy o `attendance_events/{eventoAsistenciaId}/asistencias`; `VotingScreen` lo usa cuando `requireAttendance` está activo y bloquea elecciones sin evento vinculado. | Evita que una elección vinculada a modelo reporte quede bloqueada en UI aunque el socio ya tenga asistencia válida; mantiene validación final en `castVote`. | Alta | Validar con eventos reales legacy/reporte y suite emulator cuando esté disponible. |
+| E-033 | Arranque / Firebase | Corregido localmente: error de inicialización visible y reintentable | `main.dart` incorpora `AppBootstrap`: inicializa Firebase antes de crear `AuthProvider`, muestra carga, muestra error con botón **Reintentar** y no entra al flujo de login si Firebase no está disponible. | Evita estados rotos o mensajes confusos cuando hay timeout/red/configuración Firebase incorrecta. | Media/Alta | Agregar prueba widget con inicializador fake y validar en plataforma real con red desconectada. |
 
 ### Clasificación por tipo
 
-- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024, E-025, E-026, E-027 y E-028; pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
+- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024, E-025, E-026, E-027, E-028, E-031, E-032 y E-033; pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
 - Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012 y E-029 quedan corregidos localmente con pendiente de validación manual.
 - Errores de navegación: E-014 y E-027 corregidos localmente, pendiente validación manual con cuentas reales.
 - Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**), E-024 (**modalidades no convocadas opcionales**), E-025 (**faltas injustificadas vs ausencias justificadas/no convocados**) y E-028 (**publicación de resultados**); faltan pruebas con archivos reales y emulator.
@@ -1515,7 +1520,7 @@ Resultado actual:
 - `test/evento_asistencia_test.dart`: valida serialización canónica de `modalidadesNoConvocadas`, lectura de `modalidad` legacy como exclusión única y descarte de valores inválidos/duplicados.
 - `test/route_access_test.dart`: valida decisión de acceso por rol para estados de carga, sesión requerida, rutas autenticadas, rutas administrativas y rutas de asistencia.
 - `test/scanner_screen_test.dart`: valida que el scanner muestre nombre/modalidad al registrar por código y no bloquee registros cuando la modalidad está sin asignar.
-- Estado: 21 pruebas pasan.
+- Estado: 24 pruebas pasan.
 - Acción recomendada: ampliar cobertura de reglas Firestore, voto, resumen de asistencia, login e importación con datos representativos/emulator.
 
 ### F. Validación de reglas Firestore
@@ -1530,6 +1535,9 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-05-01 | Se mitiga localmente **E-033**: `AppBootstrap` inicializa Firebase antes de `AuthProvider`, muestra carga, error con **Reintentar** y evita entrar al login si Firebase no está disponible. | `lib/main.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (24/24) | Aplicado localmente |
+| 2026-05-01 | Se mitiga localmente **E-032**: elegibilidad de voto por asistencia escucha tanto `asistencias` legacy como `attendance_events/{eventoAsistenciaId}/asistencias`; la pantalla bloquea elecciones que exigen asistencia pero no tienen evento vinculado. | `lib/services/election_service.dart`, `lib/features/voting/voting_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (24/24) | Aplicado localmente |
+| 2026-05-01 | Se mitiga localmente **E-031**: regla única de votación `canVoteInElection`/`ElectionVotingStatus`; listado, tarjetas, pantalla directa `/voto/voting` y `VoteService.castVote` bloquean elecciones inactivas, ocultas, no iniciadas o finalizadas antes de votar. | `lib/core/security/election_visibility.dart`, `lib/services/election_service.dart`, `lib/features/elections/election_card.dart`, `lib/features/voting/voting_screen.dart`, `test/election_visibility_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (24/24) | Aplicado localmente |
 | 2026-05-01 | Se mitiga documentalmente **H-010**: política de auditoría define `audit_logs` como fuente canónica, `events` como legacy, uso permitido, estrategia de migración idempotente y retención pendiente de decisión operativa. | `expediente_tecnico_aplicacion.md` | Revisión documental contra `AuditService`/`EventService`; sin cambios de código | Documentación |
 | 2026-05-01 | Se mitiga parcialmente **H-005** en auditoría: `/audit/logs` carga 50 registros iniciales y permite ampliar de 50 en 50; filtros reinician el límite para evitar arranques pesados. | `lib/features/audit/audit_logs_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (21/21) | Aplicado localmente |
 | 2026-05-01 | Se mitiga localmente **H-006**: confirmación previa para exportaciones sensibles de socios, asistencia y resultados antes de copiar/compartir CSV, Excel o PDF. | `lib/features/members/members_list_screen.dart`, `lib/features/asistencia/exportar_screen.dart`, `lib/features/results/election_results_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (21/21) | Aplicado localmente |

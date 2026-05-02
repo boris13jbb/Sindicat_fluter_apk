@@ -5,6 +5,7 @@ import '../core/models/election.dart';
 import '../core/models/election_result.dart';
 import '../core/models/audit_log.dart';
 import '../core/models/member.dart';
+import '../core/security/election_visibility.dart';
 import 'audit_service.dart';
 import 'asistencia_service.dart';
 import 'members_service.dart';
@@ -93,12 +94,10 @@ class ElectionService {
         .where('isVisibleToVoters', isEqualTo: true)
         .snapshots(includeMetadataChanges: true)
         .map((snap) {
-          final now = DateTime.now().millisecondsSinceEpoch;
+          final now = DateTime.now();
           return snap.docs
               .map((d) => Election.fromMap(d.data(), d.id))
-              .where(
-                (e) => e.isActive && e.startDate <= now && e.endDate >= now,
-              )
+              .where((e) => canVoteInElection(election: e, now: now))
               .toList();
         });
   }
@@ -398,6 +397,75 @@ class VoteService {
         .map((doc) => doc.exists);
   }
 
+  /// Recalcula elegibilidad cuando cambia asistencia legacy o reporte.
+  ///
+  /// Cubre elecciones vinculadas tanto a `eventos/{id}` como a
+  /// `attendance_events/{id}`. La validación final sigue en
+  /// [isUserEligibleToVote] y se repite en [castVote].
+  Stream<bool> watchUserEligibilityForElection({
+    required String electionId,
+    required String attendanceEventId,
+    required String userId,
+    required String memberId,
+  }) {
+    if (electionId.isEmpty ||
+        attendanceEventId.isEmpty ||
+        userId.isEmpty ||
+        memberId.isEmpty) {
+      return Stream.value(false);
+    }
+
+    late final StreamController<bool> controller;
+    final subscriptions = <StreamSubscription<dynamic>>[];
+    var emission = 0;
+
+    Future<void> emitEligibility() async {
+      final token = ++emission;
+      try {
+        final isEligible = await isUserEligibleToVote(
+          electionId: electionId,
+          userId: userId,
+          memberId: memberId,
+        );
+        if (!controller.isClosed && token == emission) {
+          controller.add(isEligible);
+        }
+      } catch (e, stackTrace) {
+        if (!controller.isClosed && token == emission) {
+          controller.addError(e, stackTrace);
+        }
+      }
+    }
+
+    controller = StreamController<bool>(
+      onListen: () {
+        scheduleMicrotask(emitEligibility);
+        subscriptions.add(
+          _firestore
+              .collection('asistencias')
+              .where('eventoId', isEqualTo: attendanceEventId)
+              .snapshots(includeMetadataChanges: true)
+              .listen((_) => emitEligibility(), onError: controller.addError),
+        );
+        subscriptions.add(
+          _firestore
+              .collection('attendance_events')
+              .doc(attendanceEventId)
+              .collection('asistencias')
+              .snapshots(includeMetadataChanges: true)
+              .listen((_) => emitEligibility(), onError: controller.addError),
+        );
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+
+    return controller.stream.distinct();
+  }
+
   /// Verificar si un usuario es elegible para votar en una elección
   /// ESTRATEGIA: Usa búsqueda inteligente por múltiples identificadores
   /// (workerCode, email, userId) similar a asistencia_service.dart
@@ -581,6 +649,19 @@ class VoteService {
     debugPrint('   UserId: $userId');
     debugPrint('   CandidateId: $candidateId');
     debugPrint('   MemberId: ${memberId ?? "null"}');
+
+    final electionDoc = await _firestore
+        .collection('elections')
+        .doc(electionId)
+        .get();
+    if (!electionDoc.exists) {
+      throw Exception('La elección no existe.');
+    }
+    final election = Election.fromMap(electionDoc.data()!, electionDoc.id);
+    final votingStatus = getElectionVotingStatus(election: election);
+    if (votingStatus != ElectionVotingStatus.open) {
+      throw Exception(electionVotingStatusMessage(votingStatus));
+    }
 
     // 🆕 Validar elegibilidad antes de permitir el voto
     if (memberId != null && memberId.isNotEmpty) {

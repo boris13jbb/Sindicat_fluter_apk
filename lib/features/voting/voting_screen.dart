@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import '../../core/models/candidate.dart';
 import '../../core/models/election.dart';
 import '../../core/security/election_visibility.dart';
-import '../../services/asistencia_service.dart';
 import '../../services/election_service.dart';
 import '../../services/auth_service.dart';
 import '../../core/widgets/professional_app_bar.dart';
@@ -22,7 +21,6 @@ class _VotingScreenState extends State<VotingScreen> {
   late ElectionService _electionService;
   late Future<ResultsBootstrap> _bootstrap;
   final VoteService _voteService = VoteService();
-  final AsistenciaService _asistenciaService = AsistenciaService();
   final AuthService _authService = AuthService();
 
   static const Duration _bootstrapTimeout = Duration(seconds: 30);
@@ -31,34 +29,37 @@ class _VotingScreenState extends State<VotingScreen> {
 
   bool _localVoteDone = false;
   String _userId = '';
-  String? _userEmail;
-  String? _memberId; // 🆕 ID del socio para validación de elegibilidad
+  String? _memberId; // ID canónico del socio para validación de elegibilidad
 
   @override
   void initState() {
     super.initState();
     _userId = FirebaseAuth.instance.currentUser?.uid ?? '';
-    _userEmail = FirebaseAuth.instance.currentUser?.email;
     _electionService = ElectionService();
     _bootstrap = _loadBootstrap();
     _votedStream = _voteService.userVotedStream(widget.electionId, _userId);
     _initializeMemberId();
   }
 
-  /// Inicializa el memberId correcto basado en employeeNumber del usuario
+  /// Inicializa el memberId canónico del socio para validar elegibilidad.
   Future<void> _initializeMemberId() async {
     try {
       final user = await _authService.getCurrentUser();
       if (user != null) {
         setState(() {
-          // PRIORIDAD: employeeNumber (workerCode) como memberId
-          // Fallback: userId si no hay employeeNumber
-          _memberId = user.employeeNumber?.isNotEmpty == true
-              ? user.employeeNumber
+          _memberId = user.memberId?.trim().isNotEmpty == true
+              ? user.memberId!.trim()
+              : user.employeeNumber?.trim().isNotEmpty == true
+              ? user.employeeNumber!.trim()
               : _userId;
         });
         debugPrint(
-          '🗳️ MemberId inicializado: $_memberId (tipo: ${user.employeeNumber?.isNotEmpty == true ? "employeeNumber" : "userId fallback"})',
+          '🗳️ MemberId inicializado: $_memberId '
+          '(tipo: ${user.memberId?.trim().isNotEmpty == true
+              ? "users.memberId"
+              : user.employeeNumber?.trim().isNotEmpty == true
+              ? "employeeNumber"
+              : "userId fallback"})',
         );
       }
     } catch (e) {
@@ -170,27 +171,41 @@ class _VotingScreenState extends State<VotingScreen> {
                     return const Center(child: Text('La elección no existe.'));
                   }
 
-                  if (election.isNotStarted) {
+                  final votingStatus = getElectionVotingStatus(
+                    election: election,
+                  );
+                  if (votingStatus != ElectionVotingStatus.open) {
+                    final detail =
+                        votingStatus == ElectionVotingStatus.notStarted
+                        ? '\nInicio: ${DateTime.fromMillisecondsSinceEpoch(election.startDate)}'
+                        : '';
                     return Center(
                       child: Text(
-                        'Elección programada para: ${DateTime.fromMillisecondsSinceEpoch(election.startDate)}',
+                        '${electionVotingStatusMessage(votingStatus)}$detail',
+                        textAlign: TextAlign.center,
                       ),
                     );
                   }
-                  if (election.isEnded) {
-                    return const Center(
-                      child: Text('Esta elección ya ha finalizado.'),
-                    );
-                  }
 
-                  if (election.requireAttendance &&
-                      election.eventoAsistenciaId != null) {
-                    final eventoId = election.eventoAsistenciaId!;
+                  if (election.requireAttendance) {
+                    final eventoId = election.eventoAsistenciaId;
+                    if (eventoId == null || eventoId.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'Esta elección requiere asistencia, pero no tiene un evento vinculado.',
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    }
+                    if (_memberId == null || _memberId!.isEmpty) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
                     return StreamBuilder<bool>(
-                      stream: _asistenciaService.watchUserRegisteredInEvent(
-                        eventoId,
-                        _userId,
-                        _userEmail,
+                      stream: _voteService.watchUserEligibilityForElection(
+                        electionId: widget.electionId,
+                        attendanceEventId: eventoId,
+                        userId: _userId,
+                        memberId: _memberId!,
                       ),
                       builder: (context, attSnap) {
                         if (attSnap.hasError) {
@@ -239,8 +254,7 @@ class _VotingScreenState extends State<VotingScreen> {
       voteService: _voteService,
       initialCandidates: initialCandidates,
       onVoteSuccess: () => setState(() => _localVoteDone = true),
-      memberId:
-          _memberId, // ✅ Pasar memberId correcto (employeeNumber o userId)
+      memberId: _memberId,
     );
   }
 }

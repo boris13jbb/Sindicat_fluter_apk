@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/models/election.dart';
+import '../../core/security/election_visibility.dart';
 
 class ElectionCard extends StatelessWidget {
   const ElectionCard({
@@ -30,9 +31,7 @@ class ElectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final isEnded = now > election.endDate;
-    final isNotStarted = now < election.startDate;
+    final votingStatus = getElectionVotingStatus(election: election);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -96,7 +95,7 @@ class ElectionCard extends StatelessWidget {
             const SizedBox(height: 16),
             Row(
               children: [
-                if (isEnded)
+                if (votingStatus == ElectionVotingStatus.ended)
                   Expanded(
                     child: FilledButton.icon(
                       onPressed: onViewResults,
@@ -104,7 +103,7 @@ class ElectionCard extends StatelessWidget {
                       label: const Text('Ver Resultados'),
                     ),
                   )
-                else if (isNotStarted)
+                else if (votingStatus == ElectionVotingStatus.notStarted)
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: null,
@@ -112,11 +111,23 @@ class ElectionCard extends StatelessWidget {
                       label: const Text('Aún no inicia'),
                     ),
                   )
-                else
+                else if (votingStatus == ElectionVotingStatus.open)
                   Expanded(
                     child: FilledButton(
                       onPressed: onVote,
                       child: const Text('Votar'),
+                    ),
+                  )
+                else
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: null,
+                      icon: const Icon(Icons.block, size: 20),
+                      label: Text(
+                        votingStatus == ElectionVotingStatus.hidden
+                            ? 'No visible'
+                            : 'Inactiva',
+                      ),
                     ),
                   ),
                 if (isAdmin)

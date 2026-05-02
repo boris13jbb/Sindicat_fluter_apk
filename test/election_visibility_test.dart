@@ -110,4 +110,62 @@ void main() {
       );
     });
   });
+
+  group('canVoteInElection', () {
+    Election votableElection({
+      bool isActive = true,
+      bool isVisibleToVoters = true,
+      DateTime? startDate,
+      DateTime? endDate,
+    }) {
+      return election(
+        isActive: isActive,
+        isVisibleToVoters: isVisibleToVoters,
+        startDate: startDate ?? now.subtract(const Duration(minutes: 10)),
+        endDate: endDate ?? now.add(const Duration(minutes: 10)),
+      );
+    }
+
+    test('allows voting only when active, visible and inside date range', () {
+      expect(canVoteInElection(election: votableElection(), now: now), isTrue);
+    });
+
+    test('blocks inactive and hidden elections even inside date range', () {
+      expect(
+        getElectionVotingStatus(
+          election: votableElection(isActive: false),
+          now: now,
+        ),
+        ElectionVotingStatus.inactive,
+      );
+      expect(
+        getElectionVotingStatus(
+          election: votableElection(isVisibleToVoters: false),
+          now: now,
+        ),
+        ElectionVotingStatus.hidden,
+      );
+    });
+
+    test('blocks elections outside the voting window', () {
+      expect(
+        getElectionVotingStatus(
+          election: votableElection(
+            startDate: now.add(const Duration(minutes: 1)),
+          ),
+          now: now,
+        ),
+        ElectionVotingStatus.notStarted,
+      );
+      expect(
+        getElectionVotingStatus(
+          election: votableElection(
+            endDate: now.subtract(const Duration(minutes: 1)),
+          ),
+          now: now,
+        ),
+        ElectionVotingStatus.ended,
+      );
+    });
+  });
 }

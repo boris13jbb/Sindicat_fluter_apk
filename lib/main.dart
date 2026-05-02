@@ -39,11 +39,13 @@ import 'core/models/asistencia/evento.dart';
 import 'core/models/user_role.dart';
 import 'core/security/route_access.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  runApp(const AppBootstrap());
+}
 
-  try {
-    // Initialize Firebase with timeout to prevent hanging
+Future<void> _initializeFirebase() async {
+  if (Firebase.apps.isEmpty) {
     debugPrint('🔄 Inicializando Firebase...');
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -56,47 +58,167 @@ void main() async {
         );
       },
     );
-
-    // Configuración de Firestore: solo activamos persistencia fuera de la Web
-    // o de forma controlada para evitar el timeout del arranque.
-    if (!kIsWeb) {
-      try {
-        FirebaseFirestore.instance.settings = const Settings(
-          persistenceEnabled: true,
-          cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-        );
-        debugPrint('✅ Firestore persistencia habilitada');
-      } catch (firestoreError) {
-        debugPrint('⚠️ Error configurando Firestore: $firestoreError');
-        debugPrint('Continuando sin persistencia...');
-        // Fallback a configuración básica sin persistencia
-        FirebaseFirestore.instance.settings = const Settings(
-          persistenceEnabled: false,
-        );
-      }
-    }
-    debugPrint('✅ Firebase inicializado correctamente');
-  } catch (e) {
-    debugPrint('❌ Error inicializando Firebase: $e');
-    debugPrint('Verifica que:');
-    debugPrint('1. Las credenciales en firebase_options.dart sean correctas');
-    debugPrint('2. Firebase Auth esté habilitado en Firebase Console');
-    debugPrint('3. Tengas conexión a internet');
-    debugPrint(
-      '4. El appId para Windows sea correcto (debe ser el mismo que Web)',
-    );
-    debugPrint(
-      '\nLa aplicación continuará pero Firebase no estará disponible.',
-    );
   }
 
-  runApp(const MyApp());
+  // Configuración de Firestore: solo activamos persistencia fuera de la Web
+  // o de forma controlada para evitar el timeout del arranque.
+  if (!kIsWeb) {
+    try {
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      );
+      debugPrint('✅ Firestore persistencia habilitada');
+    } catch (firestoreError) {
+      debugPrint('⚠️ Error configurando Firestore: $firestoreError');
+      debugPrint('Continuando sin persistencia...');
+      FirebaseFirestore.instance.settings = const Settings(
+        persistenceEnabled: false,
+      );
+    }
+  }
+
+  debugPrint('✅ Firebase inicializado correctamente');
 }
 
 Widget _authGuard(Widget child) => _RouteGuard(child: child);
 
 Widget _roleGuard(Widget child, Set<UserRole> allowedRoles) {
   return _RouteGuard(allowedRoles: allowedRoles, child: child);
+}
+
+class AppBootstrap extends StatefulWidget {
+  const AppBootstrap({super.key});
+
+  @override
+  State<AppBootstrap> createState() => _AppBootstrapState();
+}
+
+class _AppBootstrapState extends State<AppBootstrap> {
+  late Future<void> _firebaseInit;
+
+  @override
+  void initState() {
+    super.initState();
+    _firebaseInit = _initializeFirebase();
+  }
+
+  void _retry() {
+    setState(() {
+      _firebaseInit = _initializeFirebase();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<void>(
+      future: _firebaseInit,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return MaterialApp(
+            title: 'Sistema Integrado Sindicato',
+            debugShowCheckedModeBanner: false,
+            theme: appTheme,
+            home: const _StartupLoadingScreen(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return MaterialApp(
+            title: 'Sistema Integrado Sindicato',
+            debugShowCheckedModeBanner: false,
+            theme: appTheme,
+            home: _FirebaseInitErrorScreen(
+              error: snapshot.error,
+              onRetry: _retry,
+            ),
+          );
+        }
+
+        return const MyApp();
+      },
+    );
+  }
+}
+
+class _StartupLoadingScreen extends StatelessWidget {
+  const _StartupLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Inicializando servicios...'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FirebaseInitErrorScreen extends StatelessWidget {
+  const _FirebaseInitErrorScreen({required this.error, required this.onRetry});
+
+  final Object? error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Error de conexión')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.cloud_off_outlined,
+                  size: 56,
+                  color: colorScheme.error,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'No se pudieron inicializar los servicios de Firebase.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Verifica la conexión, credenciales de Firebase y configuración de la plataforma antes de continuar.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                if (kDebugMode && error != null) ...[
+                  const SizedBox(height: 12),
+                  SelectableText(
+                    '$error',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: colorScheme.error),
+                  ),
+                ],
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reintentar'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {
