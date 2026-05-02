@@ -96,7 +96,7 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
             );
           }
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
             itemCount: elections.length,
             itemBuilder: (context, index) {
               final election = elections[index];

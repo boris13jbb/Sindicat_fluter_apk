@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'core/widgets/system_navigation_insets.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
@@ -125,6 +126,13 @@ class _AppBootstrapState extends State<AppBootstrap> {
             title: 'Sistema Integrado Sindicato',
             debugShowCheckedModeBanner: false,
             theme: appTheme,
+            builder: (context, child) {
+              if (child == null) return const SizedBox.shrink();
+              return MediaQuery(
+                data: mediaQueryWithSystemGestureInsets(context),
+                child: child,
+              );
+            },
             home: const _StartupLoadingScreen(),
           );
         }
@@ -134,6 +142,13 @@ class _AppBootstrapState extends State<AppBootstrap> {
             title: 'Sistema Integrado Sindicato',
             debugShowCheckedModeBanner: false,
             theme: appTheme,
+            builder: (context, child) {
+              if (child == null) return const SizedBox.shrink();
+              return MediaQuery(
+                data: mediaQueryWithSystemGestureInsets(context),
+                child: child,
+              );
+            },
             home: _FirebaseInitErrorScreen(
               error: snapshot.error,
               onRetry: _retry,
@@ -238,6 +253,13 @@ class MyApp extends StatelessWidget {
         title: 'Sistema Integrado Sindicato',
         debugShowCheckedModeBanner: false,
         theme: appTheme,
+        builder: (context, child) {
+          if (child == null) return const SizedBox.shrink();
+          return MediaQuery(
+            data: mediaQueryWithSystemGestureInsets(context),
+            child: child,
+          );
+        },
         home: Consumer<AuthProvider>(
           builder: (context, auth, _) {
             if (auth.isLoading) {

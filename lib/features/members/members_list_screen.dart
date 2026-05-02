@@ -233,7 +233,7 @@ class _MembersListScreenState extends State<MembersListScreen> {
     return RefreshIndicator(
       onRefresh: _loadInitialMembersPage,
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
         itemCount: _pagedMembers.length + 1,
         itemBuilder: (context, index) {
           if (index == _pagedMembers.length) {
@@ -422,7 +422,7 @@ class _MembersListView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
       itemCount: members.length,
       itemBuilder: (context, index) {
         final member = members[index];

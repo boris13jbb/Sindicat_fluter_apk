@@ -224,6 +224,7 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
             else
               Expanded(
                 child: ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 88),
                   itemCount: eventos.length,
                   itemBuilder: (context, i) {
                     final e = eventos[i];
@@ -356,6 +357,7 @@ class _AsistenciaHomeScreenState extends State<AsistenciaHomeScreen> {
             else
               Expanded(
                 child: ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 88),
                   itemCount: eventos.length,
                   itemBuilder: (context, i) {
                     final e = eventos[i];
