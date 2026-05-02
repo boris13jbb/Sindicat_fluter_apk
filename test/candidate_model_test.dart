@@ -36,5 +36,65 @@ void main() {
       expect(parseCandidateOrder(''), 0);
       expect(parseCandidateOrder('abc'), 0);
     });
+
+    test('rejects candidate deletion when votes exist', () {
+      expect(validateCandidateDeletion(voteCount: 0), isNull);
+      expect(
+        validateCandidateDeletion(voteCount: 1),
+        candidateWithVotesDeletionError,
+      );
+      expect(
+        validateCandidateDeletion(voteCount: 0, hasVoteDocuments: true),
+        candidateWithVotesDeletionError,
+      );
+    });
+
+    test('normalizes candidate names for duplicate detection', () {
+      expect(candidateNameKey('  Ana   Pérez  '), 'ana pérez');
+    });
+
+    test('detects duplicate candidate names inside the same election', () {
+      const existing = Candidate(
+        id: 'candidate-1',
+        electionId: 'election-1',
+        name: 'Ana Pérez',
+      );
+
+      expect(
+        hasCandidateNameConflict(
+          candidate: const Candidate(
+            id: '',
+            electionId: 'election-1',
+            name: ' ana   pérez ',
+          ),
+          existingCandidates: [existing],
+        ),
+        isTrue,
+      );
+
+      expect(
+        hasCandidateNameConflict(
+          candidate: const Candidate(
+            id: 'candidate-1',
+            electionId: 'election-1',
+            name: 'Ana Pérez',
+          ),
+          existingCandidates: [existing],
+        ),
+        isFalse,
+      );
+
+      expect(
+        hasCandidateNameConflict(
+          candidate: const Candidate(
+            id: '',
+            electionId: 'election-2',
+            name: 'Ana Pérez',
+          ),
+          existingCandidates: [existing],
+        ),
+        isFalse,
+      );
+    });
   });
 }

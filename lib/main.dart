@@ -17,7 +17,6 @@ import 'features/voting/voting_screen.dart';
 import 'features/results/election_results_screen.dart';
 import 'features/voto/event_history_screen.dart';
 import 'features/asistencia/asistencia_home_screen.dart';
-import 'features/asistencia/crear_evento_screen.dart';
 import 'features/asistencia/crear_attendance_event_screen.dart';
 import 'features/asistencia/evento_detail_screen.dart';
 import 'features/asistencia/personas_screen.dart';
@@ -282,8 +281,9 @@ class MyApp extends StatelessWidget {
               _roleGuard(const EventHistoryScreen(), adminRouteRoles),
           '/asistencia': (_) =>
               _roleGuard(const AsistenciaHomeScreen(), attendanceRouteRoles),
+          // Ruta antigua conservada como alias del flujo actual.
           '/asistencia/crear_evento': (_) => _roleGuard(
-            const CrearEventoAsistenciaScreen(),
+            const CrearAttendanceEventScreen(),
             attendanceRouteRoles,
           ),
           '/asistencia/crear_attendance_event': (_) => _roleGuard(
@@ -358,9 +358,11 @@ class MyApp extends StatelessWidget {
             final raw = ModalRoute.of(ctx)?.settings.arguments;
             EventoAsistencia? evento;
             String? attendanceEventId;
+            var openScannerDirectly = false;
             if (raw is AsistenciaEventRouteArgs) {
               evento = raw.evento;
               attendanceEventId = raw.attendanceEventId;
+              openScannerDirectly = raw.openScannerDirectly;
             } else if (raw is EventoAsistencia) {
               evento = raw;
             }
@@ -371,6 +373,7 @@ class MyApp extends StatelessWidget {
                     attendanceEventId != null && attendanceEventId.isNotEmpty
                     ? attendanceEventId
                     : null,
+                openScannerDirectly: openScannerDirectly,
               ),
               attendanceRouteRoles,
             );

@@ -101,7 +101,7 @@ class ExportarAsistenciaScreen extends StatefulWidget {
       _ExportarAsistenciaScreenState();
 }
 
-enum _OrigenExport { legacy, reporte, combinado }
+enum _OrigenExport { legacy, eventos, combinado }
 
 class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
   final AsistenciaService _service = AsistenciaService();
@@ -109,12 +109,12 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
 
   _OrigenExport _origen = _OrigenExport.legacy;
 
-  /// Sólo se asigna al entrar en pestaña **Reporte** o al pulsar «Actualizar».
-  Future<List<AsistenciaConDatos>>? _filasReporteFuture;
+  /// Sólo se asigna al entrar en pestaña **Eventos** o al pulsar «Actualizar».
+  Future<List<AsistenciaConDatos>>? _filasEventosFuture;
 
-  void _recargarReporte() {
+  void _recargarEventos() {
     setState(() {
-      _filasReporteFuture = _attendance.fetchAllAttendanceExportsRows();
+      _filasEventosFuture = _attendance.fetchAllAttendanceExportsRows();
     });
   }
 
@@ -347,7 +347,7 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
   Widget _buildListaExport(
     BuildContext context,
     List<AsistenciaConDatos> list, {
-    bool mostrarActualizarReporte = false,
+    bool mostrarActualizarEventos = false,
   }) {
     if (list.isEmpty) {
       return Center(
@@ -362,9 +362,9 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
             const SizedBox(height: 16),
             Text(
               _origen == _OrigenExport.legacy
-                  ? 'No hay asistencias globales legacy para exportar.'
-                  : _origen == _OrigenExport.reporte
-                  ? 'No hay registros en eventos tipo reporte (attendance_events).'
+                  ? 'No hay asistencias históricas para exportar.'
+                  : _origen == _OrigenExport.eventos
+                  ? 'No hay registros en eventos actuales.'
                   : 'No hay registros combinados.',
               textAlign: TextAlign.center,
             ),
@@ -381,20 +381,20 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
         Padding(
           padding: const EdgeInsets.all(16),
           child: Text(
-            '${list.length} registros. Los del modelo reporte muestran el prefijo «[Reporte]» en el nombre del evento.',
+            '${list.length} registros. Los eventos actuales muestran el prefijo «[Evento]» en el nombre.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
-        if (mostrarActualizarReporte)
+        if (mostrarActualizarEventos)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: OutlinedButton.icon(
-              onPressed: _recargarReporte,
+              onPressed: _recargarEventos,
               icon: const Icon(Icons.refresh),
-              label: const Text('Actualizar lista reporte'),
+              label: const Text('Actualizar lista de eventos'),
             ),
           ),
-        if (mostrarActualizarReporte) const SizedBox(height: 8),
+        if (mostrarActualizarEventos) const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: FilledButton.icon(
@@ -571,12 +571,12 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
               segments: const [
                 ButtonSegment(
                   value: _OrigenExport.legacy,
-                  label: Text('Legacy'),
+                  label: Text('Históricos'),
                   icon: Icon(Icons.history_edu_outlined, size: 18),
                 ),
                 ButtonSegment(
-                  value: _OrigenExport.reporte,
-                  label: Text('Reporte'),
+                  value: _OrigenExport.eventos,
+                  label: Text('Eventos'),
                   icon: Icon(Icons.bar_chart_outlined, size: 18),
                 ),
                 ButtonSegment(
@@ -595,10 +595,10 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               _origen == _OrigenExport.legacy
-                  ? 'Colección global `asistencias` ligada a `eventos` / `personas`.'
-                  : _origen == _OrigenExport.reporte
-                  ? 'Subcolecciones `attendance_events/*/asistencias`; socios vía id en `members`.'
-                  : 'Unión en memoria de legacy + modelo reporte.',
+                  ? 'Asistencias históricas registradas en el modelo anterior.'
+                  : _origen == _OrigenExport.eventos
+                  ? 'Asistencias de eventos creados desde el flujo actual.'
+                  : 'Unión de eventos actuales e históricos.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -618,10 +618,10 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
           stream: _service.watchAllAsistenciasConDatos(),
           builder: (context, snap) => _resolverStream(context, snap, false),
         );
-      case _OrigenExport.reporte:
-        _filasReporteFuture ??= _attendance.fetchAllAttendanceExportsRows();
+      case _OrigenExport.eventos:
+        _filasEventosFuture ??= _attendance.fetchAllAttendanceExportsRows();
         return FutureBuilder<List<AsistenciaConDatos>>(
-          future: _filasReporteFuture!,
+          future: _filasEventosFuture!,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
@@ -640,7 +640,7 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
             return _buildListaExport(
               context,
               snap.data ?? [],
-              mostrarActualizarReporte: true,
+              mostrarActualizarEventos: true,
             );
           },
         );
@@ -682,7 +682,7 @@ class _ExportarAsistenciaScreenState extends State<ExportarAsistenciaScreen> {
     return _buildListaExport(
       context,
       snap.data ?? [],
-      mostrarActualizarReporte: mostrarActualizar,
+      mostrarActualizarEventos: mostrarActualizar,
     );
   }
 }

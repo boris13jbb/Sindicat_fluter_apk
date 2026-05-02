@@ -592,7 +592,10 @@ class _EventoDetailScreenState extends State<EventoDetailScreen> {
             onPressed: () => Navigator.pushNamed(
               context,
               '/asistencia/scanner',
-              arguments: AsistenciaEventRouteArgs.legacy(_currentEvento),
+              arguments: AsistenciaEventRouteArgs.legacy(
+                _currentEvento,
+                openScannerDirectly: true,
+              ),
             ),
             child: const Icon(Icons.qr_code_scanner),
           ),

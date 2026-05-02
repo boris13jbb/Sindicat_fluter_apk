@@ -5,6 +5,7 @@ import 'package:excel/excel.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import '../core/models/asistencia/asistencia.dart';
+import '../core/models/asistencia/evento_asistencia_vinculo_eleccion.dart';
 import '../core/models/audit_log.dart';
 import '../core/models/asistencia/registro_asistencia_result.dart';
 import '../core/models/member.dart';
@@ -44,6 +45,74 @@ class AsistenciaService implements AsistenciaRegistroApi {
               .map((d) => EventoAsistencia.fromMap(d.data(), d.id))
               .toList(),
         );
+  }
+
+  /// Combina [AttendanceService.getAllEvents] (`attendance_events`) y
+  /// [getAllEventos] (`eventos`) para vincular elecciones con asistencia.
+  ///
+  /// Cachee la referencia al stream en el `State` (p. ej. `late final`) para no
+  /// abrir suscripciones duplicadas en cada reconstrucción.
+  Stream<List<EventoAsistenciaVinculoEleccion>> watchEventosParaVinculoEleccion() {
+    late StreamController<List<EventoAsistenciaVinculoEleccion>> controller;
+    StreamSubscription<List<EventoAsistencia>>? subLegacy;
+    StreamSubscription<List<AttendanceEvent>>? subOp;
+    var legacy = <EventoAsistencia>[];
+    var operative = <AttendanceEvent>[];
+
+    void emit() {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final merged = <EventoAsistenciaVinculoEleccion>[
+        ...operative.where((e) => e.activo && nowMs <= e.fechaFinVigenciaMs).map(
+              (e) => EventoAsistenciaVinculoEleccion(
+                id: e.id,
+                nombre: e.nombre,
+                fechaInicioMs: e.fecha,
+                fechaFinMs: e.fechaFinVigenciaMs,
+                fuente: EventoAsistenciaVinculoFuente.operativo,
+              ),
+            ),
+        ...legacy.where((e) => e.activo && nowMs <= e.fechaFinVigenciaMs).map(
+              (e) => EventoAsistenciaVinculoEleccion(
+                id: e.id,
+                nombre: e.nombre,
+                fechaInicioMs: e.fecha,
+                fechaFinMs: e.fechaFinVigenciaMs,
+                fuente: EventoAsistenciaVinculoFuente.legacy,
+              ),
+            ),
+      ];
+      merged.sort((a, b) => b.fechaInicioMs.compareTo(a.fechaInicioMs));
+      if (!controller.isClosed) controller.add(merged);
+    }
+
+    controller =
+        StreamController<List<EventoAsistenciaVinculoEleccion>>.broadcast(
+          onListen: () {
+            subLegacy = getAllEventos().listen(
+              (list) {
+                legacy = list;
+                emit();
+              },
+              onError: controller.addError,
+            );
+            subOp =
+                AttendanceService(firestore: _firestore).getAllEvents().listen(
+                      (list) {
+                        operative = list;
+                        emit();
+                      },
+                      onError: controller.addError,
+                    );
+          },
+          onCancel: () async {
+            await subLegacy?.cancel();
+            await subOp?.cancel();
+            subLegacy = null;
+            subOp = null;
+          },
+        );
+
+    return controller.stream;
   }
 
   Future<EventoAsistencia?> getEventoById(String id) async {

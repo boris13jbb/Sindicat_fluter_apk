@@ -26,6 +26,37 @@ int parseCandidateOrder(String? value) {
   return int.tryParse(value?.trim() ?? '') ?? 0;
 }
 
+const candidateWithVotesDeletionError =
+    'No se puede eliminar un candidato con votos registrados';
+
+String? validateCandidateDeletion({
+  required int voteCount,
+  bool hasVoteDocuments = false,
+}) {
+  if (voteCount > 0 || hasVoteDocuments) {
+    return candidateWithVotesDeletionError;
+  }
+  return null;
+}
+
+String candidateNameKey(String value) {
+  return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+}
+
+bool hasCandidateNameConflict({
+  required Candidate candidate,
+  required Iterable<Candidate> existingCandidates,
+}) {
+  final key = candidateNameKey(candidate.name);
+  if (key.isEmpty) return false;
+
+  return existingCandidates.any((existing) {
+    if (existing.electionId != candidate.electionId) return false;
+    if (existing.id.isNotEmpty && existing.id == candidate.id) return false;
+    return candidateNameKey(existing.name) == key;
+  });
+}
+
 /// Candidato de una elección (compatible con subcolección candidates).
 class Candidate {
   const Candidate({
@@ -70,6 +101,7 @@ class Candidate {
       'imageUrl': imageUrl,
       'order': order,
       'voteCount': voteCount,
+      'nameKey': candidateNameKey(name),
     };
   }
 

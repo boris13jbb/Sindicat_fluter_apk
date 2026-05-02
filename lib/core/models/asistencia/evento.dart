@@ -1,3 +1,5 @@
+import '../../utils/date_time_ms.dart';
+
 /// Tipo de reunión (compatible con Firestore).
 enum TipoReunion {
   ordinaria('ORDINARIA'),
@@ -134,6 +136,8 @@ class EventoAsistencia {
     required this.id,
     required this.nombre,
     required this.fecha,
+    this.fechaFin,
+    this.activo = true,
     required this.tipoReunion,
     this.descripcion,
     this.fechaCreacion,
@@ -144,6 +148,10 @@ class EventoAsistencia {
   final String id;
   final String nombre;
   final int fecha;
+  /// Fin de vigencia (ms). Si es null, en filtros se usa fin del día de [fecha].
+  final int? fechaFin;
+  /// Si el evento sigue vigente para convocatorias / vínculos (colección `eventos`).
+  final bool activo;
   final TipoReunion tipoReunion;
   final String? descripcion;
   final int? fechaCreacion;
@@ -151,6 +159,8 @@ class EventoAsistencia {
   /// Campo legacy. Se mantiene solo para leer documentos antiguos.
   final Modalidad? modalidad;
   final List<Modalidad> modalidadesNoConvocadas;
+
+  int get fechaFinVigenciaMs => fechaFin ?? endOfLocalDayMs(fecha);
 
   static List<Modalidad> _parseModalidadesNoConvocadas(
     dynamic raw,
@@ -181,6 +191,8 @@ class EventoAsistencia {
       id: docId,
       nombre: map['nombre'] as String? ?? '',
       fecha: (map['fecha'] as num?)?.toInt() ?? 0,
+      fechaFin: (map['fechaFin'] as num?)?.toInt(),
+      activo: map['activo'] as bool? ?? true,
       tipoReunion: TipoReunion.fromString(
         (map['tipoReunion'] as String?) ?? 'ORDINARIA',
       ),
@@ -199,6 +211,8 @@ class EventoAsistencia {
       'id': id,
       'nombre': nombre,
       'fecha': fecha,
+      if (fechaFin != null) 'fechaFin': fechaFin,
+      'activo': activo,
       'tipoReunion': tipoReunion.value,
       'descripcion': descripcion ?? '',
       'fechaCreacion': fechaCreacion ?? DateTime.now().millisecondsSinceEpoch,
@@ -210,6 +224,8 @@ class EventoAsistencia {
 
   /// Retorna una copia del evento con cambios puntuales.
   EventoAsistencia copyWith({
+    int? fechaFin,
+    bool? activo,
     Modalidad? modalidad,
     bool clearModalidad = false,
     List<Modalidad>? modalidadesNoConvocadas,
@@ -218,6 +234,8 @@ class EventoAsistencia {
       id: id,
       nombre: nombre,
       fecha: fecha,
+      fechaFin: fechaFin ?? this.fechaFin,
+      activo: activo ?? this.activo,
       tipoReunion: tipoReunion,
       descripcion: descripcion,
       fechaCreacion: fechaCreacion,

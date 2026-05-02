@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/election.dart';
 import '../../core/models/user_role.dart';
-import '../../core/models/asistencia/evento.dart';
+import '../../core/models/asistencia/evento_asistencia_vinculo_eleccion.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/election_service.dart';
 import '../../services/asistencia_service.dart';
@@ -24,6 +24,10 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
   bool _requireAttendance = false;
   String? _eventoAsistenciaId;
   bool _loading = false;
+  final AsistenciaService _asistenciaService = AsistenciaService();
+  late final Stream<List<EventoAsistenciaVinculoEleccion>>
+      _eventosVinculoStream =
+      _asistenciaService.watchEventosParaVinculoEleccion();
 
   @override
   void dispose() {
@@ -165,11 +169,12 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
               ),
               if (_requireAttendance) ...[
                 const SizedBox(height: 8),
-                StreamBuilder<List<EventoAsistencia>>(
-                  stream: AsistenciaService().getAllEventos(),
+                StreamBuilder<List<EventoAsistenciaVinculoEleccion>>(
+                  stream: _eventosVinculoStream,
                   builder: (context, snap) {
                     final eventos = snap.data ?? [];
                     return DropdownButtonFormField<String?>(
+                      isExpanded: true,
                       initialValue: _eventoAsistenciaId,
                       decoration: const InputDecoration(
                         labelText: 'Evento de asistencia vinculado',
@@ -178,13 +183,21 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                       items: [
                         const DropdownMenuItem(
                           value: null,
-                          child: Text('Seleccionar evento'),
+                          child: Text(
+                            'Seleccionar evento',
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
                         ),
                         ...eventos.map(
                           (e) => DropdownMenuItem(
                             value: e.id,
                             child: Text(
-                              '${e.nombre} (${_formatEventDate(e.fecha)})',
+                              '${e.nombre} (${_formatEventDateTime(e.fechaInicioMs)}'
+                              ' – ${_formatEventDateTime(e.fechaFinMs)})'
+                              '${e.esLegacy ? ' · histórico' : ''}',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
                             ),
                           ),
                         ),
@@ -261,8 +274,10 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
     );
   }
 
-  static String _formatEventDate(int ms) {
+  static String _formatEventDateTime(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.day}/${d.month}/${d.year}';
+    return '${d.day}/${d.month}/${d.year} '
+        '${d.hour.toString().padLeft(2, '0')}:'
+        '${d.minute.toString().padLeft(2, '0')}';
   }
 }

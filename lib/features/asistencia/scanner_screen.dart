@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../core/models/asistencia/asistencia.dart';
@@ -16,13 +17,17 @@ class ScannerAsistenciaScreen extends StatefulWidget {
     this.evento,
     this.attendanceEventId,
     this.service,
+    this.openScannerDirectly = false,
   });
 
   /// Evento colección **`eventos`** (legacy).
   final EventoAsistencia? evento;
 
-  /// Doc en **`attendance_events`** cuando el registro va al modelo de reporte.
+  /// Doc en **`attendance_events`** cuando el registro va al modelo actual.
   final String? attendanceEventId;
+
+  /// Abre de inmediato [ScannerQRScreen] (desde FAB de detalle de evento).
+  final bool openScannerDirectly;
 
   /// Inyección opcional para pruebas.
   final AsistenciaRegistroApi? service;
@@ -36,6 +41,7 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   final _codigoController = TextEditingController();
   late final AsistenciaRegistroApi _service;
   bool _loading = false;
+  bool _autoEscaneoLanzado = false;
   String? _mensaje;
   String?
   _eventoIdSeleccionado; // Cambiado a String (ID) para evitar duplicados en Dropdown
@@ -86,6 +92,17 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
     _service = widget.service ?? AsistenciaService();
     _sincronizarMiembros();
     if (widget.attendanceEventId != null) _cargarMetaAttendance();
+    final puedeAbrirCamaraDirecto =
+        (widget.attendanceEventId != null &&
+            widget.attendanceEventId!.isNotEmpty) ||
+        widget.evento != null;
+    if (!kIsWeb && widget.openScannerDirectly && puedeAbrirCamaraDirecto) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _autoEscaneoLanzado) return;
+        _autoEscaneoLanzado = true;
+        _iniciarEscaneo();
+      });
+    }
   }
 
   Future<void> _sincronizarMiembros() async {
@@ -119,7 +136,8 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
 
   EventoAsistencia? _eventoSeleccionadoObj;
 
-  EventoAsistencia? get _eventoLegacy => widget.evento ?? _eventoSeleccionadoObj;
+  EventoAsistencia? get _eventoLegacy =>
+      widget.evento ?? _eventoSeleccionadoObj;
 
   String? _tituloAttendance;
   bool _loadingMeta = false;
@@ -194,7 +212,7 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Evento reporte (attendance_events)',
+                          'Evento de asistencia',
                           style: Theme.of(context).textTheme.labelMedium,
                         ),
                         Text(
@@ -313,8 +331,7 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   Future<void> _registrar() async {
     final leg = _eventoLegacy;
     final attId = widget.attendanceEventId;
-    final eventoFirestoreId =
-        attId ?? leg?.id;
+    final eventoFirestoreId = attId ?? leg?.id;
     if (eventoFirestoreId == null || eventoFirestoreId.isEmpty) {
       setState(() => _mensaje = 'Selecciona un evento primero');
       return;
@@ -365,8 +382,7 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   Future<void> _iniciarEscaneo() async {
     final leg = _eventoLegacy;
     final attId = widget.attendanceEventId;
-    final eventoFirestoreId =
-        attId ?? leg?.id;
+    final eventoFirestoreId = attId ?? leg?.id;
     if (eventoFirestoreId == null || eventoFirestoreId.isEmpty) {
       setState(() => _mensaje = '⚠️ Selecciona un evento primero');
       return;
@@ -443,7 +459,9 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
     final worker = member.workerCode?.isNotEmpty == true
         ? member.workerCode!
         : '-';
-    final doc = member.documentId?.isNotEmpty == true ? member.documentId! : '-';
+    final doc = member.documentId?.isNotEmpty == true
+        ? member.documentId!
+        : '-';
     return [
       member.fullName,
       'Modalidad: ${_etiquetaModalidad(member)}',
@@ -645,20 +663,24 @@ class _ScannerQRScreenState extends State<ScannerQRScreen> {
           Positioned(
             bottom: 50,
             left: 20,
+            right: 80,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.black54,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
+              child: Row(
                 children: [
-                  Icon(Icons.qr_code_scanner, color: Colors.white, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Escaneo continuo',
-                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  const Icon(Icons.qr_code_scanner, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Escaneo continuo',
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
                   ),
                 ],
               ),

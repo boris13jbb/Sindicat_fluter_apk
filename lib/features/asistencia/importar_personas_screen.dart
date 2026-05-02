@@ -9,7 +9,7 @@ import '../../core/widgets/professional_app_bar.dart';
 import '../../services/asistencia_service.dart';
 import '../../services/import_service.dart';
 
-/// Pantalla para importar personas desde Excel y generar códigos QR
+/// Pantalla legacy para importar personas de asistencia.
 class ImportarPersonasScreen extends StatefulWidget {
   const ImportarPersonasScreen({super.key});
 
@@ -75,9 +75,7 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
       );
 
       if (personaExistente != null) {
-        debugPrint(
-          '⚠️ Fila $i: Persona ya existe (ID: $identificador)',
-        );
+        debugPrint('⚠️ Fila $i: Persona ya existe (ID: $identificador)');
         duplicadas++;
         continue;
       }
@@ -378,7 +376,7 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                     ),
                     SizedBox(height: 12),
                     Text(
-                      '💡 Después de importar, ve a "Códigos QR" para ver y compartir los códigos',
+                      '💡 El QR canónico de cada socio se consulta desde "Mi Perfil".',
                       style: TextStyle(fontSize: 13),
                     ),
                   ],
@@ -615,7 +613,7 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
                         Text(
                           '• El número de trabajador debe ser único\n'
                           '• Personas con mismo número no se duplicarán\n'
-                          '• Después de importar, ve a "Códigos QR" para verlos',
+                          '• El QR canónico de cada socio se consulta desde "Mi Perfil"',
                           style: TextStyle(fontSize: 13),
                         ),
                       ],

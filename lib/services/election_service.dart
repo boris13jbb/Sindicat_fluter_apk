@@ -269,6 +269,7 @@ class ElectionService {
 
   Future<void> addCandidate(Candidate candidate) async {
     try {
+      await _ensureUniqueCandidateName(candidate);
       final ref = _firestore
           .collection('elections')
           .doc(candidate.electionId)
@@ -299,6 +300,7 @@ class ElectionService {
   }
 
   Future<void> updateCandidate(Candidate candidate) async {
+    await _ensureUniqueCandidateName(candidate);
     await _firestore
         .collection('elections')
         .doc(candidate.electionId)
@@ -316,6 +318,34 @@ class ElectionService {
     );
   }
 
+  Future<void> _ensureUniqueCandidateName(Candidate candidate) async {
+    final candidates = await _loadCandidatesOnce(candidate.electionId);
+    if (hasCandidateNameConflict(
+      candidate: candidate,
+      existingCandidates: candidates,
+    )) {
+      throw ArgumentError(
+        'Ya existe un candidato con ese nombre en esta elección',
+      );
+    }
+  }
+
+  Future<List<Candidate>> _loadCandidatesOnce(String electionId) async {
+    final snapshot = await _firestore
+        .collection('elections')
+        .doc(electionId)
+        .collection('candidates')
+        .get();
+    return snapshot.docs
+        .map(
+          (doc) => Candidate.fromMap({
+            ...doc.data(),
+            'electionId': electionId,
+          }, doc.id),
+        )
+        .toList();
+  }
+
   Future<void> deleteCandidate(String electionId, String candidateId) async {
     // Obtener nombre del candidato antes de eliminar para auditoría
     final candidateDoc = await _firestore
@@ -330,10 +360,9 @@ class ElectionService {
     }
 
     final voteCount = (candidateData['voteCount'] as num?)?.toInt() ?? 0;
-    if (voteCount > 0) {
-      throw Exception(
-        'No se puede eliminar un candidato con votos registrados',
-      );
+    final voteCountError = validateCandidateDeletion(voteCount: voteCount);
+    if (voteCountError != null) {
+      throw Exception(voteCountError);
     }
 
     final existingVote = await _firestore
@@ -343,10 +372,12 @@ class ElectionService {
         .where('candidateId', isEqualTo: candidateId)
         .limit(1)
         .get();
-    if (existingVote.docs.isNotEmpty) {
-      throw Exception(
-        'No se puede eliminar un candidato con votos registrados',
-      );
+    final voteDocumentsError = validateCandidateDeletion(
+      voteCount: voteCount,
+      hasVoteDocuments: existingVote.docs.isNotEmpty,
+    );
+    if (voteDocumentsError != null) {
+      throw Exception(voteDocumentsError);
     }
 
     await _firestore

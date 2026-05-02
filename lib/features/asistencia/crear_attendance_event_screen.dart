@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import '../../core/models/asistencia/evento.dart';
 import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/attendance_service.dart';
 import '../../services/members_service.dart';
 
-/// Alta de eventos en la colección `attendance_events` (modelo usado por reporte de faltas).
+/// Alta de eventos operativos en la colección `attendance_events`.
 class CrearAttendanceEventScreen extends StatefulWidget {
   const CrearAttendanceEventScreen({super.key});
 
@@ -13,34 +14,57 @@ class CrearAttendanceEventScreen extends StatefulWidget {
       _CrearAttendanceEventScreenState();
 }
 
-class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen> {
+enum _TipoCrearEvento { ordinaria, extraordinaria, escribir }
+
+class _CrearAttendanceEventScreenState
+    extends State<CrearAttendanceEventScreen> {
   final _nombreController = TextEditingController();
   final _descripcionController = TextEditingController();
   final _lugarController = TextEditingController();
+  final _tipoCustomController = TextEditingController();
   final AttendanceService _service = AttendanceService();
 
   DateTime _fecha = DateTime.now();
-  String _tipo = 'reunion';
+  late DateTime _fechaFin;
+  _TipoCrearEvento _tipoCrear = _TipoCrearEvento.ordinaria;
   bool _loading = false;
 
-  /// `true`: `miembrosConvocados` vacío → reporte usa todos los activos (`AttendanceService`).
+  /// `true`: `miembrosConvocados` vacío → el cálculo usa todos los activos (`AttendanceService`).
   bool _convocatoriaTodosActivos = true;
   final Set<String> _miembrosConvocadosIds = <String>{};
 
-  static const _tipos = <String, String>{
-    'reunion': 'Reunión',
-    'asamblea': 'Asamblea',
-    'capacitacion': 'Capacitación',
-    'ordinaria': 'Ordinaria',
-    'extraordinaria': 'Extraordinaria',
-  };
+  /// Modalidades excluidas de la convocatoria (`AttendanceEvent.modalidadesNoConvocadas`).
+  final Set<Modalidad> _modalidadesNoConvocadas = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final d = _fecha;
+    _fechaFin = DateTime(d.year, d.month, d.day, 23, 59);
+  }
 
   @override
   void dispose() {
     _nombreController.dispose();
     _descripcionController.dispose();
     _lugarController.dispose();
+    _tipoCustomController.dispose();
     super.dispose();
+  }
+
+  /// Valor persistido en `AttendanceEvent.tipo` (colección `attendance_events`).
+  String _tipoParaFirestore() {
+    switch (_tipoCrear) {
+      case _TipoCrearEvento.ordinaria:
+        return 'ordinaria';
+      case _TipoCrearEvento.extraordinaria:
+        return 'extraordinaria';
+      case _TipoCrearEvento.escribir:
+        var t = _tipoCustomController.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+        if (t.isEmpty) return 'personalizado';
+        if (t.length > 80) t = t.substring(0, 80);
+        return t.toLowerCase();
+    }
   }
 
   Future<void> _pickDateTime() async {
@@ -64,7 +88,39 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
         time.hour,
         time.minute,
       );
+      if (!_fechaFin.isAfter(_fecha)) {
+        _fechaFin = DateTime(
+          _fecha.year,
+          _fecha.month,
+          _fecha.day,
+          23,
+          59,
+        );
+      }
     });
+  }
+
+  Future<void> _pickFechaFin() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _fechaFin.isBefore(_fecha) ? _fecha : _fechaFin,
+      firstDate: DateTime(_fecha.year, _fecha.month, _fecha.day),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_fechaFin),
+    );
+    if (time == null || !mounted) return;
+    final fin = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
+    setState(() => _fechaFin = fin);
   }
 
   Future<void> _abrirSeleccionConvocados() async {
@@ -76,14 +132,18 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
         final height = MediaQuery.sizeOf(ctx).height * 0.88;
         return SizedBox(
           height: height,
-          child: _SeleccionConvocadosSheet(initial: {..._miembrosConvocadosIds}),
+          child: _SeleccionConvocadosSheet(
+            initial: {..._miembrosConvocadosIds},
+          ),
         );
       },
     );
     if (nueva != null && mounted) {
-      setState(() => _miembrosConvocadosIds
-        ..clear()
-        ..addAll(nueva));
+      setState(
+        () => _miembrosConvocadosIds
+          ..clear()
+          ..addAll(nueva),
+      );
     }
   }
 
@@ -112,6 +172,25 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
       );
       return;
     }
+    if (!_fechaFin.isAfter(_fecha)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'La fecha y hora de fin deben ser posteriores al inicio del evento.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (_tipoCrear == _TipoCrearEvento.escribir &&
+        _tipoCustomController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Describe el tipo personalizado o elige Ordinaria / Extraordinaria.'),
+        ),
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     try {
@@ -121,11 +200,16 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
           nombre: nombre,
           descripcion: _descripcionController.text.trim(),
           fecha: _fecha.millisecondsSinceEpoch,
+          fechaFin: _fechaFin.millisecondsSinceEpoch,
           lugar: lugar,
-          tipo: _tipo,
+          tipo: _tipoParaFirestore(),
           activo: true,
-          miembrosConvocados:
-              _convocatoriaTodosActivos ? [] : _miembrosConvocadosIds.toList(),
+          miembrosConvocados: _convocatoriaTodosActivos
+              ? []
+              : _miembrosConvocadosIds.toList(),
+          modalidadesNoConvocadas: _modalidadesNoConvocadas
+              .map((m) => m.value)
+              .toList(),
           creadoPor: '',
           createdAt: 0,
         ),
@@ -143,9 +227,9 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -158,7 +242,7 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
 
     return Scaffold(
       appBar: ProfessionalAppBar(
-        title: 'Nuevo evento (reporte)',
+        title: 'Crear evento de asistencia',
         onNavigateBack: () => Navigator.pop(context),
       ),
       body: SingleChildScrollView(
@@ -173,14 +257,13 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Modelo Firestore',
+                      'Evento de asistencia',
                       style: theme.textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Se guarda en attendance_events para el reporte de presentes y faltantes. '
-                      'Con «Todos los socios activos», la lista convocada se deja vacía y el '
-                      'reporte incluye todos los socios activos del padrón.',
+                      'Define la convocatoria del evento y permite calcular presentes, faltas y socios no convocados. '
+                      'Con «Todos los socios activos», se incluye el padrón activo completo.',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -246,19 +329,99 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _tipos.entries.map((e) {
-                final selected = _tipo == e.key;
-                return FilterChip(
-                  label: Text(e.value),
-                  selected: selected,
-                  onSelected: (_) => setState(() => _tipo = e.key),
-                );
-              }).toList(),
+              children: [
+                FilterChip(
+                  label: const Text('Ordinaria'),
+                  selected: _tipoCrear == _TipoCrearEvento.ordinaria,
+                  onSelected: (_) => setState(() => _tipoCrear = _TipoCrearEvento.ordinaria),
+                ),
+                FilterChip(
+                  label: const Text('Extraordinaria'),
+                  selected: _tipoCrear == _TipoCrearEvento.extraordinaria,
+                  onSelected: (_) =>
+                      setState(() => _tipoCrear = _TipoCrearEvento.extraordinaria),
+                ),
+                FilterChip(
+                  label: const Text('Escribir…'),
+                  selected: _tipoCrear == _TipoCrearEvento.escribir,
+                  onSelected: (_) => setState(() => _tipoCrear = _TipoCrearEvento.escribir),
+                ),
+              ],
+            ),
+            if (_tipoCrear == _TipoCrearEvento.escribir) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _tipoCustomController,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Tipo personalizado *',
+                  hintText: 'Ej.: reunión de delegados',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            Text(
+              'Modalidades no convocadas',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Marca las modalidades que no aplican a esta convocatoria. '
+              'Los socios en esas modalidades no se cuentan como convocados ni como faltas injustificadas.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _CrearAttendanceInfoBox(
+              icon: Icons.info_outline,
+              color: Colors.blue,
+              text:
+                  'Solo las modalidades marcadas quedan fuera del cómputo de convocatoria.',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children:
+                  Modalidad.valoresParaJustificacionAsistencia.map((modalidad) {
+                    final selected =
+                        _modalidadesNoConvocadas.contains(modalidad);
+                    return FilterChip(
+                      selected: selected,
+                      avatar: selected ? const Icon(Icons.check, size: 18) : null,
+                      label: Text(
+                        JustificacionHelper.etiquetaModalidad(modalidad),
+                      ),
+                      onSelected: (checked) {
+                        setState(() {
+                          if (checked) {
+                            _modalidadesNoConvocadas.add(modalidad);
+                          } else {
+                            _modalidadesNoConvocadas.remove(modalidad);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+            ),
+            const SizedBox(height: 8),
+            _CrearAttendanceInfoBox(
+              icon: Icons.rule,
+              color: _modalidadesNoConvocadas.isEmpty
+                  ? Colors.orange
+                  : Colors.green,
+              text: _modalidadesNoConvocadas.isEmpty
+                  ? 'Sin exclusiones: todas las modalidades entran en la convocatoria según la lista de socios.'
+                  : 'No convocadas: ${_modalidadesNoConvocadas.map(JustificacionHelper.etiquetaModalidad).join(', ')}.',
             ),
             const SizedBox(height: 16),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Fecha y hora'),
+              title: const Text('Fecha y hora de inicio'),
               subtitle: Text(
                 '${_fecha.day}/${_fecha.month}/${_fecha.year} '
                 '${_fecha.hour.toString().padLeft(2, '0')}:'
@@ -266,6 +429,25 @@ class _CrearAttendanceEventScreenState extends State<CrearAttendanceEventScreen>
               ),
               trailing: const Icon(Icons.calendar_today),
               onTap: _pickDateTime,
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Fecha y hora de fin'),
+              subtitle: Text(
+                '${_fechaFin.day}/${_fechaFin.month}/${_fechaFin.year} '
+                '${_fechaFin.hour.toString().padLeft(2, '0')}:'
+                '${_fechaFin.minute.toString().padLeft(2, '0')}',
+              ),
+              trailing: const Icon(Icons.event_available_outlined),
+              onTap: _pickFechaFin,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'El evento se considera vigente para vínculos (p. ej. elecciones) '
+              'mientras esté activo y no haya pasado la fecha de fin.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 24),
             if (_loading)
@@ -441,8 +623,7 @@ class _SeleccionConvocadosSheetState extends State<_SeleccionConvocadosSheet> {
                         children: [
                           Text('${_seleccion.length} seleccionados'),
                           FilledButton(
-                            onPressed: () =>
-                                Navigator.pop(context, _seleccion),
+                            onPressed: () => Navigator.pop(context, _seleccion),
                             child: const Text('Confirmar'),
                           ),
                         ],
@@ -455,6 +636,46 @@ class _SeleccionConvocadosSheetState extends State<_SeleccionConvocadosSheet> {
           },
         ),
       ],
+    );
+  }
+}
+
+class _CrearAttendanceInfoBox extends StatelessWidget {
+  const _CrearAttendanceInfoBox({
+    required this.icon,
+    required this.color,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: color.withValues(alpha: 0.9),
+                  ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/models/election.dart';
 import '../../core/models/candidate.dart';
 import '../../core/models/user_role.dart';
-import '../../core/models/asistencia/evento.dart';
+import '../../core/models/asistencia/evento_asistencia_vinculo_eleccion.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/election_service.dart';
 import '../../services/asistencia_service.dart';
@@ -34,6 +34,10 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
   Election? _election;
   List<Candidate> _initialCandidates = [];
   final ElectionService _electionService = ElectionService();
+  final AsistenciaService _asistenciaService = AsistenciaService();
+  late final Stream<List<EventoAsistenciaVinculoEleccion>>
+      _eventosVinculoStream =
+      _asistenciaService.watchEventosParaVinculoEleccion();
 
   @override
   void initState() {
@@ -200,8 +204,8 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
               ),
               if (_requireAttendance) ...[
                 const SizedBox(height: 8),
-                StreamBuilder<List<EventoAsistencia>>(
-                  stream: AsistenciaService().getAllEventos(),
+                StreamBuilder<List<EventoAsistenciaVinculoEleccion>>(
+                  stream: _eventosVinculoStream,
                   builder: (context, snap) {
                     if (snap.connectionState == ConnectionState.waiting &&
                         !snap.hasData) {
@@ -214,6 +218,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                         eventos.any((e) => e.id == _eventoAsistenciaId);
 
                     return DropdownButtonFormField<String?>(
+                      isExpanded: true,
                       initialValue: isValidValue ? _eventoAsistenciaId : null,
                       decoration: const InputDecoration(
                         labelText: 'Evento de asistencia',
@@ -222,12 +227,22 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                       items: [
                         const DropdownMenuItem(
                           value: null,
-                          child: Text('Seleccionar evento'),
+                          child: Text(
+                            'Seleccionar evento',
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
                         ),
                         ...eventos.map(
                           (e) => DropdownMenuItem(
                             value: e.id,
-                            child: Text(e.nombre),
+                            child: Text(
+                              '${e.nombre} (${_formatEventDateTime(e.fechaInicioMs)}'
+                              ' – ${_formatEventDateTime(e.fechaFinMs)})'
+                              '${e.esLegacy ? ' · histórico' : ''}',
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 1,
+                            ),
                           ),
                         ),
                       ],
@@ -530,6 +545,13 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
         }
       }
     }
+  }
+
+  static String _formatEventDateTime(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.day}/${d.month}/${d.year} '
+        '${d.hour.toString().padLeft(2, '0')}:'
+        '${d.minute.toString().padLeft(2, '0')}';
   }
 }
 

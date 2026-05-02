@@ -6,13 +6,9 @@ import '../../services/asistencia_service.dart';
 import '../../services/members_service.dart';
 import '../../services/attendance_service.dart';
 
-/// Registro contra **`eventos/{id}`** (legacy) **o** `attendance_events/{id}` (reporte).
+/// Registro contra **`eventos/{id}`** histórico **o** `attendance_events/{id}` actual.
 class RegistroManualScreen extends StatefulWidget {
-  const RegistroManualScreen({
-    super.key,
-    this.evento,
-    this.attendanceEventId,
-  });
+  const RegistroManualScreen({super.key, this.evento, this.attendanceEventId});
 
   /// Modo legacy: documento colección **`eventos`**.
   final EventoAsistencia? evento;
@@ -40,8 +36,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
   AttendanceEvent? _attendanceEventCached;
 
   bool get _esModoAttendanceNuevo =>
-      widget.attendanceEventId != null &&
-      widget.attendanceEventId!.isNotEmpty;
+      widget.attendanceEventId != null && widget.attendanceEventId!.isNotEmpty;
 
   final _nombresController = TextEditingController();
   final _apellidosController = TextEditingController();
@@ -88,11 +83,11 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
       debugPrint('🔄 Ejecutando sincronización members → personas...');
       final resultado = await _service.sincronizarMiembrosConPersonas();
       debugPrint('✅ Sincronización completada: $resultado');
-      
+
       if (mounted) {
         final total = resultado['total_procesados'] ?? 0;
         final sincronizados = resultado['sincronizados'] ?? 0;
-        
+
         if (sincronizados > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -136,53 +131,55 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
   ) async {
     final result = <Map<String, dynamic>>[];
     final identificadoresVistos = <String>{};
-    
-    debugPrint('🔄 Combinando ${members.length} members con personas legacy...');
-    
+
+    debugPrint(
+      '🔄 Combinando ${members.length} members con personas legacy...',
+    );
+
     try {
       // 1. Agregar Members (prioridad alta)
       for (final member in members) {
-        final identificador = member.workerCode?.isNotEmpty == true 
-            ? member.workerCode! 
+        final identificador = member.workerCode?.isNotEmpty == true
+            ? member.workerCode!
             : (member.documentId ?? '');
-        
+
         if (identificador.isEmpty) {
-          debugPrint('⚠️ Omitiendo member ${member.fullName}: sin identificador');
+          debugPrint(
+            '⚠️ Omitiendo member ${member.fullName}: sin identificador',
+          );
           continue;
         }
-        
+
         // Marcar como visto para evitar duplicados
         identificadoresVistos.add(identificador);
-        
+
         final persona = PersonaAsistencia(
           id: member.id,
           nombres: member.firstName,
           apellidos: member.lastName,
           identificador: identificador,
         );
-        
-        result.add({
-          'id': member.id,
-          'persona': persona,
-          'source': 'member',
-        });
+
+        result.add({'id': member.id, 'persona': persona, 'source': 'member'});
       }
-      
+
       debugPrint('   ✅ Agregados ${result.length} members');
-      
+
       // 2. Agregar Personas legacy que NO estén ya en members
       try {
         final personasSnapshot = await _service.firestore
             .collection('personas')
             .get();
-        
-        debugPrint('   📊 Encontradas ${personasSnapshot.docs.length} personas legacy');
-        
+
+        debugPrint(
+          '   📊 Encontradas ${personasSnapshot.docs.length} personas legacy',
+        );
+
         int personasAgregadas = 0;
         for (final doc in personasSnapshot.docs) {
           try {
             final persona = PersonaAsistencia.fromMap(doc.data(), doc.id);
-            
+
             // Solo agregar si no tiene identificador o si el identificador no está en members
             final identificador = persona.identificador;
             if (identificador != null && identificador.isNotEmpty) {
@@ -192,7 +189,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
               }
               identificadoresVistos.add(identificador);
             }
-            
+
             result.add({
               'id': persona.id,
               'persona': persona,
@@ -203,22 +200,24 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
             debugPrint('   ❌ Error procesando persona ${doc.id}: $e');
           }
         }
-        
+
         debugPrint('   ✅ Agregadas $personasAgregadas personas legacy');
       } catch (e) {
         debugPrint('⚠️ Error cargando personas legacy: $e');
         // Continuar con solo members si hay error
       }
-      
+
       // Ordenar por apellido
       result.sort((a, b) {
         final pa = a['persona'] as PersonaAsistencia;
         final pb = b['persona'] as PersonaAsistencia;
         return pa.apellidos.toLowerCase().compareTo(pb.apellidos.toLowerCase());
       });
-      
-      debugPrint('📊 Total personas cargadas: ${result.length} (${result.where((r) => r['source'] == 'member').length} members, ${result.where((r) => r['source'] == 'persona').length} legacy)');
-      
+
+      debugPrint(
+        '📊 Total personas cargadas: ${result.length} (${result.where((r) => r['source'] == 'member').length} members, ${result.where((r) => r['source'] == 'persona').length} legacy)',
+      );
+
       return result;
     } catch (e) {
       debugPrint('❌ Error en _combinarPersonasYMembers: $e');
@@ -281,15 +280,16 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                           Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: Text(
-                              'Este registro guarda en attendance_events; el reporte '
-                              'cruza por el id del documento en members.',
+                              'Este registro se asociará al evento de asistencia seleccionado '
+                              'y se usará para calcular presentes y faltantes.',
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(color: Colors.blue.shade800),
                             ),
                           ),
                           _infoRow(
                             label: 'Nombre:',
-                            value: _attendanceEventCached?.nombre ?? 'Cargando…',
+                            value:
+                                _attendanceEventCached?.nombre ?? 'Cargando…',
                           ),
                           _infoRow(
                             label: 'Fecha:',
@@ -307,7 +307,10 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                             value: _attendanceEventCached?.tipo ?? '—',
                           ),
                         ] else if (widget.evento != null) ...[
-                          _infoRow(label: 'Nombre:', value: widget.evento!.nombre),
+                          _infoRow(
+                            label: 'Nombre:',
+                            value: widget.evento!.nombre,
+                          ),
                           _infoRow(
                             label: 'Fecha:',
                             value: _formatDate(widget.evento!.fecha),
@@ -355,8 +358,8 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                   Text(
                     'Selecciona un socio del padrón (personas marcadas provenientes del módulo Socios aparecen como verificado).',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontStyle: FontStyle.italic,
-                        ),
+                      fontStyle: FontStyle.italic,
+                    ),
                   ),
                   const SizedBox(height: 16),
                 ],
@@ -398,7 +401,8 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                     controller: _identificadorController,
                     decoration: InputDecoration(
                       labelText: 'Número de Trabajador *',
-                      hintText: 'Ej: 12345 (obligatorio para evitar duplicados)',
+                      hintText:
+                          'Ej: 12345 (obligatorio para evitar duplicados)',
                       prefixIcon: const Icon(Icons.qr_code),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -428,10 +432,13 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                                 const SizedBox(height: 16),
                                 Text(
                                   'Error al cargar personas',
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    color: Theme.of(context).colorScheme.error,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.error,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -441,7 +448,9 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                                 ),
                                 const SizedBox(height: 16),
                                 FilledButton.icon(
-                                  onPressed: () => setState(() {}), // Rebuild para reintentar
+                                  onPressed: () => setState(
+                                    () {},
+                                  ), // Rebuild para reintentar
                                   icon: const Icon(Icons.refresh),
                                   label: const Text('Reintentar'),
                                 ),
@@ -450,7 +459,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                           ),
                         );
                       }
-                      
+
                       // Estado de carga
                       if (!snap.hasData) {
                         return Card(
@@ -471,9 +480,9 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                           ),
                         );
                       }
-                      
+
                       final personas = snap.data!;
-                      
+
                       // Estado vacío
                       if (personas.isEmpty) {
                         return Card(
@@ -484,14 +493,15 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                                 Icon(
                                   Icons.person_off,
                                   size: 48,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
                                   'No hay personas registradas',
-                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -504,7 +514,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                           ),
                         );
                       }
-                      
+
                       // Si no hay persona seleccionada, seleccionar la primera
                       if (_personaIdSeleccionada == null) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -513,21 +523,22 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                               _personaIdSeleccionada =
                                   personas.first['id'] as String;
                               _personaObj =
-                                  personas.first['persona'] as PersonaAsistencia;
+                                  personas.first['persona']
+                                      as PersonaAsistencia;
                               _personaSource =
                                   personas.first['source'] as String? ??
-                                      'member';
+                                  'member';
                             });
                           }
                         });
                       }
-                      
+
                       // Asegurar que _personaObj esté sincronizado
                       if (_personaIdSeleccionada != null) {
-                        final found = personas.where(
-                          (p) => p['id'] == _personaIdSeleccionada,
-                        ).firstOrNull;
-                        
+                        final found = personas
+                            .where((p) => p['id'] == _personaIdSeleccionada)
+                            .firstOrNull;
+
                         if (found != null) {
                           _personaObj = found['persona'] as PersonaAsistencia;
                           _personaSource =
@@ -539,7 +550,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
                           _personaSource = 'member';
                         }
                       }
-                      
+
                       return _selectorPersonaBuscable(context, personas);
                     },
                   ),
@@ -829,14 +840,18 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
       if (_usarNueva) {
         // Verificar si ya existe persona con ese identificador
         final identificador = _identificadorController.text.trim();
-        final personaExistente = await _service.getPersonaPorIdentificador(identificador);
-        
+        final personaExistente = await _service.getPersonaPorIdentificador(
+          identificador,
+        );
+
         if (personaExistente != null) {
-          _mostrarError('⚠️ Ya existe una persona con número de trabajador: $identificador. Seleccione "Persona Existente"');
+          _mostrarError(
+            '⚠️ Ya existe una persona con número de trabajador: $identificador. Seleccione "Persona Existente"',
+          );
           setState(() => _loading = false);
           return;
         }
-        
+
         // Crear nueva persona
         final p = PersonaAsistencia(
           id: '',
@@ -854,7 +869,9 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
         );
 
         if (res != null && mounted) {
-          _mostrarExito('✅ Persona creada y asistencia registrada correctamente');
+          _mostrarExito(
+            '✅ Persona creada y asistencia registrada correctamente',
+          );
           Navigator.pop(context);
         } else if (mounted) {
           _mostrarError(
@@ -868,14 +885,17 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
           setState(() => _loading = false);
           return;
         }
-        
+
         // Verificar que la persona tenga identificador
-        if (_personaObj!.identificador == null || _personaObj!.identificador!.isEmpty) {
-          _mostrarError('⚠️ La persona seleccionada no tiene número de trabajador. Edítela en la sección "Socios"');
+        if (_personaObj!.identificador == null ||
+            _personaObj!.identificador!.isEmpty) {
+          _mostrarError(
+            '⚠️ La persona seleccionada no tiene número de trabajador. Edítela en la sección "Socios"',
+          );
           setState(() => _loading = false);
           return;
         }
-        
+
         final res = await _service.registrarAsistenciaManual(
           _personaObj!.id,
           widget.evento!.id,
@@ -922,7 +942,9 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
     return byId?.id;
   }
 
-  Future<void> _abrirBuscadorPersona(List<Map<String, dynamic>> personas) async {
+  Future<void> _abrirBuscadorPersona(
+    List<Map<String, dynamic>> personas,
+  ) async {
     final id = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -951,8 +973,9 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
       _personaObj = found != null
           ? found['persona'] as PersonaAsistencia
           : null;
-      _personaSource =
-          found != null ? (found['source'] as String? ?? 'persona') : 'member';
+      _personaSource = found != null
+          ? (found['source'] as String? ?? 'persona')
+          : 'member';
     });
   }
 
@@ -971,19 +994,16 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
             hintText: 'Toca para buscar',
             prefixIcon: const Icon(Icons.person_search),
             suffixIcon: const Icon(Icons.keyboard_arrow_down),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             filled: true,
           ),
           child: Text(
             _personaObj?.nombreCompleto ?? 'Buscar persona…',
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight:
-                  _personaObj != null ? FontWeight.w600 : FontWeight.normal,
-              color: _personaObj == null
-                  ? Theme.of(context).hintColor
-                  : null,
+              fontWeight: _personaObj != null
+                  ? FontWeight.w600
+                  : FontWeight.normal,
+              color: _personaObj == null ? Theme.of(context).hintColor : null,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -995,10 +1015,7 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
 }
 
 class _PersonaPickSheet extends StatefulWidget {
-  const _PersonaPickSheet({
-    required this.entries,
-    required this.selectedId,
-  });
+  const _PersonaPickSheet({required this.entries, required this.selectedId});
 
   final List<Map<String, dynamic>> entries;
   final String? selectedId;
@@ -1076,9 +1093,7 @@ class _PersonaPickSheetState extends State<_PersonaPickSheet> {
                 ),
                 title: Text(p.nombreCompleto),
                 subtitle: Text(
-                  p.identificador?.isNotEmpty == true
-                      ? p.identificador!
-                      : id,
+                  p.identificador?.isNotEmpty == true ? p.identificador! : id,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../core/models/asistencia/asistencia.dart';
 import '../core/models/member.dart';
+import '../core/utils/date_time_ms.dart';
 import '../core/models/audit_log.dart';
 import 'audit_service.dart';
 
@@ -14,7 +15,9 @@ class AttendanceEvent {
   final String id;
   final String nombre;
   final String descripcion;
-  final int fecha; // Timestamp
+  final int fecha; // Inicio (ms)
+  /// Fin de vigencia del evento (ms). Si es null en Firestore, en filtros se usa fin del día de [fecha].
+  final int? fechaFin;
   final String lugar;
   final String tipo; // reunion, asamblea, capacitacion, etc.
   final bool activo;
@@ -29,6 +32,7 @@ class AttendanceEvent {
     required this.nombre,
     required this.descripcion,
     required this.fecha,
+    this.fechaFin,
     required this.lugar,
     required this.tipo,
     required this.activo,
@@ -45,6 +49,7 @@ class AttendanceEvent {
       nombre: map['nombre'] ?? '',
       descripcion: map['descripcion'] ?? '',
       fecha: (map['fecha'] as num?)?.toInt() ?? 0,
+      fechaFin: (map['fechaFin'] as num?)?.toInt(),
       lugar: map['lugar'] ?? '',
       tipo: map['tipo'] ?? 'reunion',
       activo: map['activo'] ?? true,
@@ -58,11 +63,15 @@ class AttendanceEvent {
     );
   }
 
+  /// Límite superior para filtros de vigencia cuando [fechaFin] no está en Firestore.
+  int get fechaFinVigenciaMs => fechaFin ?? endOfLocalDayMs(fecha);
+
   Map<String, dynamic> toMap() {
     return {
       'nombre': nombre,
       'descripcion': descripcion,
       'fecha': fecha,
+      if (fechaFin != null) 'fechaFin': fechaFin,
       'lugar': lugar,
       'tipo': tipo,
       'activo': activo,
@@ -79,6 +88,7 @@ class AttendanceEvent {
     String? nombre,
     String? descripcion,
     int? fecha,
+    int? fechaFin,
     String? lugar,
     String? tipo,
     bool? activo,
@@ -93,6 +103,7 @@ class AttendanceEvent {
       nombre: nombre ?? this.nombre,
       descripcion: descripcion ?? this.descripcion,
       fecha: fecha ?? this.fecha,
+      fechaFin: fechaFin ?? this.fechaFin,
       lugar: lugar ?? this.lugar,
       tipo: tipo ?? this.tipo,
       activo: activo ?? this.activo,
@@ -216,6 +227,7 @@ class AttendanceService {
         nombre: legacyEvent.nombre,
         descripcion: legacyEvent.descripcion ?? '',
         fecha: legacyEvent.fecha,
+        fechaFin: legacyEvent.fechaFin,
         lugar: 'No identificado',
         tipo: legacyEvent.tipoReunion.value.toLowerCase(),
         activo: true,
@@ -430,11 +442,19 @@ class AttendanceService {
   /// legado (`eventos` + `asistencias` + `personas`). En legacy se cruzan varios
   /// identificadores porque datos antiguos pueden usar `member.id`, número de
   /// socio, `workerCode`, documento o `personas/{id}`.
+  ///
+  /// No usar `async*` + `yield*` aquí: el stream resultante es de **una sola**
+  /// suscripción y un `StreamBuilder` dentro de un `TabBarView` / `PageView`
+  /// puede provocar un segundo `listen` (p. ej. al crear hijos adyacentes),
+  /// lanzando `Bad state: Stream has already been listened to`.
   Stream<MemberAttendanceSummary> watchMemberAttendanceSummary(
     String memberId,
-  ) async* {
-    await _ensureCanReadMemberSummary(memberId);
-    yield* _watchMemberAttendanceSummaryUnchecked(memberId);
+  ) {
+    return Stream<void>.fromFuture(_ensureCanReadMemberSummary(memberId))
+        .asyncExpand(
+          (_) => _watchMemberAttendanceSummaryUnchecked(memberId),
+        )
+        .asBroadcastStream();
   }
 
   Stream<MemberAttendanceSummary> _watchMemberAttendanceSummaryUnchecked(
@@ -824,6 +844,49 @@ class AttendanceService {
 
   String _norm(String? value) => value?.trim().toLowerCase() ?? '';
 
+  /// Elige un evento operativo para mostrar en el dashboard del hub.
+  ///
+  /// Prioridad: `estado == en_curso` (más reciente por fecha); si no hay, el activo
+  /// ya iniciado (`fecha <= ahora`) más reciente; si no, el próximo por comenzar;
+  /// si no, el activo más reciente por fecha.
+  static String? pickHighlightedOperationalEventId(
+    List<AttendanceEvent> events,
+  ) {
+    final active = events.where((e) => e.activo).toList();
+    if (active.isEmpty) return null;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final enCurso = active
+        .where((e) => e.estado.toLowerCase().trim() == 'en_curso')
+        .toList();
+    if (enCurso.isNotEmpty) {
+      enCurso.sort((a, b) => b.fecha.compareTo(a.fecha));
+      return enCurso.first.id;
+    }
+    final started = active.where((e) => e.fecha <= now).toList()
+      ..sort((a, b) => b.fecha.compareTo(a.fecha));
+    if (started.isNotEmpty) return started.first.id;
+    final upcoming = active.where((e) => e.fecha > now).toList()
+      ..sort((a, b) => a.fecha.compareTo(b.fecha));
+    if (upcoming.isNotEmpty) return upcoming.first.id;
+    active.sort((a, b) => b.fecha.compareTo(a.fecha));
+    return active.first.id;
+  }
+
+  /// Métricas agregadas para dashboard (modelo `attendance_events`).
+  Future<AttendanceHubDashboardData?> buildHubDashboardData(
+    String eventId,
+  ) async {
+    try {
+      final ev = await getEventById(eventId);
+      if (ev == null) return null;
+      final report = await generateAttendanceReport(eventId);
+      return AttendanceHubDashboardData.fromReport(report, ev);
+    } catch (e, st) {
+      debugPrint('buildHubDashboardData: $e\n$st');
+      return null;
+    }
+  }
+
   /// Obtener reporte completo de asistencia con faltas calculadas
   Future<AttendanceReport> generateAttendanceReport(String eventId) async {
     try {
@@ -1119,7 +1182,7 @@ class AttendanceService {
       );
       final eventUi = EventoAsistencia(
         id: ev.id,
-        nombre: '[Reporte] ${ev.nombre}',
+        nombre: '[Evento] ${ev.nombre}',
         fecha: ev.fecha,
         tipoReunion: TipoReunion.fromString(ev.tipo),
         descripcion: ev.descripcion,
@@ -1135,6 +1198,51 @@ class AttendanceService {
       return tb.compareTo(ta);
     });
     return rows;
+  }
+}
+
+/// Resumen numérico para tarjeta de dashboard del hub de asistencia.
+class AttendanceHubDashboardData {
+  const AttendanceHubDashboardData({
+    required this.eventId,
+    required this.nombre,
+    required this.fechaMillis,
+    required this.lugar,
+    required this.totalConvocados,
+    required this.presentes,
+    required this.ausentes,
+    required this.noConvocadosModalidad,
+    required this.porcentajePresentes,
+    required this.totalRegistrosSubcoleccion,
+  });
+
+  final String eventId;
+  final String nombre;
+  final int fechaMillis;
+  final String lugar;
+  final int totalConvocados;
+  final int presentes;
+  final int ausentes;
+  final int noConvocadosModalidad;
+  final double porcentajePresentes;
+  final int totalRegistrosSubcoleccion;
+
+  factory AttendanceHubDashboardData.fromReport(
+    AttendanceReport report,
+    AttendanceEvent ev,
+  ) {
+    return AttendanceHubDashboardData(
+      eventId: ev.id,
+      nombre: ev.nombre,
+      fechaMillis: ev.fecha,
+      lugar: ev.lugar,
+      totalConvocados: report.totalConvoked,
+      presentes: report.totalPresent,
+      ausentes: report.totalAbsent,
+      noConvocadosModalidad: report.totalNotConvoked,
+      porcentajePresentes: report.attendanceRate,
+      totalRegistrosSubcoleccion: report.attendances.length,
+    );
   }
 }
 
