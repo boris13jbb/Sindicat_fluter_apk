@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/models/election.dart';
 import '../../core/models/candidate.dart';
@@ -6,8 +7,10 @@ import '../../core/models/user_role.dart';
 import '../../core/models/asistencia/evento_asistencia_vinculo_eleccion.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/election_service.dart';
+import '../../services/candidate_photo_storage_service.dart';
 import '../../services/asistencia_service.dart';
 import '../../core/widgets/professional_app_bar.dart';
+import 'candidate_image_upload_section.dart';
 
 class EditElectionScreen extends StatefulWidget {
   const EditElectionScreen({super.key, required this.electionId});
@@ -121,13 +124,17 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final mq = MediaQuery.of(context);
+    final scrollBottomPad =
+        24 + mq.viewPadding.bottom + mq.viewInsets.bottom;
+
     return Scaffold(
       appBar: ProfessionalAppBar(
         title: 'Editar Elección',
         onNavigateBack: () => Navigator.pop(context),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, scrollBottomPad),
         child: Form(
           key: _formKey,
           child: Column(
@@ -390,97 +397,187 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
     }
   }
 
-  void _showEditCandidateDialog(BuildContext context, Candidate c) {
+  Future<void> _showEditCandidateDialog(
+    BuildContext context,
+    Candidate c,
+  ) async {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController(text: c.name);
     final descController = TextEditingController(text: c.description ?? '');
     final imageUrlController = TextEditingController(text: c.imageUrl ?? '');
     final orderController = TextEditingController(text: c.order.toString());
+    final stagedPickNotifier = ValueNotifier<XFile?>(null);
 
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Editar Candidato'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextFormField(
-                  controller: nameController,
-                  decoration: const InputDecoration(labelText: 'Nombre'),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Requerido' : null,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: descController,
-                  decoration: const InputDecoration(labelText: 'Descripción'),
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: imageUrlController,
-                  decoration: const InputDecoration(
-                    labelText: 'URL de imagen (opcional)',
-                    prefixIcon: Icon(Icons.link),
+    final baselineImageUrl = (c.imageUrl ?? '').trim();
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogCtx) {
+        var saving = false;
+
+        Future<void> doSave(StateSetter setModal) async {
+          if (formKey.currentState?.validate() != true) return;
+          if (saving) return;
+
+          final selectedImageFile = stagedPickNotifier.value;
+          final trimmedManual = imageUrlController.text.trim();
+          final oldImageUrl = baselineImageUrl;
+
+          debugPrint('===== GUARDAR CANDIDATO =====');
+          debugPrint('modo: editar');
+          debugPrint('electionId: ${c.electionId}');
+          debugPrint('candidateId: ${c.id}');
+          debugPrint(
+            'selectedImageFile: ${selectedImageFile?.path}',
+          );
+          debugPrint('manualUrl: ${imageUrlController.text}');
+          debugPrint('oldImageUrl: $oldImageUrl');
+
+          setModal(() => saving = true);
+          try {
+            final photo = CandidatePhotoStorage();
+            String? imageUrlToPersist;
+
+            if (selectedImageFile != null) {
+              imageUrlToPersist = await photo.uploadCandidateImage(
+                electionId: c.electionId,
+                candidateId: c.id,
+                imageFile: selectedImageFile,
+              );
+            } else {
+              debugPrint(
+                'Sin archivo nuevo: no se usa Storage (ni getDownloadURL ni refFromURL).',
+              );
+              imageUrlToPersist =
+                  trimmedManual.isEmpty ? null : trimmedManual;
+            }
+
+            await _electionService.updateCandidate(
+              Candidate(
+                id: c.id,
+                electionId: c.electionId,
+                name: nameController.text.trim(),
+                description: descController.text.trim().isEmpty
+                    ? null
+                    : descController.text.trim(),
+                imageUrl: imageUrlToPersist,
+                order: parseCandidateOrder(orderController.text),
+                voteCount: c.voteCount,
+              ),
+            );
+
+            if (selectedImageFile != null) {
+              // No limpiar el notifier antes del pop: dispara listeners/setState en
+              // CandidateImageUploadSection durante el cierre de la ruta.
+              final prev = oldImageUrl.trim();
+              final next = (imageUrlToPersist ?? '').trim();
+              if (prev.startsWith('https://') &&
+                  prev.isNotEmpty &&
+                  prev != next) {
+                await CandidatePhotoStorage.tryDeleteOldCandidateImage(
+                  oldImageUrl,
+                );
+              }
+            }
+
+            if (!dialogCtx.mounted) return;
+            // No llamar setModal aquí: un rebuild del StatefulBuilder seguido del
+            // pop provoca carreras y el assert _dependents.isEmpty al desmontar.
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Candidato actualizado correctamente'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            Navigator.pop(dialogCtx);
+          } catch (e, st) {
+            debugPrint('ERROR GUARDANDO CANDIDATO: $e');
+            debugPrint('STACKTRACE: $st');
+            if (dialogCtx.mounted) {
+              setModal(() => saving = false);
+            }
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error al guardar: $e')),
+              );
+            }
+          }
+        }
+
+        return StatefulBuilder(
+          builder: (ctx, setModal) {
+            return AlertDialog(
+              title: const Text('Editar Candidato'),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (saving) ...[
+                        const LinearProgressIndicator(minHeight: 3),
+                        const SizedBox(height: 12),
+                      ],
+                      TextFormField(
+                        controller: nameController,
+                        decoration:
+                            const InputDecoration(labelText: 'Nombre'),
+                        validator: (v) =>
+                            (v == null || v.trim().isEmpty)
+                                ? 'Requerido'
+                                : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: descController,
+                        decoration:
+                            const InputDecoration(labelText: 'Descripción'),
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 12),
+                      CandidateImageUploadSection(
+                        electionId: c.electionId,
+                        urlController: imageUrlController,
+                        stagedPickNotifier: stagedPickNotifier,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: orderController,
+                        decoration: const InputDecoration(
+                          labelText: 'Orden en lista',
+                          prefixIcon: Icon(Icons.sort),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: validateCandidateOrder,
+                      ),
+                    ],
                   ),
-                  keyboardType: TextInputType.url,
-                  validator: validateCandidateImageUrl,
                 ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: orderController,
-                  decoration: const InputDecoration(
-                    labelText: 'Orden en lista',
-                    prefixIcon: Icon(Icons.sort),
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: validateCandidateOrder,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: saving ? null : () => doSave(setModal),
+                  child: Text(saving ? 'Guardando…' : 'Guardar'),
                 ),
               ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (formKey.currentState?.validate() != true) return;
-              final description = descController.text.trim();
-              final imageUrl = imageUrlController.text.trim();
-              await _electionService.updateCandidate(
-                Candidate(
-                  id: c.id,
-                  electionId: c.electionId,
-                  name: nameController.text.trim(),
-                  description: description.isEmpty ? null : description,
-                  imageUrl: imageUrl.isEmpty ? null : imageUrl,
-                  order: parseCandidateOrder(orderController.text),
-                  voteCount: c.voteCount,
-                ),
-              );
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Candidato actualizado')),
-                );
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('Guardar'),
-          ),
-        ],
-      ),
-    ).whenComplete(() {
+            );
+          },
+        );
+      },
+    );
+    } finally {
       nameController.dispose();
       descController.dispose();
       imageUrlController.dispose();
       orderController.dispose();
-    });
+      stagedPickNotifier.dispose();
+    }
   }
 
   Future<void> _confirmDeleteCandidate(

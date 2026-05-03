@@ -82,13 +82,17 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
       );
     }
 
+    final mq = MediaQuery.of(context);
+    final scrollBottomPad =
+        24 + mq.viewPadding.bottom + mq.viewInsets.bottom;
+
     return Scaffold(
       appBar: ProfessionalAppBar(
         title: 'Crear Elección',
         onNavigateBack: () => Navigator.pop(context),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, scrollBottomPad),
         child: Form(
           key: _formKey,
           child: Column(

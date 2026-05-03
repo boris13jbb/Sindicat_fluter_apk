@@ -270,25 +270,31 @@ class ElectionService {
   Future<void> addCandidate(Candidate candidate) async {
     try {
       await _ensureUniqueCandidateName(candidate);
-      final ref = _firestore
-          .collection('elections')
-          .doc(candidate.electionId)
-          .collection('candidates')
-          .doc();
-      final data = candidate.toMap()..['id'] = ref.id;
+      final candRef = candidate.id.trim().isNotEmpty
+          ? _firestore
+              .collection('elections')
+              .doc(candidate.electionId)
+              .collection('candidates')
+              .doc(candidate.id.trim())
+          : _firestore
+              .collection('elections')
+              .doc(candidate.electionId)
+              .collection('candidates')
+              .doc();
+      final data = candidate.toMap()..['id'] = candRef.id;
       // Ensure required fields are present
       data['electionId'] = candidate.electionId;
       // Ensure order field exists (default to 0 if not set)
       if (!data.containsKey('order')) {
         data['order'] = candidate.order;
       }
-      await ref.set(data);
+      await candRef.set(data);
 
       // Registrar en auditoría
       await _audit.logAction(
         action: AuditAction.create,
         entityType: AuditEntityType.candidate,
-        entityId: ref.id,
+        entityId: candRef.id,
         description:
             'Candidato creado: ${candidate.name} (Elección: ${candidate.electionId})',
         platform: 'flutter',

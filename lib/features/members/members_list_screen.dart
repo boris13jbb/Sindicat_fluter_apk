@@ -1,9 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../core/models/asistencia/evento.dart';
 import '../../core/models/member.dart';
 import '../../core/widgets/professional_app_bar.dart';
+import '../../services/attendance_service.dart';
 import '../../services/members_service.dart';
 import 'member_form_screen.dart';
 
@@ -19,6 +23,7 @@ class _MembersListScreenState extends State<MembersListScreen> {
   static const int _pageSize = 50;
 
   final MembersService _service = MembersService();
+  final AttendanceService _attendanceService = AttendanceService();
   final TextEditingController _searchController = TextEditingController();
 
   String _searchQuery = '';
@@ -26,6 +31,7 @@ class _MembersListScreenState extends State<MembersListScreen> {
   final List<Member> _pagedMembers = [];
   DocumentSnapshot<Map<String, dynamic>>? _lastMemberDocument;
   bool _isLoadingPage = false;
+  bool _isExporting = false;
   bool _hasMorePages = true;
   Object? _pageError;
   int _pageRequestId = 0;
@@ -52,9 +58,15 @@ class _MembersListScreenState extends State<MembersListScreen> {
         onNavigateBack: () => Navigator.pop(context),
         actions: [
           IconButton(
-            icon: const Icon(Icons.ios_share),
-            tooltip: 'Exportar socios (CSV)',
-            onPressed: () => _exportMembersCsv(context),
+            icon: _isExporting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.ios_share),
+            tooltip: 'Exportar todo el padrón (CSV)',
+            onPressed: _isExporting ? null : () => _exportMembersCsv(context),
           ),
           // 🆕 Botón de importación
           IconButton(
@@ -262,10 +274,51 @@ class _MembersListScreenState extends State<MembersListScreen> {
     final confirmed = await _confirmMembersExport(context);
     if (!confirmed || !context.mounted) return;
 
+    setState(() => _isExporting = true);
+
     try {
-      final list = await _service.getAllMembers().first;
-      final csv = MembersService.buildMembersExportCsv(list);
-      await Share.share(csv, subject: 'Exportación socios');
+      final list = await _service.fetchMembersForExport();
+      if (!context.mounted) return;
+
+      if (list.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No hay socios para exportar')),
+        );
+        return;
+      }
+
+      final summaries = await _attendanceService
+          .fetchMemberAttendanceSummariesForExport(list);
+      final attendanceData = _buildAttendanceExportData(summaries);
+      final csv = MembersService.buildMembersExportCsv(
+        list,
+        attendanceData: attendanceData,
+      );
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'socios_reporte_completo_$timestamp.csv';
+
+      await Share.shareXFiles(
+        [
+          XFile.fromData(
+            Uint8List.fromList(utf8.encode('\uFEFF$csv')),
+            name: fileName,
+            mimeType: 'text/csv',
+          ),
+        ],
+        subject: 'Reporte completo de socios',
+        text:
+            'Reporte completo del padrón con asistencias y faltas: ${list.length} socio(s).',
+      );
+
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Reporte CSV generado con ${list.length} socio(s), asistencias y faltas',
+          ),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ),
+      );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -275,6 +328,10 @@ class _MembersListScreenState extends State<MembersListScreen> {
           ),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() => _isExporting = false);
+      }
     }
   }
 
@@ -282,9 +339,9 @@ class _MembersListScreenState extends State<MembersListScreen> {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('Exportar socios'),
+            title: const Text('Exportar reporte completo'),
             content: const Text(
-              'Se generará un CSV con datos del padrón de socios, incluyendo identificadores y modalidad. Comparte este archivo sólo con personal autorizado.',
+              'Se generará un archivo CSV con todo el padrón, identificadores, modalidad, eventos convocados, asistencias, faltas, ausencias justificadas y eventos no convocados. Comparte este archivo sólo con personal autorizado.',
             ),
             actions: [
               TextButton(
@@ -300,6 +357,34 @@ class _MembersListScreenState extends State<MembersListScreen> {
           ),
         ) ??
         false;
+  }
+
+  Map<String, MemberAttendanceExportData> _buildAttendanceExportData(
+    Map<String, MemberAttendanceSummary> summaries,
+  ) {
+    return summaries.map((memberId, summary) {
+      final latest = summary.detalles.isNotEmpty
+          ? summary.detalles.first
+          : null;
+      final justifiedAbsences = summary.detalles.where((detalle) {
+        final estado = detalle.estado.toLowerCase();
+        return estado.contains('justificado') &&
+            !estado.contains('no convocado');
+      }).length;
+
+      return MapEntry(
+        memberId,
+        MemberAttendanceExportData(
+          totalConvocados: summary.totalConvocados,
+          totalAsistencias: summary.totalAsistencias,
+          totalFaltas: summary.totalFaltas,
+          totalAusenciasJustificadas: justifiedAbsences,
+          totalNoConvocado: summary.totalNoConvocado,
+          ultimoEvento: latest?.eventName ?? '',
+          ultimoEstado: latest?.estado ?? '',
+        ),
+      );
+    });
   }
 
   void _navigateToAddMember() async {

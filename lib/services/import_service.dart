@@ -25,6 +25,28 @@ class RowValidationResult {
   });
 }
 
+/// Resultado de prevalidación local antes de escribir en Firestore.
+class ImportPreviewResult {
+  const ImportPreviewResult({
+    required this.totalRows,
+    required this.validRows,
+    required this.invalidRows,
+    required this.duplicateRowsInFile,
+    required this.normalizedHeaders,
+    required this.errors,
+  });
+
+  final int totalRows;
+  final int validRows;
+  final int invalidRows;
+  final int duplicateRowsInFile;
+  final List<String> normalizedHeaders;
+  final List<String> errors;
+
+  bool get canImport => validRows > 0;
+  bool get hasWarnings => invalidRows > 0 || duplicateRowsInFile > 0;
+}
+
 /// Servicio para importación masiva de socios desde CSV/Excel
 class ImportService {
   ImportService({
@@ -50,6 +72,199 @@ class ImportService {
     'email',
     'telefono',
   ];
+
+  static const _templateRows = [
+    expectedColumns,
+    [
+      '1001',
+      'JUAN GABRIEL',
+      'BURBANO BONIFAZ',
+      '37325',
+      'A',
+      '1723168744',
+      'juan@example.com',
+      '0999999999',
+    ],
+    ['1002', 'MARIA ELENA', 'PEREZ LOPEZ', '37326', 'N1', '', '', ''],
+  ];
+
+  /// Plantilla CSV lista para compartir/abrir en Excel.
+  static String buildMembersImportTemplateCsv() {
+    return const ListToCsvConverter().convert(_templateRows);
+  }
+
+  /// Plantilla XLSX real con hoja de socios y hoja de ayuda de modalidades.
+  static Uint8List buildMembersImportTemplateExcel() {
+    final excel = Excel.createExcel();
+    const sheetName = 'Socios';
+    final sheet = excel[sheetName];
+    excel.delete('Sheet1');
+
+    for (final row in _templateRows) {
+      sheet.appendRow(row.map((value) => TextCellValue(value)).toList());
+    }
+
+    final helpSheet = excel['Modalidades'];
+    helpSheet.appendRow([TextCellValue('Valor'), TextCellValue('Descripción')]);
+    for (final modalidad in Modalidad.values) {
+      helpSheet.appendRow([
+        TextCellValue(modalidad.value),
+        TextCellValue(JustificacionHelper.etiquetaModalidad(modalidad)),
+      ]);
+    }
+
+    for (var i = 0; i < expectedColumns.length; i++) {
+      sheet.setColumnWidth(i, i == 4 ? 14 : 22);
+    }
+    helpSheet.setColumnWidth(0, 12);
+    helpSheet.setColumnWidth(1, 24);
+
+    final bytes = excel.encode();
+    if (bytes == null) {
+      throw Exception('No se pudo generar la plantilla XLSX');
+    }
+    return Uint8List.fromList(bytes);
+  }
+
+  /// Previsualiza un CSV sin escribir en Firestore.
+  static ImportPreviewResult previewCsv(
+    Uint8List bytes, {
+    String delimiter = ',',
+  }) {
+    final rows = parseCsv(bytes, delimiter: delimiter);
+    return _previewParsedRows(rows);
+  }
+
+  /// Previsualiza un Excel sin escribir en Firestore.
+  static ImportPreviewResult previewExcel(Uint8List bytes) {
+    final excel = Excel.decodeBytes(bytes);
+    if (excel.tables.isEmpty) {
+      throw Exception('El archivo Excel no contiene hojas de cálculo');
+    }
+
+    final sheet = excel.tables.values.first;
+    if (sheet.rows.isEmpty) {
+      throw Exception('La hoja de cálculo está vacía');
+    }
+
+    final rows = sheet.rows
+        .map(
+          (row) => row
+              .map((cell) => (cell?.value?.toString().trim()) ?? '')
+              .toList(),
+        )
+        .where((row) => row.any((value) => value.trim().isNotEmpty))
+        .toList();
+
+    return _previewParsedRows(rows);
+  }
+
+  static ImportPreviewResult _previewParsedRows(List<List<String>> rows) {
+    if (rows.isEmpty) {
+      throw Exception('El archivo está vacío');
+    }
+
+    final rawHeaders = rows.first.map((h) => h.trim().toLowerCase()).toList();
+    final headers = normalizeHeadersStatic(rawHeaders);
+    final errors = <String>[];
+
+    for (final col in requiredColumns) {
+      if (!headers.contains(col)) {
+        errors.add('Columna obligatoria "$col" no encontrada');
+      }
+    }
+    if (!headers.contains('modalidad')) {
+      errors.add('Columna obligatoria "modalidad" no encontrada');
+    }
+
+    final dataRows = rows.sublist(1);
+    if (errors.isNotEmpty) {
+      return ImportPreviewResult(
+        totalRows: dataRows.length,
+        validRows: 0,
+        invalidRows: dataRows.length,
+        duplicateRowsInFile: 0,
+        normalizedHeaders: headers,
+        errors: errors,
+      );
+    }
+
+    var hasFullNameColumn = false;
+    var fullNameIndex = -1;
+    for (var i = 0; i < rawHeaders.length; i++) {
+      if (fullNameColumns.contains(rawHeaders[i])) {
+        hasFullNameColumn = true;
+        fullNameIndex = i;
+        break;
+      }
+    }
+
+    var validRows = 0;
+    var invalidRows = 0;
+    var duplicateRows = 0;
+    final memberNumbersInFile = <String>{};
+    final workerCodesInFile = <String>{};
+    final documentIdsInFile = <String>{};
+
+    for (var i = 0; i < dataRows.length; i++) {
+      final validation = validateRowStatic(
+        dataRows[i],
+        headers,
+        i + 2,
+        hasFullNameColumn: hasFullNameColumn,
+        fullNameIndex: fullNameIndex,
+      );
+
+      if (!validation.isValid) {
+        invalidRows++;
+        errors.addAll(validation.errors);
+        continue;
+      }
+
+      final duplicateErrors = <String>[];
+      final memberNumber = validation.data['numero_socio'] as String?;
+      final workerCode = validation.data['worker_code'] as String?;
+      final documentId = validation.data['documento'] as String?;
+
+      if (memberNumber != null &&
+          memberNumber.isNotEmpty &&
+          !memberNumbersInFile.add(memberNumber)) {
+        duplicateErrors.add(
+          'Fila ${i + 2}: Número de socio duplicado en el archivo: $memberNumber',
+        );
+      }
+      if (workerCode != null &&
+          workerCode.isNotEmpty &&
+          !workerCodesInFile.add(workerCode)) {
+        duplicateErrors.add(
+          'Fila ${i + 2}: Código de trabajador duplicado en el archivo: $workerCode',
+        );
+      }
+      if (documentId != null &&
+          documentId.isNotEmpty &&
+          !documentIdsInFile.add(documentId)) {
+        duplicateErrors.add(
+          'Fila ${i + 2}: Documento duplicado en el archivo: $documentId',
+        );
+      }
+
+      if (duplicateErrors.isNotEmpty) {
+        duplicateRows++;
+        errors.addAll(duplicateErrors);
+      } else {
+        validRows++;
+      }
+    }
+
+    return ImportPreviewResult(
+      totalRows: dataRows.length,
+      validRows: validRows,
+      invalidRows: invalidRows,
+      duplicateRowsInFile: duplicateRows,
+      normalizedHeaders: headers,
+      errors: errors.take(100).toList(),
+    );
+  }
 
   /// Columnas obligatorias (modalidad se valida aparte con [Modalidad.tryParse])
   static const requiredColumns = ['numero_socio', 'nombres', 'apellidos'];

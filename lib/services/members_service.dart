@@ -21,6 +21,32 @@ class MembersPage {
   final int rawCount;
 }
 
+/// Totales de asistencia usados al exportar el padrón completo.
+class MemberAttendanceExportData {
+  const MemberAttendanceExportData({
+    required this.totalConvocados,
+    required this.totalAsistencias,
+    required this.totalFaltas,
+    required this.totalAusenciasJustificadas,
+    required this.totalNoConvocado,
+    this.ultimoEvento = '',
+    this.ultimoEstado = '',
+  });
+
+  final int totalConvocados;
+  final int totalAsistencias;
+  final int totalFaltas;
+  final int totalAusenciasJustificadas;
+  final int totalNoConvocado;
+  final String ultimoEvento;
+  final String ultimoEstado;
+
+  double get porcentajeAsistencia {
+    if (totalConvocados == 0) return 0;
+    return (totalAsistencias / totalConvocados) * 100;
+  }
+}
+
 /// Servicio para gestión de socios/miembros de la organización
 class MembersService {
   MembersService({
@@ -36,7 +62,10 @@ class MembersService {
   final AuditService _audit;
 
   /// CSV alineado a la importación (columna `modalidad` con código A, B, C, …).
-  static String buildMembersExportCsv(List<Member> members) {
+  static String buildMembersExportCsv(
+    List<Member> members, {
+    Map<String, MemberAttendanceExportData> attendanceData = const {},
+  }) {
     const converter = ListToCsvConverter();
     final rows = <List<dynamic>>[
       [
@@ -49,9 +78,18 @@ class MembersService {
         'email',
         'telefono',
         'estado',
+        'eventos_convocados',
+        'asistencias',
+        'faltas',
+        'ausencias_justificadas',
+        'no_convocado',
+        'porcentaje_asistencia',
+        'ultimo_evento_asistencia',
+        'ultimo_estado_asistencia',
       ],
     ];
     for (final m in members) {
+      final attendance = attendanceData[m.id];
       rows.add([
         m.memberNumber,
         m.firstName,
@@ -62,9 +100,50 @@ class MembersService {
         m.email ?? '',
         m.phone ?? '',
         m.status.displayName,
+        attendance?.totalConvocados ?? '',
+        attendance?.totalAsistencias ?? '',
+        attendance?.totalFaltas ?? '',
+        attendance?.totalAusenciasJustificadas ?? '',
+        attendance?.totalNoConvocado ?? '',
+        attendance?.porcentajeAsistencia.toStringAsFixed(1) ?? '',
+        attendance?.ultimoEvento ?? '',
+        attendance?.ultimoEstado ?? '',
       ]);
     }
     return converter.convert(rows);
+  }
+
+  static List<Member> filterAndSortMembersForDisplay(
+    List<Member> source, {
+    MemberStatus? status,
+    String? searchQuery,
+  }) {
+    var members = List<Member>.of(source);
+
+    if (status != null) {
+      members = members.where((m) => m.status == status).toList();
+    }
+
+    members.sort((a, b) {
+      final lastNameCompare = a.lastName.toLowerCase().compareTo(
+        b.lastName.toLowerCase(),
+      );
+      if (lastNameCompare != 0) return lastNameCompare;
+      return a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase());
+    });
+
+    final normalizedQuery = searchQuery?.trim().toLowerCase() ?? '';
+    if (normalizedQuery.isNotEmpty) {
+      members = members.where((m) {
+        return m.fullName.toLowerCase().contains(normalizedQuery) ||
+            m.memberNumber.toLowerCase().contains(normalizedQuery) ||
+            (m.workerCode?.toLowerCase().contains(normalizedQuery) ?? false) ||
+            (m.documentId?.toLowerCase().contains(normalizedQuery) ?? false) ||
+            (m.email?.toLowerCase().contains(normalizedQuery) ?? false);
+      }).toList();
+    }
+
+    return members;
   }
 
   void _ensureModalidadObligatoria(Member member) {
@@ -157,32 +236,34 @@ class MembersService {
             }
           }
 
-          // Ordenamiento en cliente por apellido y nombre
-          members.sort((a, b) {
-            final lastNameCompare = a.lastName.toLowerCase().compareTo(
-              b.lastName.toLowerCase(),
-            );
-            if (lastNameCompare != 0) return lastNameCompare;
-            return a.firstName.toLowerCase().compareTo(
-              b.firstName.toLowerCase(),
-            );
-          });
-
-          // Filtrado en cliente por búsqueda
-          if (searchQuery != null && searchQuery.isNotEmpty) {
-            final query = searchQuery.toLowerCase();
-            members = members.where((m) {
-              return m.fullName.toLowerCase().contains(query) ||
-                  m.memberNumber.toLowerCase().contains(query) ||
-                  (m.workerCode?.toLowerCase().contains(query) ?? false) ||
-                  (m.documentId?.toLowerCase().contains(query) ?? false) ||
-                  (m.email?.toLowerCase().contains(query) ?? false);
-            }).toList();
-          }
+          members = filterAndSortMembersForDisplay(
+            members,
+            searchQuery: searchQuery,
+          );
 
           debugPrint('✅ Members procesados: ${members.length}');
           return members;
         });
+  }
+
+  /// Lee todo el padrón para exportación administrativa.
+  ///
+  /// Este método no usa la página visible de `/members`; consulta la colección
+  /// completa y luego aplica filtros opcionales en cliente.
+  Future<List<Member>> fetchMembersForExport({
+    MemberStatus? status,
+    String? searchQuery,
+  }) async {
+    final snapshot = await _firestore.collection('members').get();
+    final members = snapshot.docs
+        .map((doc) => Member.fromMap(doc.data(), doc.id))
+        .toList();
+
+    return filterAndSortMembersForDisplay(
+      members,
+      status: status,
+      searchQuery: searchQuery,
+    );
   }
 
   /// Obtener una página de socios para listados grandes.

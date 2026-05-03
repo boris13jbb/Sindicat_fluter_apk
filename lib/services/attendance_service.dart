@@ -451,9 +451,7 @@ class AttendanceService {
     String memberId,
   ) {
     return Stream<void>.fromFuture(_ensureCanReadMemberSummary(memberId))
-        .asyncExpand(
-          (_) => _watchMemberAttendanceSummaryUnchecked(memberId),
-        )
+        .asyncExpand((_) => _watchMemberAttendanceSummaryUnchecked(memberId))
         .asBroadcastStream();
   }
 
@@ -556,6 +554,46 @@ class AttendanceService {
     return controller.stream;
   }
 
+  /// Obtiene resúmenes de asistencia para un conjunto de socios en una sola
+  /// carga. Se usa para exportaciones administrativas del padrón completo.
+  Future<Map<String, MemberAttendanceSummary>>
+  fetchMemberAttendanceSummariesForExport(List<Member> members) async {
+    if (members.isEmpty) return {};
+
+    final attendanceEventsFuture = _firestore
+        .collection('attendance_events')
+        .get();
+    final legacyEventsFuture = _firestore.collection('eventos').get();
+    final legacyAttendancesFuture = _firestore.collection('asistencias').get();
+    final personasFuture = _firestore.collection('personas').get();
+
+    final attendanceEventsSnap = await attendanceEventsFuture;
+    final newAttendanceSnaps = await Future.wait(
+      attendanceEventsSnap.docs.map(
+        (doc) => doc.reference.collection('asistencias').get(),
+      ),
+    );
+    final newAttendanceDocs = newAttendanceSnaps
+        .expand((snapshot) => snapshot.docs)
+        .toList();
+    final legacyEventsSnap = await legacyEventsFuture;
+    final legacyAttendancesSnap = await legacyAttendancesFuture;
+    final personasSnap = await personasFuture;
+
+    final summaries = <String, MemberAttendanceSummary>{};
+    for (final member in members) {
+      summaries[member.id] = _buildMemberAttendanceSummaryForMember(
+        member: member,
+        attendanceEventDocs: attendanceEventsSnap.docs,
+        newAttendanceDocs: newAttendanceDocs,
+        legacyEventDocs: legacyEventsSnap.docs,
+        legacyAttendanceDocs: legacyAttendancesSnap.docs,
+        personaDocs: personasSnap.docs,
+      );
+    }
+    return summaries;
+  }
+
   Future<void> _ensureCanReadMemberSummary(String memberId) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) {
@@ -631,23 +669,47 @@ class AttendanceService {
     }
 
     final member = Member.fromMap(memberData, memberDoc.id);
-    final memberKeys = _memberAttendanceKeys(member);
-    final legacyPersonaIds = _legacyPersonaIdsForMember(
-      member,
-      personasSnap.docs,
+    return _buildMemberAttendanceSummaryForMember(
+      member: member,
+      attendanceEventDocs: attendanceEventsSnap.docs,
+      newAttendanceDocs: newAttendancesSnap.docs,
+      legacyEventDocs: legacyEventsSnap.docs,
+      legacyAttendanceDocs: legacyAttendancesSnap.docs,
+      personaDocs: personasSnap.docs,
     );
+  }
+
+  MemberAttendanceSummary _buildMemberAttendanceSummaryForMember({
+    required Member member,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>>
+    attendanceEventDocs,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>>
+    newAttendanceDocs,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> legacyEventDocs,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>>
+    legacyAttendanceDocs,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>> personaDocs,
+  }) {
+    final memberKeys = _memberAttendanceKeys(member);
+    final legacyPersonaIds = _legacyPersonaIdsForMember(member, personaDocs);
 
     final attendanceByEvent = <String, AsistenciaRegistro>{};
-    for (final doc in newAttendancesSnap.docs) {
+    for (final doc in newAttendanceDocs) {
       final data = doc.data();
+      final collectionName = doc.reference.parent.parent?.parent.id ?? '';
+      if (collectionName != 'attendance_events') {
+        continue;
+      }
       final eventId =
           doc.reference.parent.parent?.id ?? data['eventoId']?.toString() ?? '';
       if (eventId.isEmpty) continue;
-      attendanceByEvent[eventId] = AsistenciaRegistro.fromMap(data, doc.id);
+      final registro = AsistenciaRegistro.fromMap(data, doc.id);
+      if (!memberKeys.contains(_norm(registro.personaId))) continue;
+      attendanceByEvent[eventId] = registro;
     }
 
     final legacyAttendanceByEvent = <String, AsistenciaRegistro>{};
-    for (final doc in legacyAttendancesSnap.docs) {
+    for (final doc in legacyAttendanceDocs) {
       final registro = AsistenciaRegistro.fromMap(doc.data(), doc.id);
       if (registro.eventoId.isEmpty) continue;
       final personaKey = _norm(registro.personaId);
@@ -662,14 +724,14 @@ class AttendanceService {
     var totalFaltas = 0;
     var totalNoConvocado = 0;
 
-    for (final doc in attendanceEventsSnap.docs) {
+    for (final doc in attendanceEventDocs) {
       final event = AttendanceEvent.fromMap(doc.data(), doc.id);
       if (!event.activo) continue;
 
       final specificList = event.miembrosConvocados.isNotEmpty;
       final explicitlyConvoked =
           !specificList ||
-          event.miembrosConvocados.any((id) => _norm(id) == _norm(member.id));
+          event.miembrosConvocados.any((id) => memberKeys.contains(_norm(id)));
       if (!explicitlyConvoked) {
         totalNoConvocado++;
         detalles.add(
@@ -686,7 +748,9 @@ class AttendanceService {
 
       final excludedByModalidad =
           member.modalidad != null &&
-          event.modalidadesNoConvocadas.contains(member.modalidad!.value);
+          event.modalidadesNoConvocadas.any(
+            (m) => _norm(m) == _norm(member.modalidad!.value),
+          );
       if (excludedByModalidad) {
         totalNoConvocado++;
         detalles.add(
@@ -729,8 +793,9 @@ class AttendanceService {
       }
     }
 
-    for (final doc in legacyEventsSnap.docs) {
+    for (final doc in legacyEventDocs) {
       final event = EventoAsistencia.fromMap(doc.data(), doc.id);
+      if (!event.activo) continue;
       final excludedByModalidad =
           member.modalidad != null &&
           event.modalidadesNoConvocadas.contains(member.modalidad);
@@ -755,7 +820,7 @@ class AttendanceService {
           _legacyAttendanceFromNewGroupFallback(
             event.id,
             memberKeys,
-            newAttendancesSnap.docs,
+            newAttendanceDocs,
           );
       if (asistencia?.asistio == true) {
         totalAsistencias++;

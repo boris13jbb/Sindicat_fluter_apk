@@ -336,6 +336,13 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    // Lectura explícita para consultas collectionGroup('asistencias') usadas
+    // por resúmenes de asistencia. Las escrituras permanecen restringidas en
+    // las reglas específicas de cada colección/subcolección.
+    match /{path=**}/asistencias/{asistenciaId} {
+      allow read: if isAuthenticated();
+    }
+
     match /events/{eventId} {
       allow read: if isAuthenticated();
       allow create, update: if isOperator();

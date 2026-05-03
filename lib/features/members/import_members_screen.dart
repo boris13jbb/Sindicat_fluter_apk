@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/models/import_log.dart';
 import '../../core/widgets/professional_app_bar.dart';
 import '../../services/import_service.dart';
@@ -21,7 +22,15 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
   String? _selectedFileName;
   Uint8List? _selectedFileBytes;
   String? _selectedFileType; // 'csv' o 'excel'
+  ImportPreviewResult? _previewResult;
+  String? _previewError;
   ImportLog? _lastImportLog;
+
+  bool get _canImportSelectedFile =>
+      _selectedFileBytes != null &&
+      _selectedFileType != null &&
+      _previewError == null &&
+      (_previewResult?.canImport ?? true);
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +52,11 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
             // Selector de archivo
             _buildFileSelector(),
 
+            if (_previewResult != null || _previewError != null) ...[
+              const SizedBox(height: 16),
+              _buildPreviewCard(),
+            ],
+
             const SizedBox(height: 24),
 
             // Botón importar
@@ -51,7 +65,9 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton.icon(
-                  onPressed: _isProcessing ? null : _importFile,
+                  onPressed: _isProcessing || !_canImportSelectedFile
+                      ? null
+                      : _importFile,
                   icon: _isProcessing
                       ? const SizedBox(
                           width: 20,
@@ -130,6 +146,18 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
                 fontStyle: FontStyle.italic,
                 color: Colors.orange[700],
               ),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: _shareExcelTemplate,
+                  icon: const Icon(Icons.table_chart),
+                  label: const Text('Plantilla Excel'),
+                ),
+              ],
             ),
           ],
         ),
@@ -312,6 +340,109 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
     );
   }
 
+  Widget _buildPreviewCard() {
+    final preview = _previewResult;
+    final hasError = _previewError != null;
+    final color = hasError || (preview?.hasWarnings ?? false)
+        ? Colors.orange
+        : Colors.green;
+
+    return Card(
+      color: hasError ? Colors.red[50] : null,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  hasError
+                      ? Icons.error_outline
+                      : preview!.hasWarnings
+                      ? Icons.warning_amber_outlined
+                      : Icons.fact_check_outlined,
+                  color: hasError ? Colors.red : color,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Prevalidación del archivo',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (hasError)
+              Text(_previewError!, style: const TextStyle(color: Colors.red))
+            else ...[
+              _buildStatRow('Filas detectadas:', '${preview!.totalRows}'),
+              _buildStatRow(
+                'Filas válidas:',
+                '${preview.validRows}',
+                Colors.green,
+              ),
+              if (preview.invalidRows > 0)
+                _buildStatRow(
+                  'Filas con error:',
+                  '${preview.invalidRows}',
+                  Colors.red,
+                ),
+              if (preview.duplicateRowsInFile > 0)
+                _buildStatRow(
+                  'Duplicados en archivo:',
+                  '${preview.duplicateRowsInFile}',
+                  Colors.orange,
+                ),
+              if (preview.normalizedHeaders.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Columnas detectadas: ${preview.normalizedHeaders.join(", ")}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              if (preview.errors.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Primeras observaciones:',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                ...preview.errors
+                    .take(5)
+                    .map(
+                      (error) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '• $error',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                    ),
+                if (preview.errors.length > 5)
+                  Text(
+                    '... y ${preview.errors.length - 5} observaciones más',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildStatRow(String label, String value, [Color? color]) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -381,10 +512,26 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
           fileType = 'excel';
         }
 
+        ImportPreviewResult? preview;
+        String? previewError;
+        try {
+          if (fileType == 'csv') {
+            preview = ImportService.previewCsv(fileBytes);
+          } else if (fileType == 'excel') {
+            preview = ImportService.previewExcel(fileBytes);
+          } else {
+            previewError = 'Tipo de archivo no soportado';
+          }
+        } catch (e) {
+          previewError = e.toString();
+        }
+
         setState(() {
           _selectedFileName = file.name;
           _selectedFileBytes = fileBytes;
           _selectedFileType = fileType;
+          _previewResult = preview;
+          _previewError = previewError;
           _lastImportLog = null;
         });
       }
@@ -400,8 +547,63 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
     }
   }
 
+  Future<void> _shareExcelTemplate() async {
+    try {
+      final bytes = ImportService.buildMembersImportTemplateExcel();
+      await Share.shareXFiles(
+        [
+          XFile.fromData(
+            bytes,
+            name: 'plantilla_socios.xlsx',
+            mimeType:
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          ),
+        ],
+        subject: 'Plantilla de socios',
+        text:
+            'Plantilla oficial para importar socios. Conserva los encabezados y completa modalidad con A, B, C, D, E, N, N1, N2, X, Y o Z.',
+      );
+      _showTemplateMessage('Plantilla Excel generada');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo generar la plantilla Excel: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showTemplateMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   Future<void> _importFile() async {
     if (_selectedFileBytes == null || _selectedFileType == null) return;
+
+    final preview = _previewResult;
+    if (_previewError != null || (preview != null && !preview.canImport)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Corrige el archivo antes de importar.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (preview != null && preview.hasWarnings) {
+      final confirmed = await _confirmImportWithWarnings(preview);
+      if (!confirmed || !mounted) return;
+    }
 
     setState(() => _isProcessing = true);
 
@@ -451,5 +653,30 @@ class _ImportMembersScreenState extends State<ImportMembersScreen> {
         );
       }
     }
+  }
+
+  Future<bool> _confirmImportWithWarnings(ImportPreviewResult preview) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Importar con observaciones'),
+            content: Text(
+              'La prevalidación encontró ${preview.invalidRows} filas con error y ${preview.duplicateRowsInFile} duplicados dentro del archivo. '
+              'La importación intentará procesar sólo las filas válidas y registrará el resultado en auditoría.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Revisar archivo'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Importar válidas'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
   }
 }

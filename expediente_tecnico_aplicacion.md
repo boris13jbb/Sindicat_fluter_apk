@@ -9,15 +9,15 @@
 | Tipo de aplicación | Aplicación Flutter multiplataforma: Android, iOS, Web y Windows. |
 | Público objetivo | Organización sindical, administradores, operadores de asistencia y votantes/socios. |
 | Roles identificados | `SUPERADMIN`, `ADMIN`, `OPERADOR_ASISTENCIA`, `VOTER`, `USER`. |
-| Tecnologías utilizadas | Flutter, Dart, Firebase Core, Firebase Auth, Cloud Firestore, Provider, PDF/Printing, File Picker, Excel, CSV, Mobile Scanner, QR Flutter, Share Plus. |
-| Backend / servicios externos | Firebase Authentication y Cloud Firestore. |
-| Estado actual estimado | MVP avanzado / desarrollo funcional. La UI operativa de asistencia queda unificada para crear eventos nuevos en `attendance_events`, con **modalidades no convocadas** configurables en el alta (**`CrearAttendanceEventScreen`**) y editables desde el detalle (**`AttendanceEventDetailScreen`**, diálogo + icono en AppBar). `eventos` legacy se conserva como histórico/compatibilidad mediante `AsistenciaEventRouteArgs`. En **Mi Perfil**, el resumen de asistencia usa un stream compatible con **TabBarView** (véase **E-042**). En repo figura **`firestore.indexes.json`** enlazado desde **`firebase.json`** (índice compuesto `members`). Sigue recomendándose validación con datos/usuarios reales antes de producción. |
+| Tecnologías utilizadas | Flutter, Dart, Firebase Core, Firebase Auth, Cloud Firestore, **Firebase Storage**, Provider, PDF/Printing, File Picker, **image_picker**, Excel, CSV, Mobile Scanner, QR Flutter, Share Plus. |
+| Backend / servicios externos | Firebase Authentication, Cloud Firestore y **Firebase Storage** (uso para fotos opcionales de candidatos tras aprovisionar Storage en consola y desplegar **`storage.rules`**). |
+| Estado actual estimado | MVP avanzado / desarrollo funcional. La UI operativa de asistencia queda unificada para crear eventos nuevos en `attendance_events`, con **modalidades no convocadas** configurables en el alta (**`CrearAttendanceEventScreen`**) y editables desde el detalle (**`AttendanceEventDetailScreen`**, diálogo + icono en AppBar). `eventos` legacy se conserva como histórico/compatibilidad mediante `AsistenciaEventRouteArgs`. En **Mi Perfil**, el resumen de asistencia se consume con una **`StreamSubscription` única** compatible con **TabBarView** (véase **E-042**). **Alta/edición de candidatos**: URL de imagen opcional y foto opcional (**E-044**, ampliación **E-045** /**2026-05-02**): **`CandidateImageUploadSection`**, **`CandidatePhotoStorage`** (`uploadCandidateImage`, **`FirebaseStorage.instance`**, mismo ref para **`putFile`/`putData`** y **`snapshot.ref.getDownloadURL()`**); objetos bajo **`elections/{electionId}/candidates/{candidateId}/{archivo}`**; **`storage.rules`** mantiene además **`candidate_photos/`** por compatibilidad y quedó endurecido localmente en **E-046** para que sólo `SUPERADMIN`/`ADMIN` escriban/eliminen fotos. **`AndroidManifest`**: **`CAMERA`**; **`Info.plist`**: fototeca/cámara. Tras activar Storage en consola (**2026-05-02**), hubo deploy previo de reglas en **`sistema-integrado-sindicato`** (§F); el endurecimiento **E-046** compila en dry-run y requiere deploy real antes de operación. El modal **Editar candidato** usa **`await showDialog`** + **`finally`** para **dispose**, y omite **`setModal(saving=false)`** justo antes de **`Navigator.pop`** en guardado OK (evita assert **`_dependents.isEmpty`**). En repo **`firestore.indexes.json`** en **`firebase.json`**. Sigue recomendándose validación con datos/usuarios reales. |
 | Arquitectura | Capa de UI en `lib/features`, estado global en `lib/providers`, servicios en `lib/services`, modelos en `lib/core/models`, tema y widgets compartidos en `lib/core`. |
 | Punto de entrada | `lib/main.dart`. `AppBootstrap` inicializa Firebase con timeout de 10 segundos, muestra carga/error con reintento y sólo crea `AuthProvider` cuando Firebase está disponible; Firestore offline se configura fuera de Web. |
 
 ## 2. Alcance de la revisión
 
-La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, mediante análisis estático del código, revisión de reglas Firestore, rutas, pantallas, modelos, servicios, documentación existente y ejecución de comandos de QA disponibles.
+La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, mediante análisis estático del código, revisión de reglas Firestore y **reglas Firebase Storage** (**`storage.rules`**, **`firebase.json`**), rutas, pantallas, modelos, servicios, documentación existente y ejecución de comandos de QA disponibles.
 
 ### Elementos revisados
 
@@ -29,7 +29,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 - Estados de carga, vacío, error, éxito y sin permisos.
 - Servicios Firestore: `AuthService`, `ElectionService`, `VoteService`, `AsistenciaService`, `AttendanceService`, `MembersService`, `ImportService`, `AuditService`, `EventService`.
 - Modelos de datos y serialización `fromMap` / `toMap`.
-- Reglas de seguridad en `firestore.rules`.
+- Reglas de seguridad en `firestore.rules` y, para candidatos con imagen subida, ejemplo en `storage.rules`.
 - Documentación existente en `README.md` y `docs/`.
 - Pruebas y análisis estático con Flutter.
 
@@ -38,9 +38,10 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 | Comando | Resultado | Observación |
 |---|---|---|
 | `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
-| `flutter test --no-pub --reporter expanded` | Correcto | 39 pruebas pasan: smoke de login sin sesión, error/reintento de `AppBootstrap`, contrato `AppUser.memberId`, matriz local de acceso por rol, validaciones de candidatos, rechazo lógico de borrado con votos y bloqueo lógico de nombres duplicados, visibilidad de resultados por rol/estado, regla `canVoteInElection`, serialización de `Election.status`, validación de fechas de elección, scanner, configuración de importación, parser CSV, modalidad de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
+| `flutter test --no-pub --reporter expanded` | Correcto | 45 pruebas pasan: smoke de login sin sesión, error/reintento de `AppBootstrap`, contrato `AppUser.memberId`, matriz local de acceso por rol, validaciones de candidatos, rechazo lógico de borrado con votos y bloqueo lógico de nombres duplicados, visibilidad de resultados por rol/estado, regla `canVoteInElection`, serialización de `Election.status`, validación de fechas de elección, scanner, configuración de importación, parser CSV, modalidad de socios, plantillas XLSX/CSV de importación, prevalidación de archivos, exportación completa de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
 | `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members`/`import_logs`, endurecer `audit_logs` y validar `users.memberId`. |
 | Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
+| `firebase deploy --only storage` (CLI) contra **`sistema-integrado-sindicato`** | Correcto para deploy previo (**2026-05-02**); **E-046** sólo dry-run | Tras **Comenzar** en Storage (consola), **`firebase deploy --only storage`** liberó **`storage.rules`** de E-045. La versión endurecida **E-046** compila con **`--dry-run`** y queda pendiente de deploy real. Histórico: hasta **2026-04-30** el mismo comando fallaba si el proyecto no tenía bucket inicializado (*«Firebase Storage has not been set up…»*). |
 
 ### Convención de mantenimiento del expediente
 
@@ -52,6 +53,7 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 - No se ejecutó una sesión manual completa con usuario real, Firebase real ni datos reales de producción.
 - No se validó cámara física para escaneo QR en dispositivos Android/iOS.
 - Despliegue por CLI de **reglas** e **índices** al proyecto **`sistema-integrado-sindicato`** (`firebase deploy --only firestore:rules` / `firestore:indexes`) se ha ejecutado en entorno de desarrollo; sigue siendo recomendable contrastar versión en Firebase Console antes de auditorías formales.
+- **Firebase Storage:** **`storage.rules`** (v2) incluye **`elections/{electionId}/candidates/{candidateId}/{fileName}`** y regla paralela **`elections/{electionId}/candidate_photos/{fileName}`** para objetos legacy. La lectura exige usuario autenticado; **`create`/`update`/`delete`** quedan restringidos localmente a `SUPERADMIN`/`ADMIN` consultando **`users/{uid}.role`** desde reglas Storage (**E-046**). `create`/`update` validan imagen **&lt; 5 MB** y **`contentType`** `image/*`. Proyecto CLI en **`.firebaserc`**. La app nueva sube bajo **`candidates/{candidateId}/`** (**E-045**). Si el bucket no existiera en consola, **`firebase deploy --only storage`** no podría aplicarse hasta completar el asistente inicial; tras E-046 queda pendiente deploy real para que la restricción admin rija en el bucket remoto.
 - No se revisaron capturas de pantalla ni diseño visual en navegador/dispositivo.
 - Índices compuestos quedan versionados en **`firestore.indexes.json`** (p. ej. `members`: `lastName` + `firstName`); cualquier índice creado solo en consola debe exportarse al archivo antes de un deploy de índices que sobrescriba definiciones.
 - No se probaron credenciales, roles reales ni permisos desde usuarios distintos.
@@ -81,7 +83,7 @@ Aplicación
 │   ├── Listado de elecciones
 │   ├── Crear elección
 │   ├── Editar elección
-│   ├── Agregar candidato
+│   ├── Agregar candidato (imagen: URL opcional o subida Storage **E-044**/ **E-045**)
 │   ├── Emitir voto
 │   ├── Resultados
 │   └── Historial de eventos de voto
@@ -129,9 +131,9 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | Módulo | Propósito | Pantallas asociadas | Acciones disponibles | Dependencias |
 |---|---|---|---|---|
 | Autenticación | Controlar acceso y sesión | Login, Registro | Iniciar sesión, registrarse, recuperar contraseña, cerrar sesión | Firebase Auth, `users`, `AuthProvider` |
-| Inicio | Navegar a módulos según rol | Home | Abrir voto, asistencia, socios, auditoría, perfil | `AuthProvider`, `UserRole` |
-| Perfil | Mostrar datos de cuenta, resumen de asistencia y QR del socio | Mi Perfil | Ver información, ver resumen de asistencias/faltas, ver QR, cerrar sesión | `users`, `members`, `attendance_events`, subcolecciones `asistencias`, `eventos`, `personas`, `QREncodingHelper`; stream de resumen expuesto como **broadcast** tras **E-042** para coexistir con **TabBarView** |
-| Elecciones | Administración y consulta de elecciones | Elecciones, Crear, Editar, Agregar Candidato | CRUD de elecciones y candidatos | `elections`, `candidates`, `AuditService` |
+| Inicio | Navegar a módulos según rol | Home | Abrir voto, asistencia, socios, auditoría, perfil, cerrar sesión | `AuthProvider`, `UserRole`; dashboard visual responsivo rediseñado en **E-052** y navegación inferior tipo pie agregada en **E-053** |
+| Perfil | Mostrar datos de cuenta, resumen de asistencia y QR del socio | Mi Perfil | Ver información, ver resumen de asistencias/faltas, ver QR, cerrar sesión | `users`, `members`, `attendance_events`, subcolecciones `asistencias`, `eventos`, `personas`, `QREncodingHelper`; stream de resumen expuesto como **broadcast** y consumido desde `UserProfileScreen` con **una sola `StreamSubscription`** tras **E-042** para coexistir con **TabBarView** |
+| Elecciones | Administración y consulta de elecciones | Elecciones, Crear, Editar, Agregar Candidato | CRUD de elecciones y candidatos; **`imageUrl`** del candidato puede ser URL manual **o** URL de subida a **Firebase Storage** (**E-044** / **E-045**: `elections/{electionId}/candidates/{candidateId}/`) | `elections`, `candidates`, **Firebase Storage**, `AuditService` |
 | Votación | Emitir un voto único por usuario | Votar | Seleccionar candidato, confirmar voto, ver resultados | `votes`, `candidates`, `elections`, `asistencias`, `members` |
 | Resultados | Visualizar y exportar conteos | Resultados | Ver ranking, exportar CSV/PDF | `elections`, `candidates`, `printing` |
 | Asistencia legacy | Consultar y operar datos antiguos en `eventos` + `asistencias` globales | Home asistencia (tab Históricos), detalle `eventos`, Scanner/Registro con `AsistenciaEventRouteArgs.legacy` desde registros existentes | Compatibilidad con históricos; no es el flujo principal para crear eventos nuevos | `eventos`, `personas`, `asistencias`, `members` |
@@ -250,28 +252,31 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Ruta o ubicación:** `/home`.
 
-**Objetivo de la pantalla:** mostrar acceso a módulos según rol del usuario.
+**Objetivo de la pantalla:** mostrar un dashboard inicial visual, responsivo y segmentado por rol para acceder a los módulos principales del sistema.
 
-**Elementos visibles:** app bar, botón perfil, botón logout, tarjeta de bienvenida, rol, tarjetas de módulos.
+**Elementos visibles:** header morado con onda inferior, logo de la aplicación, título "Sistema Integrado Sindicato", botón de notificaciones, botón de perfil, botón de cerrar sesión, tarjeta de bienvenida con nombre y rol, ilustración de usuario, sección "Accesos principales", tarjetas de módulos en grilla responsiva, iconos, flechas de acceso, aviso inferior "Sistema seguro" y barra inferior flotante tipo pie con accesos Inicio, Voto, Asist., Socios y Perfil según permisos del rol.
 
-**Acciones disponibles:** ir a Voto, Asistencia, Gestión de Socios, Auditoría, Perfil, cerrar sesión.
+**Acciones disponibles:** ir a Voto, Asistencia, Gestión de Socios, Auditoría, Perfil, usar navegación inferior, cerrar sesión.
 
 **Flujo paso a paso:**
 1. Se obtiene usuario desde `AuthProvider`.
-2. Se muestra tarjeta de bienvenida.
-3. Siempre se muestra Sistema de Voto.
-4. Para `ADMIN` o `SUPERADMIN` se muestran Asistencia, Socios y Auditoría; para `OPERADOR_ASISTENCIA` se muestra Asistencia.
-5. El usuario toca una tarjeta y navega al módulo.
+2. Se renderiza el header institucional con acciones rápidas.
+3. Se muestra tarjeta de bienvenida con nombre normalizado y rol.
+4. Siempre se muestra Sistema de Voto.
+5. Para `ADMIN` o `SUPERADMIN` se muestran Asistencia, Socios y Auditoría; para `OPERADOR_ASISTENCIA` se muestra Asistencia.
+6. El usuario toca una tarjeta y navega al módulo autorizado.
+7. El usuario puede abrir perfil, recibir feedback de notificaciones sin pendientes o cerrar sesión.
+8. La barra inferior permite acceso rápido a Inicio, Voto, Asistencia, Socios y Perfil, mostrando sólo las opciones permitidas por rol.
 
 **Validaciones esperadas:** rutas administrativas y operativas protegidas por rol además de ocultarse visualmente.
 
 **Datos utilizados:** `AuthProvider.user`, `UserRole`.
 
-**Estados posibles:** con usuario, sin usuario parcial, logout.
+**Estados posibles:** con usuario, sin usuario parcial, sin notificaciones pendientes, logout.
 
-**Observaciones técnicas o funcionales:** corregido localmente. `main.dart` incorpora guard de autenticación y roles para rutas internas; la decisión de acceso fue extraída a `resolveProtectedRouteAccess()` con constantes `adminRouteRoles` y `attendanceRouteRoles` para cubrirla con pruebas puras. Home fue alineado para mostrar Asistencia a `OPERADOR_ASISTENCIA`.
+**Observaciones técnicas o funcionales:** corregido localmente. `main.dart` incorpora guard de autenticación y roles para rutas internas; la decisión de acceso fue extraída a `resolveProtectedRouteAccess()` con constantes `adminRouteRoles` y `attendanceRouteRoles` para cubrirla con pruebas puras. Home fue alineado para mostrar Asistencia a `OPERADOR_ASISTENCIA`. En **E-052** se rediseña `HomeScreen` según la referencia visual entregada, reemplazando el app bar clásico por header custom, grilla de tarjetas y aviso de seguridad, sin cambiar rutas ni reglas de visibilidad por rol. En **E-053** se agrega `_BottomHomeNavigation` como pie flotante y las tarjetas dejan de usar altura fija para evitar `BOTTOM OVERFLOWED` en móviles con textos largos o escala visual alta.
 
-**Problemas encontrados:** mitigado localmente. Si un usuario autenticado abre una ruta no autorizada por nombre, se muestra pantalla de "Sin permisos".
+**Problemas encontrados:** mitigado localmente. Si un usuario autenticado abre una ruta no autorizada por nombre, se muestra pantalla de "Sin permisos". Corregido localmente en **E-053** el desbordamiento visual de tarjetas de acceso principal.
 
 **Huecos o pendientes por corregir:** la matriz automatizada por rol ya existe; falta prueba manual con cuentas reales por rol y validación del despliegue de reglas en Firebase.
 
@@ -304,7 +309,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Estados posibles:** cargando socio, socio encontrado, socio no encontrado, sin socios, socio sin workerCode, calculando resumen, resumen disponible, error/permisos del resumen, error de generación QR.
 
-**Observaciones técnicas o funcionales:** el resumen se implementa como stream combinado: cambios en eventos, asistencias nuevas, eventos legacy o datos del socio disparan recalculo. Las faltas contabilizadas son injustificadas: asistencia ausente con `justificacion` se muestra como **Ausente justificado** y no suma a `totalFaltas`; socios en `modalidadesNoConvocadas` o fuera de una lista explícita `miembrosConvocados` se muestran como **No convocado** y tampoco suman faltas. Por compatibilidad, legacy considera convocados a todos los socios salvo eventos ya normalizados con `modalidadesNoConvocadas`. Corregido localmente (**E-042**): `AttendanceService.watchMemberAttendanceSummary` ya no usa `async*` + `yield*` (stream de una sola suscripción); expone la cadena vía `Stream.fromFuture(...).asyncExpand(...).asBroadcastStream()` para evitar **`Bad state: Stream has already been listened to`** cuando `StreamBuilder` convive con **TabBarView** / **PageView** (p. ej. Windows). La pantalla aún contiene mucha lógica de búsqueda y diagnóstico dentro de la UI.
+**Observaciones técnicas o funcionales:** el resumen se implementa como stream combinado: cambios en eventos, asistencias nuevas, eventos legacy o datos del socio disparan recalculo. Las faltas contabilizadas son injustificadas: asistencia ausente con `justificacion` se muestra como **Ausente justificado** y no suma a `totalFaltas`; socios en `modalidadesNoConvocadas` o fuera de una lista explícita `miembrosConvocados` se muestran como **No convocado** y tampoco suman faltas. Por compatibilidad, legacy considera convocados a todos los socios salvo eventos ya normalizados con `modalidadesNoConvocadas`. Corregido localmente (**E-042**): `AttendanceService.watchMemberAttendanceSummary` ya no usa `async*` + `yield*` (stream de una sola suscripción) y expone la cadena vía `Stream.fromFuture(...).asyncExpand(...).asBroadcastStream()`. Además, `UserProfileScreen` ya no monta un `StreamBuilder` para el resumen: usa una única `StreamSubscription`, cancela la suscripción anterior al cambiar de socio y cancela en `dispose`, evitando **`Bad state: Stream has already been listened to`** durante reconstrucciones de **TabBarView** / **PageView** en Windows. La pantalla aún contiene mucha lógica de búsqueda y diagnóstico dentro de la UI.
 
 **Problemas encontrados:** uso intensivo de `debugPrint`; lógica compleja en widget; mensajes al usuario incluyen pasos administrativos extensos.
 
@@ -403,7 +408,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Estados posibles:** cargando, acceso denegado, datos, sin candidatos, error, éxito.
 
-**Observaciones técnicas o funcionales:** mitigado (**E-008** / bitácora): la **eliminación** de un candidato **con votos** queda **bloqueada** en UI y en `ElectionService` (no se permite dejar contadores incoherentes por borrado accidental). Corregido localmente (**E-039**): la regla de rechazo de borrado con votos se extrae a `validateCandidateDeletion` y queda cubierta por prueba automatizada. Corregido localmente (**E-035**): al guardar cambios se valida rango de fechas y evento vinculado cuando `requireAttendance` está activo; `ElectionService.updateElection` repite la validación para accesos programáticos. Corregido localmente (**E-036**): el diálogo de edición de candidato permite actualizar descripción, URL de imagen y orden con validación de URL http(s) y orden no negativo.
+**Observaciones técnicas o funcionales:** mitigado (**E-008** / bitácora): la **eliminación** de un candidato **con votos** queda **bloqueada** en UI y en `ElectionService` (no se permite dejar contadores incoherentes por borrado accidental). Corregido localmente (**E-039**): la regla de rechazo de borrado con votos se extrae a `validateCandidateDeletion` y queda cubierta por prueba automatizada. Corregido localmente (**E-035**): al guardar cambios se valida rango de fechas y evento vinculado cuando `requireAttendance` está activo; `ElectionService.updateElection` repite la validación para accesos programáticos. Corregido localmente (**E-036**): el diálogo de edición de candidato permite actualizar descripción, URL de imagen y orden con validación de URL http(s) y orden no negativo. Implementado (**E-044**) y ampliado (**E-045**): el diálogo usa **`CandidateImageUploadSection`**: foto en staging hasta **Guardar**; **`CandidatePhotoStorage.uploadCandidateImage`**; cierre seguro (**`await showDialog`** + **dispose** en **`finally`**, sin **`setModal`** de fin de guardado antes del **pop**) para evitar pantalla roja **`_dependents.isEmpty`**.
 
 **Problemas encontrados:** puede seguir existiendo riesgo menor en **edición** de nombre/orden con elección ya en curso; está fuera del bloqueo explícito de eliminación.
 
@@ -419,26 +424,27 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Objetivo de la pantalla:** registrar candidatos en una elección.
 
-**Elementos visibles:** nombre, descripción, URL de imagen, orden, botón agregar.
+**Elementos visibles:** nombre, descripción, bloque **imagen opcional** (campo URL + texto de ayuda + botón **Elegir foto** con hoja inferior galería / cámara en plataformas nativas; en **Web** sólo flujos compatibles sin cámara expuesta explícita), orden, botón agregar.
 
-**Acciones disponibles:** guardar candidato, volver.
+**Acciones disponibles:** guardar candidato, volver, introducir URL http(s), subir foto a Storage (**opcional**) para rellenar automáticamente la URL de descarga, limpiar URL con control dedicado cuando hay texto.
 
 **Flujo paso a paso:**
 1. Recibe `electionId`.
-2. Usuario ingresa datos.
-3. Valida nombre.
-4. Crea documento en `elections/{id}/candidates`.
-5. Registra auditoría.
+2. Usuario ingresa datos; puede omitir imagen por completo.
+3. Opcionalmente elige foto (staging): `ImagePicker` solo rellena el **`ValueNotifier`**; al guardar se llama **`CandidatePhotoStorage.uploadCandidateImage`** (**`putFile`** en nativo **`putData`** en Web), ruta **`elections/{electionId}/candidates/{candidateId}/{archivo}`**, luego **`snapshot.ref.getDownloadURL()`** y se persiste esa URL en **`imageUrl`** (y en el campo de texto para feedback).
+4. Valida nombre y, si hay texto en URL, `validateCandidateImageUrl` (sólo http/https).
+5. Crea documento en `elections/{id}/candidates` con `imageUrl` nulo o la URL indicada/upload.
+6. Registra auditoría.
 
-**Validaciones esperadas:** elección válida, nombre obligatorio, orden numérico, URL válida si se usa.
+**Validaciones esperadas:** elección válida, nombre obligatorio, orden numérico, URL válida si hay texto (**vacío permitido**), tamaño cliente ≤ 5 MB antes de subir (coherente con reglas ejemplo de Storage).
 
-**Datos utilizados:** `candidates`, `audit_logs`.
+**Datos utilizados:** `candidates`, `audit_logs`, **Firebase Storage** (subida nueva bajo `elections/{electionId}/candidates/{candidateId}/`; reglas siguen contemplando **`candidate_photos/`** para legado).
 
-**Estados posibles:** cargando, error, éxito.
+**Estados posibles:** cargando, subida de foto en curso (**Elegir foto**), error (red permisos Storage, tamaño), éxito.
 
-**Observaciones técnicas o funcionales:** se garantiza campo `order`.
+**Observaciones técnicas o funcionales:** se garantiza campo `order`. **`SingleChildScrollView`** usa padding inferior **`viewPadding` + `viewInsets`** para no quedar tapado por barra del sistema/teclado. Widget reutilizable: **`lib/features/elections/candidate_image_upload_section.dart`**.
 
-**Problemas encontrados:** corregido localmente (**E-036**) el campo URL de imagen y orden: alta/edición validan URL http(s) y orden entero no negativo. Corregido localmente (**E-038**) el bloqueo de nombres duplicados por elección en `ElectionService` con comparación normalizada.
+**Problemas encontrados:** corregido localmente (**E-036**) el campo URL de imagen y orden: alta/edición validan URL http(s) y orden entero no negativo. Corregido localmente (**E-038**) el bloqueo de nombres duplicados por elección en `ElectionService` con comparación normalizada. **E-044** / **E-045**: subida opcional alineada a reglas y bucket real; **`firebase deploy --only storage`** aplicado tras aprovisionamiento en consola (**2026-05-02**).
 
 **Huecos o pendientes por corregir:** queda riesgo residual de concurrencia si dos administradores crean el mismo nombre simultáneamente desde clientes distintos; para garantía fuerte se requeriría transacción/Cloud Function o índice/ID determinístico de nombre.
 
@@ -987,9 +993,9 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Objetivo de la pantalla:** administrar padrón sindical.
 
-**Elementos visibles:** buscador, filtro estado, **exportación CSV** (compartir/desde sistema), botón importar, lista paginada de socios (si hay modalidad, tarjeta muestra **`Modalidad {código}`**), botón **Cargar más socios**, menú desactivar/reactivar, FAB nuevo socio.
+**Elementos visibles:** buscador, filtro estado, **exportación CSV como reporte completo** (archivo real compartido desde sistema), botón importar, lista paginada de socios (si hay modalidad, tarjeta muestra **`Modalidad {código}`**), botón **Cargar más socios**, menú desactivar/reactivar, FAB nuevo socio.
 
-**Acciones disponibles:** buscar, filtrar, **exportar padrón (CSV con columna modalidad en orden estándar)**, crear, editar, activar/desactivar, importar.
+**Acciones disponibles:** buscar, filtrar, **exportar todo el padrón con modalidad, asistencias, faltas, ausencias justificadas y no convocados**, crear, editar, activar/desactivar, importar.
 
 **Flujo paso a paso:**
 1. Carga la primera página de `members` con límite de 50 registros.
@@ -1001,13 +1007,13 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Validaciones esperadas:** permisos admin, búsqueda eficiente, estado correcto.
 
-**Datos utilizados:** `members`, `audit_logs`.
+**Datos utilizados:** `members`, `attendance_events`, subcolecciones `attendance_events/{id}/asistencias`, `eventos`, `asistencias`, `personas`, `audit_logs`.
 
 **Estados posibles:** cargando, vacío, error, con datos.
 
-**Observaciones técnicas o funcionales:** mitigado 2026-05-01: el listado normal usa `MembersService.getMembersPage()` con `limit` y cursor `startAfterDocument`; búsqueda textual y exportación CSV conservan lectura completa por flexibilidad multi-campo y porque requieren dataset completo.
+**Observaciones técnicas o funcionales:** mitigado 2026-05-01: el listado normal usa `MembersService.getMembersPage()` con `limit` y cursor `startAfterDocument`; búsqueda textual conserva lectura completa por flexibilidad multi-campo. Corregido localmente (**E-048**): la exportación ya no comparte el CSV como texto; usa `Share.shareXFiles` con `XFile.fromData`, BOM UTF-8 y nombre `socios_reporte_completo_{timestamp}.csv`. `MembersService.fetchMembersForExport()` consulta toda la colección `members`, no sólo la página visible, y `filterAndSortMembersForDisplay()` mantiene ordenamiento reutilizable y testeado. Ampliado localmente (**E-049**): la exportación agrega columnas de asistencia por socio (`eventos_convocados`, `asistencias`, `faltas`, `ausencias_justificadas`, `no_convocado`, `porcentaje_asistencia`, `ultimo_evento_asistencia`, `ultimo_estado_asistencia`) calculadas con `AttendanceService.fetchMemberAttendanceSummariesForExport()` usando el mismo cruce funcional del perfil para modelo nuevo y legacy.
 
-**Problemas encontrados:** paginación básica implementada para listado; búsqueda/exportación siguen leyendo completo.
+**Problemas encontrados:** paginación básica implementada para listado; búsqueda sigue leyendo completo. Exportación como archivo real corregida en E-048 y exportación con asistencias/faltas agregada en E-049.
 
 **Huecos o pendientes por corregir:** falta eliminación permanente desde UI aunque existe en servicio; falta búsqueda indexada backend si el padrón supera volumen alto.
 
@@ -1056,9 +1062,9 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Objetivo de la pantalla:** importar padrón de socios desde CSV/Excel.
 
-**Elementos visibles:** instrucciones, selector archivo, botón importar, resumen de importación, errores/duplicados.
+**Elementos visibles:** instrucciones, botón **Plantilla Excel**, selector archivo, tarjeta de **prevalidación del archivo**, botón importar, resumen de importación, errores/duplicados.
 
-**Acciones disponibles:** seleccionar archivo, importar.
+**Acciones disponibles:** compartir plantilla XLSX, seleccionar archivo, importar.
 
 **Flujo paso a paso:**
 1. Selecciona `.csv`, `.xlsx` o `.xls`.
@@ -1076,17 +1082,17 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Estados posibles:** sin archivo, archivo seleccionado, procesando, éxito, éxito parcial, error.
 
-**Observaciones técnicas o funcionales:** `ImportService.requiredColumns` sigue siendo **`numero_socio`, `nombres`, `apellidos`**, pero el archivo debe incluir también la columna **`modalidad` (obligatoria)** con valores exactos tipo `A`, `B`, `N1`, …; encabezados alternativos: `mod`, `modulo`, `turno` (véase `columnMappings`). `documento` es opcional. **Ya no se persiste modalidad dentro de `additionalData.mod`;** campo canónico en doc `members` es `modalidad`. Si existe `additionalData.mod` antiguo, `Member.fromMap` puede mapearlo como respaldo hasta normalizar datos. `ImportService.parseCsv()` usa `CsvToListConverter`, normaliza saltos CRLF/CR/LF y conserva campos entre comillas con comas internas.
+**Observaciones técnicas o funcionales:** `ImportService.requiredColumns` sigue siendo **`numero_socio`, `nombres`, `apellidos`**, pero el archivo debe incluir también la columna **`modalidad` (obligatoria)** con valores exactos tipo `A`, `B`, `N1`, …; encabezados alternativos: `mod`, `modulo`, `turno` (véase `columnMappings`). `documento` es opcional. **Ya no se persiste modalidad dentro de `additionalData.mod`;** campo canónico en doc `members` es `modalidad`. Si existe `additionalData.mod` antiguo, `Member.fromMap` puede mapearlo como respaldo hasta normalizar datos. `ImportService.parseCsv()` usa `CsvToListConverter`, normaliza saltos CRLF/CR/LF y conserva campos entre comillas con comas internas. Corregido localmente (**E-047**): la pantalla puede compartir una **plantilla XLSX real** (`Socios` + `Modalidades`) desde `ImportService.buildMembersImportTemplateExcel()`, con pruebas que verifican encabezados y fila de ejemplo válida. Ajustado localmente (**E-051**): se retira el botón visible **Plantilla CSV** para evitar redundancia; la app conserva importación `.csv` y parser/preview CSV, pero la salida de plantilla visible queda sólo en Excel. También se agrega **prevalidación local** (`previewCsv` / `previewExcel`) antes de importar: muestra total de filas, válidas, inválidas, duplicados dentro del archivo y primeras observaciones; si hay advertencias, solicita confirmación antes de procesar filas válidas.
 
-**Problemas encontrados:** corregido localmente el riesgo de datos mal partidos en CSV con comillas/comas internas; falta vista previa de filas antes de confirmar escritura masiva.
+**Problemas encontrados:** corregido localmente el riesgo de datos mal partidos en CSV con comillas/comas internas; corregida localmente la ausencia de plantilla descargable desde la app y la falta de prevalidación local antes de confirmar escritura masiva (**E-047**). Retirada redundancia visual de plantilla CSV en **E-051**.
 
-**Huecos o pendientes por corregir:** plantilla descargable desde la app; prevalidación/preview antes de importar; ampliar pruebas con comillas escapadas y saltos de línea dentro de campos.
+**Huecos o pendientes por corregir:** ampliar pruebas con comillas escapadas y saltos de línea dentro de campos; prueba manual de compartir plantilla y tarjeta de prevalidación en Windows/Web/Android; preview no consulta Firestore para detectar duplicados remotos, esa verificación sigue ocurriendo durante la importación real.
 
 **Prioridad de corrección:** Media.
 
 **Recomendación:** mantener el contrato de columnas y parser CSV cubiertos por tests (`test/import_service_test.dart`) y agregar preview antes de escritura masiva.
 
-**Plantilla XLSX:** ver generación con **`tool/generate_socios_template.dart`** (hojas `Plantilla_socios` + `Modalidades` con todos los códigos y columna **documentar_como** `Modalidad X`).
+**Plantilla XLSX:** además del script **`tool/generate_socios_template.dart`**, la app genera plantilla desde **Importar Socios**. La plantilla in-app usa hoja `Socios` con columnas canónicas y hoja `Modalidades` con códigos aceptados.
 
 ### Pantalla: Registro de Auditoría
 
@@ -1157,10 +1163,10 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 1. Admin entra a Sistema de Voto.
 2. Crea elección con título, descripción y fechas.
 3. Opcionalmente vincula evento de asistencia.
-4. Agrega candidatos.
+4. Agrega candidatos (**nombre obligatorio**; **imagen siempre opcional**: URL manual **o** subida a Firebase Storage desde **Agregar candidato** o diálogo de edición (**E-044**/ **E-045**, ruta **`candidates/{id}/`**)).
 5. Votantes ven elección activa si visible y en rango.
 
-**Errores posibles:** permisos, fechas inválidas, candidato sin `order`, evento no seleccionado.
+**Errores posibles:** permisos Firestore o **Storage** (si Storage no está aprovisionado o reglas deniegan `create`), fechas inválidas, candidato sin `order`, evento no seleccionado cuando `requireAttendance`, imagen &gt; 5 MB (rechazo en cliente o en reglas).
 
 **Mejoras:** validar `isActive`, bloquear cambios destructivos con votos existentes.
 
@@ -1246,7 +1252,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | Perfil | QR personal | Genera QR desde socio | Parcial | Depende de matching heurístico con `members` y de `workerCode` | Media |
 | Elecciones | Listar elecciones | Streams Firestore | Funcional/parcial | Votantes filtran `isVisibleToVoters`, `isActive` y rango de fechas; falta prueba con datos reales | Media |
 | Elecciones | Crear/editar | CRUD elección | Funcional | Requiere unificar estados | Media |
-| Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Funcional/parcial | Eliminación bloqueada si el candidato tiene votos; alta/edición validan URL de imagen y orden; servicio bloquea nombres duplicados por elección; falta test automatizado de eliminación con votos | Media |
+| Candidatos | Agregar/editar/eliminar | Gestiona subcolección | Funcional/parcial | Eliminación bloqueada si el candidato tiene votos; alta/edición validan URL http(s) y orden; **foto opcional** (**E-044**/ **E-045**) vía **`CandidatePhotoStorage.uploadCandidateImage`**; reglas/deploy Storage verificados en proyecto **2026-05-02**; falta suite emulator Storage | Media |
 | Voto | Emitir voto | Batch de voto y contadores | Parcial | UI, servicio y reglas locales validan elección activa, visible, en rango, asistencia legacy/reporte cuando aplica, voto propio y contadores; falta suite de reglas con emulator | Alta |
 | Resultados | Ver conteos | Ranking en tiempo real | Funcional/parcial | Visibilidad para votantes centralizada y testeada; exportación CSV/PDF pide confirmación previa; falta prueba widget/Firebase real | Media |
 | Asistencia | Crear evento legacy | Crea `eventos` con `modalidadesNoConvocadas` | Funcional | Selector múltiple de modalidades no convocadas; lista vacía significa sin exclusiones | Alta |
@@ -1255,8 +1261,8 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | Asistencia | Exportar | CSV/PDF/XLSX | Funcional/parcial | Segmentos **Legacy / Reporte / Ambos**; modelo reporte vía `fetchAllAttendanceExportsRows` (subs en paralelo); CSV/Excel/PDF piden confirmación previa por datos sensibles; falta **filtro fino** por evento/fecha dentro de cada origen y prueba manual con datos masivos | Media |
 | Asistencia | Reporte faltantes | Calcula ausentes y no convocados | Funcional/parcial | Soporta `attendance_events` y fallback legacy; excluye `modalidadesNoConvocadas` de faltantes; falta prueba con datos reales | Media |
 | Socios | CRUD | Listar por páginas, crear/editar/activar/desactivar | Funcional/parcial | **Modalidad obligatoria** en crear/actualizar; unicidad número, documento y `workerCode`; auditoría registra cambio de modalidad; listado `/members` paginado de forma incremental | Media |
-| Socios | Importación masiva | CSV/Excel a `members` | Funcional/parcial | **Columna `modalidad` obligatoria** y validación estricta; `documento` opcional; duplicados y parser CSV robusto; falta preview y prueba con datos reales | Media |
-| Socios | Exportación CSV | Padrón con columna modalidad | Funcional | `MembersService.buildMembersExportCsv`; celda **`modalidad` = sólo código** (`A`, `N1`, …); orden compatible con importación (`numero_socio`…`modalidad`…`estado`); requiere confirmación previa por datos personales | Baja/Media |
+| Socios | Importación masiva | CSV/Excel a `members` | Funcional/parcial | **Columna `modalidad` obligatoria** y validación estricta; `documento` opcional; duplicados y parser CSV robusto; plantilla XLSX visible desde la app, parser/preview CSV conservado para importación y prevalidación local (**E-047/E-051**); falta prueba con datos reales | Media |
+| Socios | Exportación CSV | Reporte completo de padrón con modalidad, asistencias, faltas y no convocados | Funcional | `MembersService.fetchMembersForExport` lee toda la colección para exportar, no sólo la página visible; `AttendanceService.fetchMemberAttendanceSummariesForExport()` calcula totales por socio cruzando `attendance_events`, subcolecciones `asistencias`, `eventos`, `asistencias` legacy y `personas`; `buildMembersExportCsv` genera CSV con datos personales + métricas de asistencia y la UI comparte archivo `.csv` real con BOM UTF-8 (**E-048/E-049**); requiere confirmación previa por datos sensibles | Baja/Media |
 | Herramienta | Plantilla `socios.xlsx` | Regeneración local | Funcional | Script **`dart run tool/generate_socios_template.dart`**: hoja **`Plantilla_socios`** (cabeceras + ejemplo fila código en `modalidad`) y hoja **`Modalidades`** (todas las letras **`documentar_como`** = **`Modalidad X`**). Si `socios.xlsx` está abierto en Excel, puede generarse **`socios_plantilla.xlsx`** en raíz hasta poder sobrescribir. | Media |
 | Auditoría | `audit_logs` | Registra acciones críticas | Funcional/parcial | Pantalla limitada inicialmente a 50 registros con carga incremental; filtros por acción/entidad/fecha; índices y datos reales pendientes | Media |
 | Auditoría | Historial de eventos | Mapea `audit_logs` a eventos visuales | Funcional/parcial | `events` queda como compatibilidad legacy; falta validar con datos reales | Media |
@@ -1306,16 +1312,21 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | E-039 | Candidatos | Corregido localmente: prueba de rechazo al borrar candidatos con votos | `Candidate` agrega `validateCandidateDeletion` y `candidateWithVotesDeletionError`; `ElectionService.deleteCandidate` reutiliza la regla para `voteCount` y para documentos `votes`; `test/candidate_model_test.dart` cubre ambos escenarios. | Reduce riesgo de regresión en una regla crítica para no dejar boletas/resultados con votos huérfanos. | Media | Agregar prueba emulator de la consulta real a subcolección `votes` y validar manualmente desde UI con candidato votado. |
 | E-040 | Asistencia / UX | Corregido localmente: hub de asistencia sin accesos redundantes de QR/padrón | `AsistenciaHomeScreen` elimina de acciones rápidas **Personas**, **Códigos QR** e **Importar Excel**. El hub conserva sólo acciones operativas de asistencia: escanear, asistencias, crear evento y exportar. El copy de importación legacy deja de remitir a “Códigos QR” y apunta al QR canónico en **Mi Perfil**. | Reduce confusión operativa y evita duplicar la generación/consulta de QR fuera del perfil del socio. | Media | Validar visualmente en Windows/móvil y definir si las rutas legacy ocultas deben retirarse definitivamente o conservarse sólo para soporte/migración. |
 | E-041 | Asistencia / UX / Datos | Corregido localmente: creación de eventos unificada | `AsistenciaHomeScreen` reemplaza **Evento reporte** + **Evento clásico** por un único **Crear evento** que abre `/asistencia/crear_attendance_event`; el FAB también crea siempre en `attendance_events`. La ruta antigua `/asistencia/crear_evento` queda como alias del mismo formulario actual. El listado principal inicia en **Eventos** y deja `eventos` legacy como pestaña **Históricos**. Crear/detalle/scanner/manual/exportación muestran textos funcionales sin exponer “reporte” como tipo de evento. | Evita que operadores elijan entre dos modelos técnicos y establece `attendance_events` como flujo canónico para eventos nuevos. | Alta | Validar con datos reales; decidir si el formulario legacy `CrearEventoAsistenciaScreen` se elimina del código o se conserva sólo para soporte/migración. |
-| E-042 | Perfil / Streams | Corregido localmente: compatibilidad TabBarView + resumen | `AttendanceService.watchMemberAttendanceSummary` sustituye `async*` + `yield*` por `Stream.fromFuture(_ensureCanReadMemberSummary).asyncExpand(...).asBroadcastStream()` para permitir más de un listener seguro frente a **`TabBarView`**. | Elimina crash **`Bad state: Stream has already been listened to`** en **Mi Perfil** al cambiar pestañas o relayout (p. ej. Windows). | Alta | Cambiar entre pestañas Información / QR; revisar avisos de hilo en plugins Firebase Windows aparte. |
+| E-042 | Perfil / Streams | Corregido localmente: compatibilidad TabBarView + resumen | `AttendanceService.watchMemberAttendanceSummary` sustituye `async*` + `yield*` por `Stream.fromFuture(_ensureCanReadMemberSummary).asyncExpand(...).asBroadcastStream()`. `UserProfileScreen` sustituye el `StreamBuilder` por una única `StreamSubscription<MemberAttendanceSummary>`, guarda el último resumen en estado y cancela la escucha anterior al recargar socio o destruir la pantalla. | Elimina crash **`Bad state: Stream has already been listened to`** en **Mi Perfil** al cambiar pestañas, relayout o reconstrucciones del árbol (p. ej. Windows). | Alta | Cambiar entre pestañas Información / QR; revisar avisos de hilo en plugins Firebase Windows aparte. |
 | E-043 | Asistencia / `attendance_events` | Corregido localmente: modalidades no convocadas en flujo canónico | **`CrearAttendanceEventScreen`** persiste `modalidadesNoConvocadas` al crear. **`AttendanceEventDetailScreen`** muestra exclusiones, botón **Editar**, icono en AppBar y diálogo que actualiza vía **`AttendanceService.updateEvent`**. | Paridad con eventos legacy para exclusiones por modalidad en reportes y resumen de perfil. | Alta | Crear evento con exclusiones; editarlas en detalle; validar reporte y perfil con socios por modalidad. |
+| E-044 | Candidatos / Firebase Storage | Implementado localmente: imagen opcional por URL **o** subida | Dependencias **`firebase_storage`** + **`image_picker`**; **`candidate_image_upload_section.dart`** en **`add_candidate_screen.dart`** y diálogo de **`edit_election_screen.dart`**; reglas **`storage.rules`** y **`firebase.json`**. La implementación de ruta objeto y orden **getDownloadURL** quedó refinada en **E-045**; la política de escritura sólo admin queda cerrada localmente en **E-046**. | Los administradores pueden omitir URL externa y subir archivo; el documento del candidato guarda la URL en **`imageUrl`** (https). | Media | Probar subida Android/iOS/Web, rechazo sin auth, rechazo como `VOTER`/`USER` y archivo &gt; 5 MB. |
+| E-045 | Candidatos / Storage + lifecycle modal | Corregido **2026-05-02**: ruta canónica **`elections/{electionId}/candidates/{candidateId}/{file}`**, **`FirebaseStorage.instance`**, **`uploadCandidateImage`** ( **`putFile`/`putData`** luego **`snapshot.ref.getDownloadURL()`** ), **`tryDeleteOldCandidateImage`** no bloqueante; modal **Editar candidato** (**`await showDialog`** + **`finally`** dispose; sin **`setModal`** previo al **pop** en éxito) evita crash **`_dependents.isEmpty`**; Storage consola + **`firebase deploy --only storage`** OK. | Subidas coherentes con **`storage.rules`**; cierre de modal estable tras guardar con foto. | Media | Regresión manual agregar/editar con y sin imagen; emulator Storage opcional. |
+| E-046 | Candidatos / Storage / Permisos | Corregido localmente: escritura de fotos sólo para admins | **`storage.rules`** ahora usa **`firestore.exists/get`** sobre **`users/{uid}.role`**; lectura queda para usuarios autenticados, pero **`create`/`update`/`delete`** en **`candidates/{candidateId}/`** y **`candidate_photos/`** exige `SUPERADMIN` o `ADMIN`. `create`/`update` mantienen validación `image/*` y tamaño &lt; 5 MB. | Evita que `VOTER`, `USER` u otros usuarios autenticados llenen o manipulen el bucket de candidatos. | Alta | Ejecutar `firebase deploy --only storage` real y validar con cuenta admin y cuenta votante/usuario. |
+| E-047 | Socios / Importación | Corregido localmente: plantillas y prevalidación desde la app | **`ImportMembersScreen`** agrega acciones **Plantilla Excel** y **Plantilla CSV** y tarjeta de **Prevalidación del archivo**. **`ImportService`** genera XLSX real con hoja `Socios` y hoja `Modalidades`, CSV con encabezados canónicos, y métodos `previewCsv` / `previewExcel` para validar filas, modalidad y duplicados internos antes de escribir. | Reduce errores operativos al preparar padrones y evita depender sólo de scripts locales para obtener la estructura correcta; el operador ve problemas antes de importar. | Media | Probar compartir/abrir plantilla y previsualización en Windows, Android y Web; considerar consulta previa a Firestore para duplicados remotos si el volumen lo permite. |
+| E-048 | Socios / Exportación | Corregido localmente: exportar todo como archivo CSV real | **`MembersListScreen`** ya no comparte el CSV como texto. Usa **`Share.shareXFiles`** con `XFile.fromData`, BOM UTF-8 y nombre `socios_{timestamp}.csv`. **`MembersService.fetchMembersForExport()`** consulta toda la colección `members` para exportar, independiente de la página visible; helpers de orden/filtro quedan testeados. | Permite exportar padrones grandes desde móvil sin truncamiento del share text y evita confundir página visible con padrón completo. | Alta | Probar en Android/Windows con padrón real grande y abrir el archivo en Excel/LibreOffice. |
 
 ### Clasificación por tipo
 
-- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024, E-025, E-026, E-027, E-028, E-031, E-032, E-033, E-034, E-035, E-036, E-037, E-038, E-039, E-041, E-042 y E-043; pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico y prueba manual de cuenta sin perfil/historial.
+- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024, E-025, E-026, E-027, E-028, E-031, E-032, E-033, E-034, E-035, E-036, E-037, E-038, E-039, E-041, E-042, E-043, **E-044**, **E-045**, **E-046** y **E-048** (foto candidato + modal edición + permisos Storage + exportación completa de socios); pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico, prueba manual de cuenta sin perfil/historial y pruebas Storage con emulator/cuentas reales más allá del smoke administrativo.
 - Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012, E-029, E-040 y E-041 quedan corregidos localmente con pendiente de validación manual.
 - Errores de navegación: E-014 y E-027 corregidos localmente, pendiente validación manual con cuentas reales.
-- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**), E-024 (**modalidades no convocadas opcionales en legacy**), E-025 (**faltas injustificadas vs ausencias justificadas/no convocados**), E-028 (**publicación de resultados**), E-035 (**fechas/evento requerido en elecciones**), E-036 (**URL/orden de candidatos**), E-038 (**nombres duplicados de candidatos por elección**), E-039 (**borrado de candidatos con votos**) y E-043 (**mismas exclusiones en `attendance_events`**); faltan pruebas con archivos reales y emulator.
-- Errores de permisos: E-001, E-002, E-014, E-019, E-020, E-026 y E-027 corregidos localmente, pendientes pruebas con emulator/usuarios reales.
+- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**), E-024 (**modalidades no convocadas opcionales en legacy**), E-025 (**faltas injustificadas vs ausencias justificadas/no convocados**), E-028 (**publicación de resultados**), E-035 (**fechas/evento requerido en elecciones**), E-036 (**URL/orden de candidatos**), E-038 (**nombres duplicados de candidatos por elección**), E-039 (**borrado de candidatos con votos**), E-043 (**mismas exclusiones en `attendance_events`**), **E-044**, **E-045**, **E-046** (**imagen candidato**: URL http(s), subida bajo **`candidates/{id}/`**, reglas Storage con escritura admin), **E-047** (**plantilla import socios** con encabezados canónicos) y **E-048** (**CSV export socios como archivo completo**); faltan pruebas sistemáticas con emulator Storage si se desea garantía fuerte.
+- Errores de permisos: E-001, E-002, E-014, E-019, E-020, E-026, E-027 y **E-046** corregidos localmente, pendientes pruebas con emulator/usuarios reales.
 - Errores de rendimiento: E-015 parcialmente mitigado por E-023 en el listado de socios y E-030 en auditoría; persisten lecturas completas en búsqueda/exportación y algunas pantallas de asistencia.
 - Errores de contenido: instrucciones contradictorias de importación/QR corregidas en perfil; mantener revisión de copy operativo con usuarios reales.
 
@@ -1337,19 +1348,21 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | H-010 | **Mitigado documentalmente (2026-05-01):** `audit_logs` definido como fuente canónica y `events` como legacy; retención/migración requiere decisión operativa | Auditoría | Riesgo residual si clientes antiguos siguen escribiendo sólo en `events` o si se purgan logs sin política aprobada | Mantener nuevas pantallas sobre `audit_logs`, preparar script idempotente si se decide migrar `events` y aprobar política de retención | Media |
 | H-011 | Cuenta sin perfil ya bloqueada con mensaje; falta flujo de reparación | Auth | El usuario entiende el problema, pero depende de intervención administrativa | Pantalla/proceso admin para crear o reparar `users/{uid}` | Media |
 | H-012 | **Mitigado localmente (2026-05-01):** regla `canViewElectionResults` testeada para admin/votante, publicación automática, fecha, activo y visible | Votación | Regresión futura reducida; falta navegación widget/Firebase real | Cubrir ruta directa y pantalla post-voto con tests widget o integración al habilitar emulator/datos reales | Media |
+| H-015 | **Mitigado operativamente 2026-05-02:** bucket Storage activado en **`sistema-integrado-sindicato`** y deploy Storage previo exitoso (**E-045**). **E-046** endurece reglas localmente para escritura sólo `SUPERADMIN`/`ADMIN`; compila en dry-run y requiere deploy real para quedar vigente en remoto. | Storage / candidatos | Histórico: sin bucket CLI no desplegaba reglas ni existía destino real de subidas. Riesgo residual: usar bucket remoto con reglas anteriores si no se despliega E-046. | Mantener proyecto de app alineado a consola actual; ejecutar **`firebase deploy --only storage`** tras E-046 y validar admin vs votante. | Alta hasta deploy; luego media/baja |
 
 ## 9. Recomendaciones de mejora
 
 | Área | Problema detectado | Solución sugerida | Beneficio esperado | Prioridad |
 |---|---|---|---|---|
 | Seguridad | Reglas de voto y usuarios corregidas localmente, sin pruebas emulator | Mantener reglas con `diff`, validar con emulator y casos negativos | Voto funcional y menor riesgo de manipulación | Alta |
+| Seguridad / Storage | Reglas locales de **`storage.rules`** ya restringen escritura/borrado de fotos de candidatos a `SUPERADMIN`/`ADMIN`, pero E-046 está pendiente de deploy real y prueba por rol | Ejecutar **`firebase deploy --only storage`**, probar subida/edición/borrado como admin y rechazo como `VOTER`/`USER`; luego considerar emulator Storage para regresión | Evita que cualquier usuario autenticado llene o manipule el bucket | Alta hasta deploy/validación |
 | Seguridad | `users.memberId` ya queda persistido/backfilled localmente, pero faltan despliegue y migración histórica | Desplegar reglas, validar con usuarios reales y luego endurecer lecturas Firestore por propietario/rol donde no rompa compatibilidad legacy | Menor exposición de datos de asistencia entre socios | Alta |
 | Arquitectura | Legacy + `attendance_events` con rutas y servicios diferenciados | Comunicar proceso operativo por tab; opcional migración de datos | Menos confusión campo vs reporte consolidado | Alta (gestión) |
 | QA | Cobertura automatizada aún insuficiente en flujos con Firestore real | Ampliar pruebas reales de autenticación, voto, asistencia, resumen de perfil y formularios; conservar `route_access_test.dart` como contrato de roles | Suite útil y confiable | Alta |
 | UX | Rutas administrativas ya guardadas y cubiertas con decisión de acceso pura; falta validación manual por cuenta real | Ejecutar checklist manual rol-ruta contra Firebase real antes de entrega | Experiencia clara y segura | Media |
 | Datos | WorkerCode cubierto en formulario/import; sin suite amplia dedicada | Mantener validaciones y ampliar pruebas de servicio/mock | Evita duplicidad crítica | Media |
 | Rendimiento | Lecturas completas parcialmente mitigadas en `/members`; persisten búsqueda/exportación y otros listados | Extender paginación, filtros Firestore, cache y búsqueda indexada | Mejor desempeño con padrones grandes | Media |
-| Importación | `ImportService`/personas legacy: CSV y Excel cubiertos para socios/personas; falta preview y plantillas descargables | Preview y plantilla desde la app | Menos errores operativos | Media |
+| Importación | `ImportService`/personas legacy: CSV y Excel cubiertos para socios/personas; plantilla socios y prevalidación local ya se generan desde la app; falta preview contra duplicados Firestore antes de escritura masiva | Opcional: ampliar vista previa para consultar duplicados remotos antes de confirmar importación | Menos errores operativos | Media |
 | Auditoría | `audit_logs` ya alimenta ambas pantallas; `events` sigue legacy | Documentar responsabilidades, migración/retención y permisos | Trazabilidad completa | Media |
 | Accesibilidad | No verificada | Agregar labels, contraste, navegación teclado | Cumplimiento y usabilidad | Media |
 | Documentación | Matriz rol-ruta agregada al expediente; falta mantenerla al crear rutas nuevas | Actualizar §3 y `route_access_test.dart` en cada cambio de navegación/permisos | Mejor alineación producto/desarrollo | Media |
@@ -1371,9 +1384,9 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | Navegación consistente | Parcial | Rutas nombradas claras; guard y adaptación de operador implementados; falta prueba manual. |
 | Resumen asistencia en perfil | Parcial | Implementado con stream nuevo + legacy y exclusión por modalidad; falta validación Firebase real/emulator y datos representativos. |
 | Auditoría | Parcial | `audit_logs` activo; Historial de Eventos ya se alimenta desde `audit_logs`; `events` queda legacy. |
-| Exportaciones | Parcial | CSV/PDF/XLSX real; falta prueba manual de apertura y filtros por evento/fecha. |
-| Pruebas automatizadas | Parcial | 39 pruebas pasan; cobertura local creció en roles, elecciones, candidatos, importación, scanner y arranque, pero aún falta emulator/Firestore real para flujos críticos. |
-| Análisis estático | Completo/parcial | `flutter analyze --no-pub` sin issues al 2026-05-01. |
+| Exportaciones | Parcial | CSV/PDF/XLSX real; exportación de socios como archivo CSV completo corregida en E-048; falta prueba manual de apertura y filtros por evento/fecha. |
+| Pruebas automatizadas | Parcial | 45 pruebas pasan; cobertura local creció en roles, elecciones, candidatos, socios/exportación, importación, scanner y arranque, pero aún falta emulator/Firestore real para flujos críticos. |
+| Análisis estático | Completo/parcial | `flutter analyze` / `--no-pub` sin issues en verificaciones recientes (**E-044** a **E-047** Mayo 2026). |
 
 ## 11. Casos de prueba sugeridos
 
@@ -1389,6 +1402,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | TC-008 | Crear elección | Admin crea elección válida | Se guarda y aparece en listado admin | Alta |
 | TC-009 | Elección inactiva | Crear visible en fecha pero `isActive=false` | No aparece a votantes | Alta |
 | TC-010 | Agregar candidato | Crear candidato con orden | Aparece ordenado | Media |
+| TC-010B | Agregar/editar candidato con foto opcional (**E-044**/ **E-045**/ **E-046**) | **Agregar** / **Editar** (modal): sin imagen; sólo URL https; foto desde galería/cámara (nativo); revisar tras guardar que no aparezca crash rojo (**`_dependents.isEmpty`**). Tras deploy de E-046, repetir con cuenta `ADMIN` y con cuenta `VOTER`/`USER`. | **`imageUrl`** coherente; objeto esperado en **`elections/.../candidates/{id}/...`**; nueva subida ya no usa solo **`candidate_photos/`**; admin puede subir/borrar y votante/usuario recibe rechazo de permisos | Alta |
 | TC-011 | Voto normal | Votante elegible selecciona candidato | Crea voto e incrementa contadores | Alta |
 | TC-012 | Voto duplicado | Reingresar y votar de nuevo | Bloquea y muestra ya votó | Alta |
 | TC-013 | Voto con asistencia requerida sin asistencia | Abrir elección vinculada | Bloquea voto | Alta |
@@ -1420,6 +1434,8 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 La aplicación tiene una base funcional amplia y una arquitectura entendible por módulos. Están implementados los flujos principales de autenticación, votación, asistencia, socios, QR, exportaciones y auditoría. Después de las correcciones locales del 2026-05-01, el estado mejora a MVP avanzado con riesgos críticos mitigados, pero aún no listo para producción sin validación con Firebase real/emulator, usuarios por rol y datos representativos.
 
+Para **fotos de candidatos** (**E-044**/ **E-045**/ **E-046**), el entorno **`sistema-integrado-sindicato`** quedó con Storage iniciado y un deploy previo de reglas (**2026-05-02**). La versión local actual de **`storage.rules`** ya restringe escritura y borrado a `SUPERADMIN`/`ADMIN`; compila en dry-run y debe desplegarse con **`firebase deploy --only storage`** antes de pruebas operativas. Revisar objetos **`candidates/{candidateId}/`** en consola ante incidencias.
+
 El mayor riesgo residual en datos de asistencia es **organizativo**: conviven **`eventos`** y **`attendance_events`** pero la aplicación ya enruta y persiste cada flujo coherentemente (**`AsistenciaEventRouteArgs`** + servicios); el reporte (**`generateAttendanceReport`**) consume ambos. Quedan mejoras como exportación única desde modelo nuevo si se desea vista global. El riesgo de seguridad de reglas de voto/usuarios fue corregido localmente y las reglas compilan en dry-run; falta suite emulator con casos negativos.
 
 La completitud funcional estimada es alta en cobertura de pantallas y media-alta en robustez local. El nivel de completitud global estimado sube a **86-90%**, condicionado por pruebas automatizadas adicionales, validación con Firebase real/emulator y pruebas manuales por rol/datos reales.
@@ -1435,10 +1451,11 @@ Para considerar la aplicación **100% completa** antes de entrega productiva tod
 7. Validar rendimiento con padrón grande: paginación/filtros en listados, búsqueda, auditoría, exportaciones y reportes.
 8. Completar QA visual, responsive y accesibilidad básica en Android, Web, Windows y resoluciones móviles reales.
 9. Definir si se requiere garantía transaccional fuerte para nombres de candidatos cuando varios administradores editan en paralelo; hoy existe bloqueo local de servicio, pero no índice/Cloud Function global.
+10. **Storage** (**H-015** mitigado parcialmente **2026-05-02**): mantener consola **`sistema-integrado-sindicato`** coherente; ejecutar **`firebase deploy --only storage`** para liberar **E-046**; validar que sólo `SUPERADMIN`/`ADMIN` puedan subir/actualizar/borrar fotos y que `VOTER`/`USER` sean rechazados en **TC-010B**.
 
 Prioridades antes de entrega o producción:
 
-1. Validar reglas Firestore con Firebase Emulator y usuarios reales por rol.
+1. Validar reglas Firestore **y Firebase Storage** (tras aprovisionamiento) con Firebase Emulator o proyecto de staging y usuarios reales por rol.
 2. Ampliar tests reales de login, rutas, voto, importación y asistencia.
 3. Política de negocio: si un único almacén canónico se desea para histórico, planificar migración; en código el **dual write** está resuelto por contexto (**legacy vs reporte**). Ampliar **export/global** si deben aparecer registros sólo del modelo nuevo.
 4. Probar rutas protegidas por rol y documentar matriz rol-permiso.
@@ -1485,6 +1502,8 @@ Prioridades antes de entrega o producción:
 
 ### B. Colecciones Firestore identificadas
 
+**Nota Firebase Storage (no Firestore):** fotos nuevas de candidatos bajo **`elections/{electionId}/candidates/{candidateId}/{nombreArchivo}`** (**E-045**). La regla **`candidate_photos/`** cubre objetos legacy. Gobierno en **`storage.rules`**; desde **E-046** las escrituras/borrados son sólo admin en reglas locales y requieren **`firebase deploy --only storage`** real para quedar vigentes en remoto.
+
 | Colección | Uso |
 |---|---|
 | `users` | Perfil de usuario y rol |
@@ -1508,7 +1527,7 @@ Prioridades antes de entrega o producción:
 |---|---|---|
 | `AppUser` | `lib/core/models/user.dart` | id, email, displayName, role, employeeNumber, memberId |
 | `Election` | `lib/core/models/election.dart` | title, dates, isActive, isVisibleToVoters, requireAttendance, totalVotes |
-| `Candidate` | `lib/core/models/candidate.dart` | electionId, name, order, voteCount |
+| `Candidate` | `lib/core/models/candidate.dart` | electionId, name, **imageUrl** (opcional), description, order, voteCount |
 | `Member` | `lib/core/models/member.dart` | memberNumber, firstName, lastName, workerCode, documentId, modalidad, status |
 | `EventoAsistencia` | `lib/core/models/asistencia/evento.dart` | nombre, fecha, tipoReunion, `modalidadesNoConvocadas`; `modalidad` queda como lectura legacy |
 | `PersonaAsistencia` | `lib/core/models/asistencia/persona.dart` | nombres, apellidos, identificador, codigoQR |
@@ -1523,13 +1542,13 @@ Prioridades antes de entrega o producción:
 
 ### D. Resultados de análisis estático
 
-`flutter analyze --no-pub` se ejecutó nuevamente el 2026-05-01 y no encontró issues.
+`flutter analyze` / `--no-pub` ejecutado sin issues en revisiones previas (**2026-05-01** global; **2026-04-30** en archivos **E-044**). Tras **E-047** (**2026-05-02**), **`flutter analyze --no-pub`** queda limpio sobre el proyecto completo.
 
 Resultado actual:
 
-- Comando: `flutter analyze --no-pub`.
-- Estado: correcto.
-- Observación: la revisión estática local queda limpia después de las correcciones aplicadas.
+- Comando: `flutter analyze` / `--no-pub` según ciclo local.
+- Estado: sin issues conocidos sobre el código documentado (**E-044** a **E-047**).
+- Observación: la revisión estática local queda limpia después de las correcciones aplicadas y la ampliación de candidatos con Storage.
 
 ### E. Resultados de pruebas
 
@@ -1540,11 +1559,12 @@ Resultado actual:
 - `test/candidate_model_test.dart`: valida URL de imagen opcional http(s), rechazo de URL inválida, orden entero no negativo, rechazo de borrado de candidatos con votos y detección de nombres duplicados de candidatos por elección.
 - `test/election_model_test.dart`: valida que `Election.toMap()` persista `status` como `ACTIVE`, `DRAFT` o `CLOSED` según `isActive`/fecha de fin, que `fromMap()` tenga fallback seguro y que el rango de fechas electorales rechace ausencias, igualdad, inversión o duración menor a 1 minuto.
 - `test/election_visibility_test.dart`: valida publicación de resultados para admin/votante, estado activo/visible, fecha de cierre y `showResultsAutomatically`.
-- `test/import_service_test.dart`: valida contrato de columnas obligatorias, separación de `numero_socio` frente a `worker_code`, CSV con campos entre comillas/comas internas, obligatoriedad de `modalidad` y normalización/canonización de alias (`turno` → `modalidad`, `n1` → `N1`).
+- `test/import_service_test.dart`: valida contrato de columnas obligatorias, separación de `numero_socio` frente a `worker_code`, CSV con campos entre comillas/comas internas, obligatoriedad de `modalidad`, normalización/canonización de alias (`turno` → `modalidad`, `n1` → `N1`), plantillas de importación XLSX/CSV con encabezados canónicos y prevalidación de duplicados/headers antes de importar.
+- `test/members_service_test.dart`: valida generación de CSV de socios con todos los registros recibidos, columna `modalidad`, orden/filtro reutilizable para exportación y desacople respecto de la página visible.
 - `test/evento_asistencia_test.dart`: valida serialización canónica de `modalidadesNoConvocadas`, lectura de `modalidad` legacy como exclusión única y descarte de valores inválidos/duplicados.
 - `test/route_access_test.dart`: valida decisión de acceso por rol para estados de carga, sesión requerida, rutas autenticadas, rutas administrativas y rutas de asistencia.
 - `test/scanner_screen_test.dart`: valida que el scanner muestre nombre/modalidad al registrar por código y no bloquee registros cuando la modalidad está sin asignar.
-- Estado: 39 pruebas pasan.
+- Estado: 45 pruebas pasan.
 - Acción recomendada: ampliar cobertura de reglas Firestore, voto, resumen de asistencia, login e importación con datos representativos/emulator.
 
 ### F. Validación de reglas Firestore
@@ -1554,13 +1574,31 @@ Resultado actual:
 - **Actualización 2026-05-02:** en entorno de desarrollo se ejecutaron despliegues parciales explícitos **`firebase deploy --only firestore:rules`** y **`firebase deploy --only firestore:indexes`** contra **`sistema-integrado-sindicato`** (reglas liberadas; índices alineados con **`firestore.indexes.json`** referenciado en **`firebase.json`**). Conviene repetir deploy tras cada cambio sustancial de reglas o índices y revisar la consola.
 - Limitación: no sustituye pruebas con Firebase Emulator; para emuladores suele hacer falta Java 21+ local.
 
+**Firebase Storage (reglas):**
+
+- Repo: **`storage.rules`** (v2): **`elections/{electionId}/candidates/{candidateId}/{fileName}`** (+ compat **`elections/{electionId}/candidate_photos/{fileName}`**). **`firebase.json` → `"storage":{"rules":"storage.rules"}`**; **`.firebaserc`** → **`sistema-integrado-sindicato`**.
+- Operación: **`firebase deploy --only storage`**.
+- **2026-04-30:** error *«Firebase Storage has not been set up…»* hasta **Comenzar** en consola.
+- **2026-05-02:** tras aprovisionamiento, **`firebase deploy --only storage`** completado (reglas liberadas). La app cliente sube fotos nuevas por **`CandidatePhotoStorage`** bajo **`candidates/{candidateId}/`** (**E-045**).
+- **2026-05-02 / E-046:** **`storage.rules`** se endurece localmente: lectura autenticada, escritura/borrado sólo `SUPERADMIN`/`ADMIN`, validación `image/*` &lt; 5 MB. **`firebase deploy --only storage --dry-run`** compila correctamente; pendiente deploy real para liberar esta versión.
+
 ### G. Bitácora de correcciones
 
 _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
-| 2026-05-02 | **E-042**: `watchMemberAttendanceSummary` usa cadena broadcast (`asyncExpand` + `asBroadcastStream`) en lugar de `async*` + `yield*`, evitando segundo `listen` ilegal con **TabBarView** en Mi Perfil. **E-043**: alta de **`modalidadesNoConvocadas`** en **`CrearAttendanceEventScreen`**; detalle **`AttendanceEventDetailScreen`** con visualización permanente, botón **Editar** e icono AppBar; diálogo **`_EditModalidadesNoConvocadasDialog`** + **`AttendanceService.updateEvent`**. Repos: **`firestore.indexes.json`** + entrada **`indexes`** en **`firebase.json`**. Ops: **`firebase deploy --only firestore:rules`** y **`firestore:indexes`** al proyecto **`sistema-integrado-sindicato`**. | `lib/services/attendance_service.dart`, `lib/features/asistencia/crear_attendance_event_screen.dart`, `lib/features/asistencia/attendance_event_detail_screen.dart`, `firebase.json`, `firestore.indexes.json`, `expediente_tecnico_aplicacion.md` | `flutter analyze` en archivos Dart tocados; deploy CLI según entorno | Aplicado localmente |
+| 2026-05-02 | **E-053**: ajuste de **Home / Dashboard principal** para completar el pie de navegación y eliminar desbordamientos. Se agrega barra inferior flotante tipo pill con Inicio, Voto, Asist., Socios y Perfil según rol; las tarjetas de módulos pasan de altura fija a altura mínima flexible para evitar `BOTTOM OVERFLOWED` en móvil. | `lib/features/home/home_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (45/45) | Aplicado localmente |
+| 2026-05-02 | **E-052**: rediseño visual del **Home / Dashboard principal** según referencia entregada. `HomeScreen` reemplaza app bar/tarjetas lineales por header morado con onda, logo, acciones rápidas, tarjeta de bienvenida, grilla responsiva de módulos y aviso de seguridad; conserva rutas y visibilidad por rol. | `lib/features/home/home_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (45/45) | Aplicado localmente |
+| 2026-05-02 | **E-051**: limpieza de redundancia en **Importar Socios**. Se retira el botón visible **Plantilla CSV** y queda sólo **Plantilla Excel** como salida/plantilla compartible; se mantiene la selección/importación de `.csv`, `.xlsx` y `.xls`, junto con prevalidación CSV/Excel. | `lib/features/members/import_members_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded test/import_service_test.dart` OK (8/8) | Aplicado localmente |
+| 2026-05-02 | **E-050**: corrección de `permission-denied` al exportar reporte completo de socios. `AttendanceService.fetchMemberAttendanceSummariesForExport()` deja de usar `collectionGroup('asistencias').get()` para la exportación y ahora lee las subcolecciones `attendance_events/{eventId}/asistencias` por evento, compatible con las reglas específicas ya existentes. Se añade regla explícita de lectura para `match /{path=**}/asistencias/{asistenciaId}` para soportar resúmenes/consultas `collectionGroup` sin abrir escrituras. | `lib/services/attendance_service.dart`, `firestore.rules`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (45/45); `firebase deploy --only firestore:rules --dry-run` OK; pendiente prueba manual exportando con usuario admin real | Aplicado localmente |
+| 2026-05-02 | **E-049**: exportación de socios ampliada a **reporte completo**. El botón de `/members` mantiene archivo CSV real, pero ahora consulta resúmenes masivos con `AttendanceService.fetchMemberAttendanceSummariesForExport()` y agrega al CSV columnas de eventos convocados, asistencias, faltas injustificadas, ausencias justificadas, no convocados, porcentaje y último estado/evento. El cálculo reutiliza la lógica del perfil y separa registros nuevos (`attendance_events/{id}/asistencias`) de legacy (`eventos`, `asistencias`, `personas`) para no mezclar orígenes. | `lib/features/members/members_list_screen.dart`, `lib/services/attendance_service.dart`, `lib/services/members_service.dart`, `test/members_service_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (45/45); `git diff --check` OK; pendiente prueba manual con padrón real | Aplicado localmente |
+| 2026-05-02 | **E-048**: exportación completa de socios como archivo real. `MembersListScreen` cambia de **`Share.share(csv)`** a **`Share.shareXFiles`** con `XFile.fromData`, BOM UTF-8 y nombre `socios_{timestamp}.csv`; `MembersService.fetchMembersForExport()` consulta toda la colección `members`, independiente de la página visible; helpers de orden/filtro quedan cubiertos por prueba. | `lib/features/members/members_list_screen.dart`, `lib/services/members_service.dart`, `test/members_service_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (45/45); pendiente prueba manual con padrón real | Aplicado localmente |
+| 2026-05-02 | **E-047**: Importación de socios con plantillas y prevalidación local desde la app. **`ImportMembersScreen`** agrega botón **Plantilla Excel** y tarjeta de **Prevalidación**; **`ImportService.buildMembersImportTemplateExcel()`** crea XLSX real con hojas `Socios` y `Modalidades`; **`buildMembersImportTemplateCsv()`** queda como helper de servicio/test, pero la UI visible se simplifica en **E-051**; **`previewCsv`** / **`previewExcel`** detectan filas inválidas y duplicados internos. | `lib/features/members/import_members_screen.dart`, `lib/services/import_service.dart`, `test/import_service_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (43/43); pendiente prueba manual por plataforma | Aplicado localmente |
+| 2026-05-02 | **E-046**: reglas Storage endurecidas para fotos de candidatos. `read` exige sesión; `create`/`update`/`delete` en **`elections/{electionId}/candidates/{candidateId}/{file}`** y **`candidate_photos/{file}`** exige `SUPERADMIN`/`ADMIN` consultando **`users/{uid}.role`** con **`firestore.exists/get`**; uploads siguen limitados a imagen **&lt; 5 MB**. | `storage.rules`, `expediente_tecnico_aplicacion.md` | **`firebase deploy --only storage --dry-run`** OK; pendiente deploy real y prueba admin/votante | Aplicado localmente |
+| 2026-05-02 | **E-045**: Ampliación foto candidatos — ruta **`elections/{electionId}/candidates/{candidateId}/{file}`**; **`CandidatePhotoStorage.uploadCandidateImage`** + **`FirebaseStorage.instance`** + **`candidate_storage_put_io`/`web`**; **`tryDeleteOldCandidateImage`**; modal **Editar candidato**: **`await showDialog`** + **`finally`** **dispose**, sin **`setModal(saving=false)`** antes del **pop** en éxito (evita **`_dependents.isEmpty`**); logs en alta/edición. **`storage.rules`**: ramas **`candidates`** + **`candidate_photos`**. Consola Storage activada → **`firebase deploy --only storage`** OK. | `lib/services/candidate_photo_storage_service.dart`, `lib/services/candidate_storage_put_io.dart`, `lib/services/candidate_storage_put_web.dart`, `lib/features/elections/add_candidate_screen.dart`, `lib/features/elections/edit_election_screen.dart`, `storage.rules`, `expediente_tecnico_aplicacion.md` | `dart analyze`/`flutter test` sobre cambios locales; **`firebase deploy --only storage`** | Aplicado |
+| 2026-04-30 | **E-044**: Foto opcional para candidatos. Dependencias **`firebase_storage`** + **`image_picker`**; **`CandidatePhotoStorage`** (evoluciona en **E-045** respecto de ruta de objeto previa); **`CandidateImageUploadSection`** en **`add_candidate_screen`** y diálogo de **`edit_election_screen`**; padding scroll **`viewPadding`/`viewInsets`**. **`storage.rules`**, **`firebase.json`**, **`.firebaserc`**. **Android** **`CAMERA`**; **iOS** uso fototeca/cámara. Deploy Storage inicialmente bloqueado sin bucket en consola. | `pubspec.yaml`, `lib/services/candidate_photo_storage_service.dart`, `lib/features/elections/candidate_image_upload_section.dart`, `lib/features/elections/add_candidate_screen.dart`, `lib/features/elections/edit_election_screen.dart`, `storage.rules`, `firebase.json`, `.firebaserc`, permisos nativos | `flutter analyze`; `flutter test` | Superado deploy tras **E-045**/ consola (**2026-05-02**) |
+| 2026-05-02 | **E-042**: `watchMemberAttendanceSummary` usa cadena broadcast (`asyncExpand` + `asBroadcastStream`) en lugar de `async*` + `yield*`; `UserProfileScreen` reemplaza el `StreamBuilder` por una única `StreamSubscription` cancelable, evitando segundo `listen` ilegal con **TabBarView** en Mi Perfil. **E-043**: alta de **`modalidadesNoConvocadas`** en **`CrearAttendanceEventScreen`**; detalle **`AttendanceEventDetailScreen`** con visualización permanente, botón **Editar** e icono AppBar; diálogo **`_EditModalidadesNoConvocadasDialog`** + **`AttendanceService.updateEvent`**. Repos: **`firestore.indexes.json`** + entrada **`indexes`** en **`firebase.json`**. Ops: **`firebase deploy --only firestore:rules`** y **`firestore:indexes`** al proyecto **`sistema-integrado-sindicato`**. | `lib/services/attendance_service.dart`, `lib/features/profile/user_profile_screen.dart`, `lib/features/asistencia/crear_attendance_event_screen.dart`, `lib/features/asistencia/attendance_event_detail_screen.dart`, `firebase.json`, `firestore.indexes.json`, `expediente_tecnico_aplicacion.md` | `flutter analyze`; `flutter test --no-pub --reporter expanded`; pendiente repetir `flutter run -d windows` con usuario real | Aplicado localmente |
 | 2026-05-01 | Se mitiga localmente **E-041**: la UI de asistencia deja de ofrecer “Evento reporte” vs “Evento clásico”; se expone un único **Crear evento** que crea en `attendance_events`, el FAB usa el mismo flujo, `/asistencia/crear_evento` queda como alias del formulario actual y `eventos` queda como pestaña **Históricos**. También se limpian textos de crear/detalle/scanner/manual/exportación y el prefijo exportado pasa a `[Evento]`. | `lib/main.dart`, `lib/features/asistencia/asistencia_home_screen.dart`, `lib/features/asistencia/crear_attendance_event_screen.dart`, `lib/features/asistencia/attendance_event_detail_screen.dart`, `lib/features/asistencia/scanner_screen.dart`, `lib/features/asistencia/registro_manual_screen.dart`, `lib/features/asistencia/exportar_screen.dart`, `lib/services/attendance_service.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (39/39) | Aplicado localmente |
 | 2026-05-01 | Se mitiga localmente **E-040**: el hub de asistencia retira accesos rápidos redundantes a **Personas**, **Códigos QR** e **Importar Excel**; conserva acciones operativas y el copy legacy apunta al QR canónico en **Mi Perfil**. | `lib/features/asistencia/asistencia_home_screen.dart`, `lib/features/asistencia/importar_personas_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (39/39) | Aplicado localmente |
 | 2026-05-01 | Se mitiga localmente **E-039**: la regla que impide eliminar candidatos con votos se extrae a `validateCandidateDeletion`, se reutiliza en `ElectionService.deleteCandidate` y queda cubierta por prueba unitaria para `voteCount` y documentos de voto existentes. | `lib/core/models/candidate.dart`, `lib/services/election_service.dart`, `test/candidate_model_test.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub`; `flutter test --no-pub --reporter expanded` (39/39) | Aplicado localmente |
@@ -1617,5 +1655,6 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 - El nombre funcional se tomó de `MaterialApp.title`, README y `pubspec.yaml`.
 - El alcance de usuario se infiere del dominio sindical y roles en código.
 - No se asume existencia de datos en Firestore.
-- No se asume que reglas locales estén desplegadas en Firebase.
+- No se asume que reglas locales estén desplegadas en Firebase después de cada edición; para Storage, **E-046** está validado con dry-run pero pendiente de deploy real.
+- **Firebase Storage** ya fue aprovisionado en **`sistema-integrado-sindicato`** durante la revisión, pero no se asume lo mismo para otros proyectos/entornos sin ejecutar el flujo de consola (**Comenzar**) y un deploy de **`storage.rules`**.
 - Cuando el comportamiento depende de datos reales, se marca como pendiente de confirmar.

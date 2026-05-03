@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -25,7 +27,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
   /// Socio vinculado al usuario (padrón `members`), si existe.
   Member? _currentMember;
-  Stream<MemberAttendanceSummary>? _attendanceSummaryStream;
+  StreamSubscription<MemberAttendanceSummary>? _attendanceSummarySubscription;
+  MemberAttendanceSummary? _attendanceSummary;
+  Object? _attendanceSummaryError;
+  bool _isLoadingAttendanceSummary = false;
   bool _isLoadingMember = true;
   bool _noMembersInDatabase =
       false; // Flag para detectar si no hay miembros en BD
@@ -419,14 +424,40 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       }
 
       // Actualizar estado de la UI
+      await _attendanceSummarySubscription?.cancel();
+      _attendanceSummarySubscription = null;
       if (mounted) {
         setState(() {
           _currentMember = foundMember;
-          _attendanceSummaryStream = foundMember == null
-              ? null
-              : _attendanceService.watchMemberAttendanceSummary(foundMember.id);
+          _attendanceSummary = null;
+          _attendanceSummaryError = null;
+          _isLoadingAttendanceSummary = foundMember != null;
           _isLoadingMember = false;
         });
+      }
+
+      if (foundMember != null) {
+        _attendanceSummarySubscription = _attendanceService
+            .watchMemberAttendanceSummary(foundMember.id)
+            .listen(
+              (summary) {
+                if (!mounted) return;
+                setState(() {
+                  _attendanceSummary = summary;
+                  _attendanceSummaryError = null;
+                  _isLoadingAttendanceSummary = false;
+                });
+              },
+              onError: (Object error, StackTrace stackTrace) {
+                debugPrint('❌ Error cargando resumen de asistencia: $error');
+                debugPrint('Stack trace: $stackTrace');
+                if (!mounted) return;
+                setState(() {
+                  _attendanceSummaryError = error;
+                  _isLoadingAttendanceSummary = false;
+                });
+              },
+            );
       }
     } catch (e, stackTrace) {
       debugPrint('❌ Error fatal cargando miembro: $e');
@@ -439,6 +470,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
   @override
   void dispose() {
+    _attendanceSummarySubscription?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -966,73 +998,61 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   }
 
   Widget _buildAttendanceSummaryCard(BuildContext context) {
-    final stream = _attendanceSummaryStream;
-    if (stream == null) {
+    if (_currentMember == null) {
       return _buildInfoCard(context, 'Resumen de Asistencia', [
         _buildInfoRow('Estado', 'No disponible'),
       ]);
     }
 
-    return StreamBuilder<MemberAttendanceSummary>(
-      stream: stream,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _buildInfoCard(context, 'Resumen de Asistencia', [
-            _buildInfoRow('Estado', 'No disponible'),
-            _buildInfoRow('Detalle', snapshot.error.toString()),
-          ]);
-        }
+    if (_attendanceSummaryError != null) {
+      return _buildInfoCard(context, 'Resumen de Asistencia', [
+        _buildInfoRow('Estado', 'No disponible'),
+        _buildInfoRow('Detalle', _attendanceSummaryError.toString()),
+      ]);
+    }
 
-        if (!snapshot.hasData) {
-          return _buildInfoCard(context, 'Resumen de Asistencia', [
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(child: Text('Calculando resumen...')),
-                ],
+    final summary = _attendanceSummary;
+    if (_isLoadingAttendanceSummary || summary == null) {
+      return _buildInfoCard(context, 'Resumen de Asistencia', [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            ),
-          ]);
-        }
-
-        final summary = snapshot.data!;
-        final recentDetails = summary.detalles.take(3).toList();
-
-        return _buildInfoCard(context, 'Resumen de Asistencia', [
-          _buildInfoRow(
-            'Eventos convocados',
-            summary.totalConvocados.toString(),
+              SizedBox(width: 12),
+              Expanded(child: Text('Calculando resumen...')),
+            ],
           ),
-          _buildInfoRow('Asistencias', summary.totalAsistencias.toString()),
-          _buildInfoRow(
-            'Faltas injustificadas',
-            summary.totalFaltas.toString(),
-          ),
-          _buildInfoRow('No convocado', summary.totalNoConvocado.toString()),
-          if (recentDetails.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Divider(),
-            const SizedBox(height: 8),
-            Text(
-              'Últimos eventos',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            for (final detail in recentDetails)
-              _buildAttendanceDetailRow(context, detail),
-          ],
-        ]);
-      },
-    );
+        ),
+      ]);
+    }
+
+    final recentDetails = summary.detalles.take(3).toList();
+
+    return _buildInfoCard(context, 'Resumen de Asistencia', [
+      _buildInfoRow('Eventos convocados', summary.totalConvocados.toString()),
+      _buildInfoRow('Asistencias', summary.totalAsistencias.toString()),
+      _buildInfoRow('Faltas injustificadas', summary.totalFaltas.toString()),
+      _buildInfoRow('No convocado', summary.totalNoConvocado.toString()),
+      if (recentDetails.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        const Divider(),
+        const SizedBox(height: 8),
+        Text(
+          'Últimos eventos',
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        for (final detail in recentDetails)
+          _buildAttendanceDetailRow(context, detail),
+      ],
+    ]);
   }
 
   Widget _buildAttendanceDetailRow(
