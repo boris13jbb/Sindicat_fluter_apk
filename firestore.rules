@@ -21,7 +21,8 @@ service cloud.firestore {
 
     function electionIsOpen(electionId) {
       let election = get(/databases/$(database)/documents/elections/$(electionId)).data;
-      return election.isActive == true
+      return (!(('isArchived' in election) && election.isArchived == true))
+        && election.isActive == true
         && election.isVisibleToVoters == true
         && election.startDate is number
         && election.endDate is number

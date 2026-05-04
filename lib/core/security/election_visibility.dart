@@ -1,12 +1,23 @@
 import '../models/election.dart';
 import '../models/user_role.dart';
 
-enum ElectionVotingStatus { open, inactive, hidden, notStarted, ended }
+enum ElectionVotingStatus {
+  open,
+  inactive,
+  hidden,
+  notStarted,
+  ended,
+  archived,
+}
 
 ElectionVotingStatus getElectionVotingStatus({
   required Election election,
   DateTime? now,
 }) {
+  if (election.isArchived) {
+    return ElectionVotingStatus.archived;
+  }
+
   if (!election.isActive) {
     return ElectionVotingStatus.inactive;
   }
@@ -44,6 +55,8 @@ String electionVotingStatusMessage(ElectionVotingStatus status) {
       return 'Esta elección aún no inicia.';
     case ElectionVotingStatus.ended:
       return 'Esta elección ya ha finalizado.';
+    case ElectionVotingStatus.archived:
+      return 'Esta elección está archivada y no admite votación.';
   }
 }
 
@@ -54,6 +67,10 @@ bool canViewElectionResults({
 }) {
   if (viewerRole == UserRole.superadmin || viewerRole == UserRole.admin) {
     return true;
+  }
+
+  if (election.isArchived) {
+    return false;
   }
 
   final nowMillis = (now ?? DateTime.now()).millisecondsSinceEpoch;

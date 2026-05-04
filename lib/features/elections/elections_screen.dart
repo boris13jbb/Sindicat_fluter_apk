@@ -97,6 +97,8 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
         return 'No visible';
       case ElectionVotingStatus.inactive:
         return 'Inactiva';
+      case ElectionVotingStatus.archived:
+        return 'Archivada';
     }
   }
 
@@ -301,7 +303,8 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
               }
             },
             onHistory: isAdmin
-                ? () => Navigator.pushNamed(context, '/voto/event_history')
+                ? () =>
+                    Navigator.pushNamed(context, '/voto/archived_elections')
                 : null,
             onLogout: () async {
               await auth.signOut();
@@ -374,7 +377,10 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                 }
 
                 final all = snapshot.data ?? [];
-                final filtered = _filterElections(all, _searchController.text);
+                final nonArchived =
+                    all.where((e) => !e.isArchived).toList();
+                final filtered =
+                    _filterElections(nonArchived, _searchController.text);
 
                 if (all.isEmpty) {
                   return SingleChildScrollView(
@@ -438,6 +444,70 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                   );
                 }
 
+                if (isAdmin && nonArchived.isEmpty) {
+                  return SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 24),
+                        PremiumCard(
+                          margin: EdgeInsets.zero,
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.archive_outlined,
+                                size: 56,
+                                color:
+                                    AppDesignTokens.primary.withValues(alpha: 0.45),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Todas las elecciones están archivadas',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: AppDesignTokens.primaryDark,
+                                    ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Consulta esta carpeta para verlas o restaurarlas; '
+                                'también puedes crear una elección nueva.',
+                                textAlign: TextAlign.center,
+                                style: AppDesignTokens.bodyMuted(context),
+                              ),
+                              const SizedBox(height: 20),
+                              FilledButton.icon(
+                                onPressed: () => Navigator.pushNamed(
+                                  context,
+                                  '/voto/archived_elections',
+                                ),
+                                icon: const Icon(Icons.inventory_2_outlined),
+                                label: const Text('Abrir archivados'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppDesignTokens.primary,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: () => Navigator.pushNamed(
+                                  context,
+                                  '/voto/create_election',
+                                ),
+                                icon: const Icon(Icons.add_rounded),
+                                label: const Text('Nueva elección'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
                 return CustomScrollView(
                   controller: _scrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
@@ -479,14 +549,14 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                         ),
                         child: isAdmin
                             ? _AdminDashboardStatsRow(
-                                activas: _countOpen(all),
-                                votos: _sumVotes(all),
+                                activas: _countOpen(nonArchived),
+                                votos: _sumVotes(nonArchived),
                                 memberCountFuture: _activeMembersCountFuture,
                               )
                             : _VoterElectionStatsRow(
-                                activas: _countOpen(all),
-                                votos: _sumVotes(all),
-                                finalizadas: _countFinalizadas(all),
+                                activas: _countOpen(nonArchived),
+                                votos: _sumVotes(nonArchived),
+                                finalizadas: _countFinalizadas(nonArchived),
                               ),
                       ),
                     ),
@@ -666,6 +736,13 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                                   election,
                                   _electionService,
                                 ),
+                                onArchive: isAdmin
+                                    ? () => _confirmArchive(
+                                          context,
+                                          election,
+                                          _electionService,
+                                        )
+                                    : null,
                               );
                             },
                             childCount: filtered.length,
@@ -680,6 +757,52 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmArchive(
+    BuildContext context,
+    Election election,
+    ElectionService service,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archivar elección'),
+        content: Text(
+          '«${election.title}» pasará al listado de archivados. '
+          'Los votantes dejarán de verla en el panel principal; '
+          'podrás restaurarla cuando quieras.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Archivar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    try {
+      await service.setElectionArchived(
+        electionId: election.id,
+        archived: true,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Archivada: ${election.title}')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo archivar: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _confirmDelete(

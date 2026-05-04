@@ -97,9 +97,60 @@ class ElectionService {
           final now = DateTime.now();
           return snap.docs
               .map((d) => Election.fromMap(d.data(), d.id))
-              .where((e) => canVoteInElection(election: e, now: now))
+              .where(
+                (e) => !e.isArchived && canVoteInElection(election: e, now: now),
+              )
               .toList();
         });
+  }
+
+  /// Elecciones con [isArchived] == true (orden por [createdAt] descendente).
+  Stream<List<Election>> getArchivedElections() {
+    return _firestore
+        .collection('elections')
+        .orderBy('createdAt', descending: true)
+        .snapshots(includeMetadataChanges: true)
+        .map(
+          (snap) => snap.docs
+              .map((d) => Election.fromMap(d.data(), d.id))
+              .where((e) => e.isArchived)
+              .toList(),
+        );
+  }
+
+  Future<void> setElectionArchived({
+    required String electionId,
+    required bool archived,
+  }) async {
+    final ref = _firestore.collection('elections').doc(electionId);
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    if (archived) {
+      await ref.update({
+        'isArchived': true,
+        'archivedAt': nowMs,
+        'updatedAt': nowMs,
+      });
+      await _audit.logAction(
+        action: AuditAction.update,
+        entityType: AuditEntityType.election,
+        entityId: electionId,
+        description: 'Elección archivada',
+        platform: 'flutter',
+      );
+    } else {
+      await ref.update({
+        'isArchived': false,
+        'updatedAt': nowMs,
+        'archivedAt': FieldValue.delete(),
+      });
+      await _audit.logAction(
+        action: AuditAction.update,
+        entityType: AuditEntityType.election,
+        entityId: electionId,
+        description: 'Elección desarchivada',
+        platform: 'flutter',
+      );
+    }
   }
 
   Future<Election?> getElection(String electionId) async {

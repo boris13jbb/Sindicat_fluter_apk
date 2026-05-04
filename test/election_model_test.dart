@@ -47,6 +47,24 @@ void main() {
       expect(data['status'], ElectionStatus.closed.firestoreValue);
     });
 
+    test('defaults isArchived false when absent in map', () {
+      final e = Election.fromMap({
+        'title': 'Sin bandera',
+        'startDate': fixedDate.millisecondsSinceEpoch,
+        'endDate':
+            fixedDate.add(const Duration(days: 1)).millisecondsSinceEpoch,
+        'isActive': true,
+        'createdBy': 'admin',
+      }, 'e1');
+      expect(e.isArchived, isFalse);
+      expect(e.archivedAt, isNull);
+    });
+
+    test('toMap includes isArchived', () {
+      final data = election().toMap();
+      expect(data['isArchived'], isFalse);
+    });
+
     test('parses stored status with a safe draft fallback', () {
       expect(
         Election.fromMap({

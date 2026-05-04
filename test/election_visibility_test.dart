@@ -167,5 +167,42 @@ void main() {
         ElectionVotingStatus.ended,
       );
     });
+
+    test('archived blocks voting even if schedule would be open', () {
+      final openWindow = election(
+        startDate: now.subtract(const Duration(minutes: 10)),
+        endDate: now.add(const Duration(minutes: 10)),
+      ).copyWith(isArchived: true);
+
+      expect(canVoteInElection(election: openWindow, now: now), isFalse);
+      expect(
+        getElectionVotingStatus(election: openWindow, now: now),
+        ElectionVotingStatus.archived,
+      );
+      expect(
+        electionVotingStatusMessage(ElectionVotingStatus.archived),
+        contains('archivada'),
+      );
+    });
+
+    test('archived hides results from voters but not from admins', () {
+      final archived = election().copyWith(isArchived: true);
+      expect(
+        canViewElectionResults(
+          election: archived,
+          viewerRole: UserRole.voter,
+          now: now,
+        ),
+        isFalse,
+      );
+      expect(
+        canViewElectionResults(
+          election: archived,
+          viewerRole: UserRole.admin,
+          now: now,
+        ),
+        isTrue,
+      );
+    });
   });
 }

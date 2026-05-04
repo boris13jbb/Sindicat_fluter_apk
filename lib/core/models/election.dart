@@ -67,6 +67,8 @@ class Election {
     required this.startDate,
     required this.endDate,
     this.isActive = false,
+    this.isArchived = false,
+    this.archivedAt,
     this.isVisibleToVoters = true,
     this.showResultsAutomatically = true,
     this.requireAttendance = false,
@@ -83,6 +85,9 @@ class Election {
   final int startDate;
   final int endDate;
   final bool isActive;
+  /// Oculta la elección del listado principal; votación bloqueada en reglas y cliente.
+  final bool isArchived;
+  final int? archivedAt;
   final bool isVisibleToVoters;
   final bool showResultsAutomatically;
   final bool requireAttendance;
@@ -116,6 +121,8 @@ class Election {
       startDate: (map['startDate'] as num?)?.toInt() ?? 0,
       endDate: (map['endDate'] as num?)?.toInt() ?? 0,
       isActive: map['isActive'] as bool? ?? false,
+      isArchived: map['isArchived'] as bool? ?? false,
+      archivedAt: (map['archivedAt'] as num?)?.toInt(),
       isVisibleToVoters: map['isVisibleToVoters'] as bool? ?? true,
       showResultsAutomatically:
           map['showResultsAutomatically'] as bool? ?? true,
@@ -137,6 +144,8 @@ class Election {
       'startDate': startDate,
       'endDate': endDate,
       'isActive': isActive,
+      'isArchived': isArchived,
+      if (archivedAt != null) 'archivedAt': archivedAt!,
       'isVisibleToVoters': isVisibleToVoters,
       'showResultsAutomatically': showResultsAutomatically,
       'requireAttendance': requireAttendance,
@@ -157,6 +166,8 @@ class Election {
     int? startDate,
     int? endDate,
     bool? isActive,
+    bool? isArchived,
+    int? archivedAt,
     bool? isVisibleToVoters,
     bool? showResultsAutomatically,
     bool? requireAttendance,
@@ -173,6 +184,8 @@ class Election {
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       isActive: isActive ?? this.isActive,
+      isArchived: isArchived ?? this.isArchived,
+      archivedAt: archivedAt ?? this.archivedAt,
       isVisibleToVoters: isVisibleToVoters ?? this.isVisibleToVoters,
       showResultsAutomatically:
           showResultsAutomatically ?? this.showResultsAutomatically,

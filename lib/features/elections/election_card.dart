@@ -15,6 +15,9 @@ class ElectionCard extends StatelessWidget {
     required this.onAddCandidate,
     required this.onViewResults,
     required this.onDelete,
+    this.listIsArchived = false,
+    this.onArchive,
+    this.onRestore,
   });
 
   final Election election;
@@ -25,6 +28,10 @@ class ElectionCard extends StatelessWidget {
   final VoidCallback onAddCandidate;
   final VoidCallback onViewResults;
   final VoidCallback onDelete;
+  /// Listado `/voto/archived_elections`: menú reducido y toque principal a resultados.
+  final bool listIsArchived;
+  final VoidCallback? onArchive;
+  final VoidCallback? onRestore;
 
   static String _formatDateTime(int ms) {
     final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -52,6 +59,10 @@ class ElectionCard extends StatelessWidget {
   }
 
   void _onPrimaryTap(BuildContext context) {
+    if (listIsArchived) {
+      onViewResults();
+      return;
+    }
     final votingStatus = getElectionVotingStatus(election: election);
     switch (votingStatus) {
       case ElectionVotingStatus.open:
@@ -67,6 +78,7 @@ class ElectionCard extends StatelessWidget {
         break;
       case ElectionVotingStatus.hidden:
       case ElectionVotingStatus.inactive:
+      case ElectionVotingStatus.archived:
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(electionVotingStatusMessage(votingStatus))),
         );
@@ -131,12 +143,29 @@ class ElectionCard extends StatelessWidget {
           badgeLabel: 'Inactiva',
           subtitle: 'Inactiva · ${_formatDateTime(election.startDate)}',
         );
+      case ElectionVotingStatus.archived:
+        return (
+          dot: Colors.blueGrey.shade500,
+          badgeBg: const Color(0xFFECEFF1),
+          badgeFg: Colors.blueGrey.shade900,
+          badgeLabel: 'Archivada',
+          subtitle: 'Archivada · no visible en el listado principal',
+        );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final p = _presentation(context);
+    final base = _presentation(context);
+    final p = listIsArchived
+        ? (
+            dot: Colors.blueGrey.shade500,
+            badgeBg: const Color(0xFFE8EAF6),
+            badgeFg: AppDesignTokens.primaryDark,
+            badgeLabel: 'Archivada',
+            subtitle: '${base.subtitle} · carpeta archivados',
+          )
+        : base;
 
     return PremiumCard(
       margin: const EdgeInsets.fromLTRB(
@@ -241,59 +270,117 @@ class ElectionCard extends StatelessWidget {
                         case 'results':
                           onViewResults();
                           break;
+                        case 'archive':
+                          onArchive?.call();
+                          break;
+                        case 'restore':
+                          onRestore?.call();
+                          break;
                         case 'delete':
                           onDelete();
                           break;
                       }
                     },
-                    itemBuilder: (ctx) => [
-                      const PopupMenuItem(
-                        value: 'dashboard',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.dashboard_outlined),
-                          title: Text('Dashboard'),
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'edit',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.edit_outlined),
-                          title: Text('Editar'),
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'add',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.person_add_outlined),
-                          title: Text('Agregar candidatos'),
-                        ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'results',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(Icons.bar_chart_outlined),
-                          title: Text('Ver resultados'),
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: ListTile(
-                          dense: true,
-                          leading: Icon(
-                            Icons.delete_outline,
-                            color: Theme.of(ctx).colorScheme.error,
-                          ),
-                          title: Text(
-                            'Eliminar',
-                            style: TextStyle(color: Theme.of(ctx).colorScheme.error),
-                          ),
-                        ),
-                      ),
-                    ],
+                    itemBuilder: (ctx) => listIsArchived
+                        ? [
+                            PopupMenuItem(
+                              value: 'restore',
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(
+                                  Icons.unarchive_outlined,
+                                  color: AppDesignTokens.primary,
+                                ),
+                                title: const Text('Restaurar'),
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'results',
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(Icons.bar_chart_outlined),
+                                title: Text('Ver resultados'),
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(
+                                  Icons.delete_outline,
+                                  color: Theme.of(ctx).colorScheme.error,
+                                ),
+                                title: Text(
+                                  'Eliminar',
+                                  style: TextStyle(
+                                    color: Theme.of(ctx).colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ]
+                        : [
+                            const PopupMenuItem(
+                              value: 'dashboard',
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(Icons.dashboard_outlined),
+                                title: Text('Dashboard'),
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'edit',
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(Icons.edit_outlined),
+                                title: Text('Editar'),
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'add',
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(Icons.person_add_outlined),
+                                title: Text('Agregar candidatos'),
+                              ),
+                            ),
+                            const PopupMenuItem(
+                              value: 'results',
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(Icons.bar_chart_outlined),
+                                title: Text('Ver resultados'),
+                              ),
+                            ),
+                            if (onArchive != null)
+                              PopupMenuItem(
+                                value: 'archive',
+                                child: ListTile(
+                                  dense: true,
+                                  leading: Icon(
+                                    Icons.archive_outlined,
+                                    color: AppDesignTokens.primaryDark,
+                                  ),
+                                  title: const Text('Archivar'),
+                                ),
+                              ),
+                            PopupMenuItem(
+                              value: 'delete',
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(
+                                  Icons.delete_outline,
+                                  color: Theme.of(ctx).colorScheme.error,
+                                ),
+                                title: Text(
+                                  'Eliminar',
+                                  style: TextStyle(
+                                    color: Theme.of(ctx).colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                   ),
                 ],
                 Icon(

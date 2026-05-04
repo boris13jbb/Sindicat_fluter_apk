@@ -14,6 +14,7 @@ import 'features/auth/login_screen.dart';
 import 'features/auth/sign_up_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/elections/elections_screen.dart';
+import 'features/elections/archived_elections_screen.dart';
 import 'features/elections/create_election_screen.dart';
 import 'features/elections/edit_election_screen.dart';
 import 'features/elections/add_candidate_screen.dart';
@@ -315,6 +316,8 @@ class MyApp extends StatelessWidget {
           },
           '/voto/event_history': (_) =>
               _roleGuard(const EventHistoryScreen(), adminRouteRoles),
+          '/voto/archived_elections': (_) =>
+              _roleGuard(const ArchivedElectionsScreen(), adminRouteRoles),
           '/asistencia': (_) =>
               _roleGuard(const AsistenciaHomeScreen(), attendanceRouteRoles),
           // Ruta antigua conservada como alias del flujo actual.
