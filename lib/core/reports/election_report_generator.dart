@@ -13,11 +13,15 @@ class ElectionReportGenerator {
     required this.election,
     required this.candidates,
     required this.totalVotes,
+    this.reportLogoBytes,
   });
 
   final Election election;
   final List<Candidate> candidates;
   final int totalVotes;
+
+  /// Imagen opcional (cabecera y validación). Configurada por superadmin.
+  final Uint8List? reportLogoBytes;
 
   static final PdfColor _primary = PdfColor.fromInt(0xFF4A328C);
   static final PdfColor _primaryLight = PdfColor.fromInt(0xFFE8DEF8);
@@ -151,24 +155,7 @@ class ElectionReportGenerator {
         pw.Row(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            pw.Container(
-              width: 36,
-              height: 36,
-              decoration: pw.BoxDecoration(
-                color: _primaryLight,
-                borderRadius: pw.BorderRadius.circular(8),
-                border: pw.Border.all(color: _primary, width: 1),
-              ),
-              alignment: pw.Alignment.center,
-              child: pw.Text(
-                '◆',
-                style: pw.TextStyle(
-                  fontSize: 16,
-                  color: _primary,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
+            _brandingMark(size: 36, circular: false),
             pw.SizedBox(width: 10),
             pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -211,6 +198,65 @@ class ElectionReportGenerator {
 
   pw.Widget _divider() {
     return pw.Container(height: 1, color: _greyLine);
+  }
+
+  /// Logo configurable o icono por defecto (cabecera: cuadrado; validación: círculo).
+  pw.Widget _brandingMark({required double size, required bool circular}) {
+    final bytes = reportLogoBytes;
+    if (bytes != null && bytes.isNotEmpty) {
+      final radius = circular ? size / 2 : 8.0;
+      return pw.Container(
+        width: size,
+        height: size,
+        decoration: pw.BoxDecoration(
+          borderRadius: pw.BorderRadius.circular(radius),
+          border: pw.Border.all(color: _primary, width: 0.8),
+        ),
+        child: pw.Image(
+          pw.MemoryImage(bytes),
+          fit: pw.BoxFit.cover,
+          width: size,
+          height: size,
+        ),
+      );
+    }
+    if (circular) {
+      return pw.Container(
+        width: size,
+        height: size,
+        decoration: pw.BoxDecoration(
+          color: _primaryLight,
+          shape: pw.BoxShape.circle,
+        ),
+        alignment: pw.Alignment.center,
+        child: pw.Text(
+          '✓',
+          style: pw.TextStyle(
+            fontSize: size * 0.5,
+            color: _primary,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+      );
+    }
+    return pw.Container(
+      width: size,
+      height: size,
+      decoration: pw.BoxDecoration(
+        color: _primaryLight,
+        borderRadius: pw.BorderRadius.circular(8),
+        border: pw.Border.all(color: _primary, width: 1),
+      ),
+      alignment: pw.Alignment.center,
+      child: pw.Text(
+        '◆',
+        style: pw.TextStyle(
+          fontSize: 16,
+          color: _primary,
+          fontWeight: pw.FontWeight.bold,
+        ),
+      ),
+    );
   }
 
   pw.Widget _heroBlock(Candidate? winner) {
@@ -888,23 +934,7 @@ class ElectionReportGenerator {
           pw.Row(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Container(
-                width: 36,
-                height: 36,
-                decoration: pw.BoxDecoration(
-                  color: _primaryLight,
-                  shape: pw.BoxShape.circle,
-                ),
-                alignment: pw.Alignment.center,
-                child: pw.Text(
-                  '✓',
-                  style: pw.TextStyle(
-                    fontSize: 18,
-                    color: _primary,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
+              _brandingMark(size: 36, circular: true),
               pw.SizedBox(width: 12),
               pw.Expanded(
                 child: pw.Column(

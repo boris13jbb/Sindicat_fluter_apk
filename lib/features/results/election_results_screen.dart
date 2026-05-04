@@ -14,6 +14,7 @@ import '../../core/design/widgets/premium_card.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/election_service.dart';
 import '../../services/members_service.dart';
+import '../../services/app_branding_service.dart';
 import '../../core/reports/election_report_generator.dart';
 import '../elections/widgets/voto_premium_chrome.dart';
 
@@ -434,10 +435,14 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
       String electionTitle = election.title;
 
       if (type == 'pdf') {
+        final branding = await AppBrandingService().getReportBrandingOnce();
+        final logoBytes =
+            await AppBrandingService.loadReportLogoBytes(branding?.reportLogoUrl);
         final generator = ElectionReportGenerator(
           election: election,
           candidates: sortedCandidates,
           totalVotes: totalVotes,
+          reportLogoBytes: logoBytes,
         );
         pdfBytes = await generator.generateReport().timeout(
           const Duration(seconds: 30),

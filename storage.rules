@@ -20,6 +20,13 @@ service firebase.storage {
         ).data.role in ['SUPERADMIN', 'ADMIN'];
     }
 
+    function isSuperAdmin() {
+      return hasUserProfile()
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.role == 'SUPERADMIN';
+    }
+
     function isCandidateImageUpload() {
       return request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
@@ -47,6 +54,24 @@ service firebase.storage {
         && request.auth.uid == userId
         && (request.resource == null
           || request.resource.size < 12 * 1024 * 1024);
+    }
+
+    // Logo para reportes PDF (solo superadmin). No exigimos image/* estricto:
+    // Flutter/Android a veces envían application/octet-stream o contentType vacío
+    // (igual que user_avatars en este mismo archivo).
+    match /app_branding/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin()
+        && request.resource != null
+        && request.resource.size > 0
+        && request.resource.size < 2 * 1024 * 1024
+        && (
+          request.resource.contentType == null
+          || request.resource.contentType == ''
+          || request.resource.contentType == 'application/octet-stream'
+          || request.resource.contentType.matches('image/.*')
+        );
+      allow delete: if isSuperAdmin();
     }
   }
 }

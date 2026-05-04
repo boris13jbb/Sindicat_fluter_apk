@@ -386,6 +386,23 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ==================== CONFIGURACIÓN APP (marca PDF, solo superadmin) ====================
+
+    match /app_settings/{docId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isSuperAdmin()
+        && docId == 'branding'
+        && request.resource.data.keys().hasOnly(['reportLogoUrl', 'updatedAt', 'updatedBy'])
+        && request.resource.data.reportLogoUrl is string
+        && request.resource.data.reportLogoUrl.size() <= 2048
+        && (request.resource.data.reportLogoUrl == ''
+          || request.resource.data.reportLogoUrl.matches('https://.*'))
+        && request.resource.data.updatedAt is int
+        && request.resource.data.updatedBy is string
+        && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
     // ==================== REGLA POR DEFECTO ====================
     
     match /{document=**} {

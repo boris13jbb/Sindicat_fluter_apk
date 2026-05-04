@@ -11,6 +11,9 @@ const attendanceRouteRoles = {
   UserRole.operadorAsistencia,
 };
 
+/// Solo superadmin (configuración global sensible).
+const superAdminRouteRoles = {UserRole.superadmin};
+
 enum RouteAccessDecision { loading, loginRequired, allowed, denied }
 
 RouteAccessDecision resolveProtectedRouteAccess({

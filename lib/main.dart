@@ -38,6 +38,7 @@ import 'features/members/import_members_screen.dart';
 import 'features/attendance/attendance_report_screen.dart';
 import 'features/audit/audit_logs_screen.dart';
 import 'features/profile/user_profile_screen.dart';
+import 'features/settings/report_branding_settings_screen.dart';
 import 'core/models/asistencia/evento.dart';
 import 'core/models/user_role.dart';
 import 'core/security/route_access.dart';
@@ -438,6 +439,10 @@ class MyApp extends StatelessWidget {
           },
           '/audit/logs': (_) =>
               _roleGuard(const AuditLogsScreen(), adminRouteRoles),
+          '/settings/report_branding': (_) => _roleGuard(
+                const ReportBrandingSettingsScreen(),
+                superAdminRouteRoles,
+              ),
           '/profile': (_) => _authGuard(const UserProfileScreen()),
         },
       ),

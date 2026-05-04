@@ -66,6 +66,27 @@ void main() {
       }
     });
 
+    test('allows report branding settings only to superadmin', () {
+      final expected = {
+        UserRole.superadmin: RouteAccessDecision.allowed,
+        UserRole.admin: RouteAccessDecision.denied,
+        UserRole.operadorAsistencia: RouteAccessDecision.denied,
+        UserRole.voter: RouteAccessDecision.denied,
+        UserRole.user: RouteAccessDecision.denied,
+      };
+
+      for (final entry in expected.entries) {
+        final decision = resolveProtectedRouteAccess(
+          isLoading: false,
+          isSignedIn: true,
+          user: userWithRole(entry.key),
+          allowedRoles: superAdminRouteRoles,
+        );
+
+        expect(decision, entry.value, reason: entry.key.value);
+      }
+    });
+
     test('allows asistencia only to admins and attendance operators', () {
       final expected = {
         UserRole.superadmin: RouteAccessDecision.allowed,

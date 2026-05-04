@@ -139,6 +139,14 @@ class HomeScreen extends StatelessWidget {
           icon: Icons.history_rounded,
           onTap: () => Navigator.pushNamed(context, '/audit/logs'),
         ),
+      if (role == UserRole.superadmin)
+        _HomeModule(
+          title: 'Marca en reportes',
+          subtitle: 'Logo en PDF de\nresultados electorales',
+          icon: Icons.picture_as_pdf_outlined,
+          onTap: () =>
+              Navigator.pushNamed(context, '/settings/report_branding'),
+        ),
     ];
   }
 }
