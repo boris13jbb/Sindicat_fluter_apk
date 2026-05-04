@@ -33,7 +33,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _displayNameController = TextEditingController();
   final TextEditingController _userPhoneController = TextEditingController();
-  final TextEditingController _memberDocumentController = TextEditingController();
+  final TextEditingController _memberDocumentController =
+      TextEditingController();
   final TextEditingController _memberPhoneController = TextEditingController();
   final MembersService _membersService = MembersService();
   final AttendanceService _attendanceService = AttendanceService();
@@ -529,9 +530,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       );
       if (auth.errorMessage != null) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(auth.errorMessage!)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(auth.errorMessage!)));
         return;
       }
 
@@ -550,9 +551,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo guardar: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
     } finally {
       if (mounted) setState(() => _savingProfile = false);
     }
@@ -758,21 +759,15 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         ..writeln(qrData);
 
       await Share.shareXFiles(
-        [
-          XFile.fromData(
-            pngBytes,
-            mimeType: 'image/png',
-            name: fileName,
-          ),
-        ],
+        [XFile.fromData(pngBytes, mimeType: 'image/png', name: fileName)],
         text: shareText.toString(),
         subject: 'QR asistencia — ${member.fullName}',
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo compartir: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo compartir: $e')));
     }
   }
 
@@ -905,7 +900,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       enabledBorder: border,
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(color: AppDesignTokens.primary, width: 1.6),
+        borderSide: const BorderSide(
+          color: AppDesignTokens.primary,
+          width: 1.6,
+        ),
       ),
       contentPadding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
     );
@@ -1086,14 +1084,17 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: AppDesignTokens.primaryDark,
-                        fontWeight: FontWeight.w800,
-                        height: 1.2,
-                      ),
+                    color: AppDesignTokens.primaryDark,
+                    fontWeight: FontWeight.w800,
+                    height: 1.2,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFEBDDFF),
                     borderRadius: BorderRadius.circular(999),
@@ -1101,9 +1102,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                   child: Text(
                     role.displayName,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: AppDesignTokens.primaryDark,
-                          fontWeight: FontWeight.w700,
-                        ),
+                      color: AppDesignTokens.primaryDark,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1153,19 +1154,20 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                   Text(
                     'Información de cuenta',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: AppDesignTokens.primaryDark,
-                        ),
+                      fontWeight: FontWeight.w800,
+                      color: AppDesignTokens.primaryDark,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     'Los datos de cuenta se guardan en tu perfil. '
                     'Cédula y teléfono del padrón solo los actualizan administradores.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color:
-                              AppDesignTokens.primaryDark.withValues(alpha: 0.55),
-                          height: 1.35,
-                        ),
+                      color: AppDesignTokens.primaryDark.withValues(
+                        alpha: 0.55,
+                      ),
+                      height: 1.35,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   _premiumReadonlyValue('Email', _displayOr(user.email)),
@@ -1177,7 +1179,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     validator: _validateDisplayName,
                   ),
                   const SizedBox(height: 12),
-                  _premiumReadonlyValue('Rol del sistema', user.role.displayName),
+                  _premiumReadonlyValue(
+                    'Rol del sistema',
+                    user.role.displayName,
+                  ),
                   TextFormField(
                     controller: _userPhoneController,
                     keyboardType: TextInputType.phone,
@@ -1221,9 +1226,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     Text(
                       'Información de socio',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: AppDesignTokens.primaryDark,
-                          ),
+                        fontWeight: FontWeight.w800,
+                        color: AppDesignTokens.primaryDark,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     Row(
@@ -1301,9 +1306,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       Text(
                         'Editar padrón (administrador)',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: AppDesignTokens.primaryDark,
-                            ),
+                          fontWeight: FontWeight.w800,
+                          color: AppDesignTokens.primaryDark,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
@@ -1440,9 +1445,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                   'Código QR no disponible',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: AppDesignTokens.primaryDark,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    color: AppDesignTokens.primaryDark,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 PremiumCard(
@@ -1575,9 +1580,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     'Código QR no disponible',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Colors.orange.shade800,
-                          fontWeight: FontWeight.w800,
-                        ),
+                      color: Colors.orange.shade800,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   PremiumCard(
@@ -1598,7 +1603,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       style: TextStyle(
                         fontSize: 13,
                         height: 1.45,
-                        color: AppDesignTokens.primaryDark.withValues(alpha: 0.88),
+                        color: AppDesignTokens.primaryDark.withValues(
+                          alpha: 0.88,
+                        ),
                       ),
                     ),
                   ),
@@ -1639,9 +1646,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     'Error generando QR',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: Colors.red.shade800,
-                          fontWeight: FontWeight.w800,
-                        ),
+                      color: Colors.red.shade800,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   PremiumCard(
@@ -1651,7 +1658,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       '$e',
                       style: TextStyle(
                         fontSize: 13,
-                        color: AppDesignTokens.primaryDark.withValues(alpha: 0.9),
+                        color: AppDesignTokens.primaryDark.withValues(
+                          alpha: 0.9,
+                        ),
                       ),
                     ),
                   ),
@@ -1682,9 +1691,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                         'Código QR del socio',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: AppDesignTokens.primaryDark,
-                              fontWeight: FontWeight.w800,
-                            ),
+                          color: AppDesignTokens.primaryDark,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -1699,7 +1708,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: AppDesignTokens.primary.withValues(alpha: 0.2),
+                            color: AppDesignTokens.primary.withValues(
+                              alpha: 0.2,
+                            ),
                           ),
                         ),
                         child: QrImageView(
@@ -1722,7 +1733,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                       Text(
                         m.fullName,
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
                               color: AppDesignTokens.primaryDark,
                               fontWeight: FontWeight.w800,
                             ),
@@ -1824,9 +1836,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           'Este código QR contiene tu información de '
                           'identificación. Preséntalo al escáner de asistencia '
                           'para registrar tu presencia en eventos.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppDesignTokens.primaryDark
-                                    .withValues(alpha: 0.75),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppDesignTokens.primaryDark.withValues(
+                                  alpha: 0.75,
+                                ),
                                 height: 1.4,
                               ),
                         ),
@@ -1854,8 +1868,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
     if (_attendanceSummaryError != null) {
       return _buildInfoCard(context, 'Resumen de asistencia', [
-        _buildInfoRow('Estado', 'No disponible'),
-        _buildInfoRow('Detalle', _attendanceSummaryError.toString()),
+        _buildAttendanceSummaryError(context, _attendanceSummaryError!),
       ]);
     }
 
@@ -1959,6 +1972,68 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
   }
 
+  Widget _buildAttendanceSummaryError(BuildContext context, Object error) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(
+          context,
+        ).colorScheme.errorContainer.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.error.withValues(alpha: 0.18),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            color: Theme.of(context).colorScheme.error,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Resumen temporalmente no disponible',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: AppDesignTokens.primaryDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _attendanceSummaryErrorMessage(error),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppDesignTokens.primaryDark.withValues(alpha: 0.78),
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _attendanceSummaryErrorMessage(Object error) {
+    final raw = error.toString();
+    if (raw.contains('permission-denied')) {
+      return 'No tienes permisos para consultar este resumen de asistencia.';
+    }
+    if (raw.contains('failed-precondition') ||
+        raw.contains('COLLECTION_GROUP') ||
+        raw.contains('index')) {
+      return 'La consulta de asistencia necesita actualizarse. Reinicia la pantalla o vuelve a ingresar al perfil.';
+    }
+    return 'No se pudo calcular el resumen. Intenta nuevamente o contacta al administrador.';
+  }
+
   Color _attendanceStatusColor(BuildContext context, String status) {
     if (status == 'Presente') return Colors.green.shade700;
     if (status == 'No convocado') return Colors.blue.shade700;
@@ -2010,9 +2085,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           Text(
             title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppDesignTokens.primaryDark,
-                ),
+              fontWeight: FontWeight.bold,
+              color: AppDesignTokens.primaryDark,
+            ),
           ),
           const SizedBox(height: 12),
           const Divider(),
@@ -2044,10 +2119,7 @@ class _ProfileWaveHeader extends StatelessWidget {
         height: 198,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              AppDesignTokens.primaryDark,
-              AppDesignTokens.primary,
-            ],
+            colors: [AppDesignTokens.primaryDark, AppDesignTokens.primary],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -2071,7 +2143,8 @@ class _ProfileWaveHeader extends StatelessWidget {
                         Text(
                           'Perfil de usuario',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -2080,7 +2153,8 @@ class _ProfileWaveHeader extends StatelessWidget {
                         Text(
                           'Datos personales, socio y código QR',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
                                 color: Colors.white.withValues(alpha: 0.9),
                               ),
                         ),
@@ -2112,10 +2186,7 @@ class _ProfileWaveHeader extends StatelessWidget {
 }
 
 class _ProfileCircleIconButton extends StatelessWidget {
-  const _ProfileCircleIconButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _ProfileCircleIconButton({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback onTap;
@@ -2136,11 +2207,7 @@ class _ProfileCircleIconButton extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: Icon(
-            icon,
-            color: AppDesignTokens.primary,
-            size: 22,
-          ),
+          child: Icon(icon, color: AppDesignTokens.primary, size: 22),
         ),
       ),
     );
@@ -2180,8 +2247,7 @@ class _ProfileBottomNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = role == UserRole.admin || role == UserRole.superadmin;
-    final canManageAttendance =
-        isAdmin || role == UserRole.operadorAsistencia;
+    final canManageAttendance = isAdmin || role == UserRole.operadorAsistencia;
     final entries = <_ProfileBottomNavEntry>[
       const _ProfileBottomNavEntry(
         label: 'Inicio',
@@ -2248,6 +2314,7 @@ class _ProfileBottomNavEntry {
 
   final String label;
   final IconData icon;
+
   /// `null` indica la pantalla actual (Perfil): resaltado y sin navegación.
   final String? route;
 }
@@ -2311,8 +2378,9 @@ class _ProfileBottomNavItem extends StatelessWidget {
                         style: TextStyle(
                           color: foreground,
                           fontSize: 11,
-                          fontWeight:
-                              isProfile ? FontWeight.w900 : FontWeight.w600,
+                          fontWeight: isProfile
+                              ? FontWeight.w900
+                              : FontWeight.w600,
                           height: 1,
                         ),
                       ),

@@ -460,18 +460,22 @@ class AttendanceService {
   ) {
     late final StreamController<MemberAttendanceSummary> controller;
     final subscriptions = <StreamSubscription<dynamic>>[];
+    final attendanceRecordSubscriptions = <StreamSubscription<dynamic>>[];
+    final newAttendanceDocsByEvent =
+        <String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>{};
     DocumentSnapshot<Map<String, dynamic>>? memberDoc;
     QuerySnapshot<Map<String, dynamic>>? attendanceEventsSnap;
-    QuerySnapshot<Map<String, dynamic>>? newAttendancesSnap;
     QuerySnapshot<Map<String, dynamic>>? legacyEventsSnap;
     QuerySnapshot<Map<String, dynamic>>? legacyAttendancesSnap;
     QuerySnapshot<Map<String, dynamic>>? personasSnap;
+    var attendanceRecordListenersReady = false;
+    var attendanceListenerGeneration = 0;
     var emission = 0;
 
     Future<void> emitIfReady() async {
       if (memberDoc == null ||
           attendanceEventsSnap == null ||
-          newAttendancesSnap == null ||
+          !attendanceRecordListenersReady ||
           legacyEventsSnap == null ||
           legacyAttendancesSnap == null ||
           personasSnap == null) {
@@ -483,7 +487,9 @@ class AttendanceService {
         final summary = _buildMemberAttendanceSummary(
           memberDoc: memberDoc!,
           attendanceEventsSnap: attendanceEventsSnap!,
-          newAttendancesSnap: newAttendancesSnap!,
+          newAttendanceDocs: newAttendanceDocsByEvent.values
+              .expand((docs) => docs)
+              .toList(growable: false),
           legacyEventsSnap: legacyEventsSnap!,
           legacyAttendancesSnap: legacyAttendancesSnap!,
           personasSnap: personasSnap!,
@@ -495,6 +501,44 @@ class AttendanceService {
         if (!controller.isClosed && currentEmission == emission) {
           controller.addError(e, st);
         }
+      }
+    }
+
+    void watchAttendanceRecordsForEvents(
+      QuerySnapshot<Map<String, dynamic>> eventsSnap,
+    ) {
+      attendanceListenerGeneration++;
+      final generation = attendanceListenerGeneration;
+      for (final subscription in attendanceRecordSubscriptions) {
+        unawaited(subscription.cancel());
+      }
+      attendanceRecordSubscriptions.clear();
+      newAttendanceDocsByEvent.clear();
+      attendanceRecordListenersReady = false;
+
+      final pendingEventIds = eventsSnap.docs.map((doc) => doc.id).toSet();
+      if (pendingEventIds.isEmpty) {
+        attendanceRecordListenersReady = true;
+        unawaited(emitIfReady());
+        return;
+      }
+
+      for (final eventDoc in eventsSnap.docs) {
+        final eventId = eventDoc.id;
+        final subscription = eventDoc.reference
+            .collection('asistencias')
+            .where('personaId', isEqualTo: memberId)
+            .snapshots()
+            .listen((snap) {
+              if (generation != attendanceListenerGeneration) return;
+              newAttendanceDocsByEvent[eventId] = snap.docs;
+              pendingEventIds.remove(eventId);
+              if (pendingEventIds.isEmpty) {
+                attendanceRecordListenersReady = true;
+              }
+              emitIfReady();
+            }, onError: controller.addError);
+        attendanceRecordSubscriptions.add(subscription);
       }
     }
 
@@ -511,18 +555,9 @@ class AttendanceService {
         subscriptions.add(
           _firestore.collection('attendance_events').snapshots().listen((snap) {
             attendanceEventsSnap = snap;
+            watchAttendanceRecordsForEvents(snap);
             emitIfReady();
           }, onError: controller.addError),
-        );
-        subscriptions.add(
-          _firestore
-              .collectionGroup('asistencias')
-              .where('personaId', isEqualTo: memberId)
-              .snapshots()
-              .listen((snap) {
-                newAttendancesSnap = snap;
-                emitIfReady();
-              }, onError: controller.addError),
         );
         subscriptions.add(
           _firestore.collection('eventos').snapshots().listen((snap) {
@@ -547,7 +582,11 @@ class AttendanceService {
         for (final subscription in subscriptions) {
           await subscription.cancel();
         }
+        for (final subscription in attendanceRecordSubscriptions) {
+          await subscription.cancel();
+        }
         subscriptions.clear();
+        attendanceRecordSubscriptions.clear();
       },
     );
 
@@ -658,7 +697,8 @@ class AttendanceService {
   MemberAttendanceSummary _buildMemberAttendanceSummary({
     required DocumentSnapshot<Map<String, dynamic>> memberDoc,
     required QuerySnapshot<Map<String, dynamic>> attendanceEventsSnap,
-    required QuerySnapshot<Map<String, dynamic>> newAttendancesSnap,
+    required List<QueryDocumentSnapshot<Map<String, dynamic>>>
+    newAttendanceDocs,
     required QuerySnapshot<Map<String, dynamic>> legacyEventsSnap,
     required QuerySnapshot<Map<String, dynamic>> legacyAttendancesSnap,
     required QuerySnapshot<Map<String, dynamic>> personasSnap,
@@ -672,7 +712,7 @@ class AttendanceService {
     return _buildMemberAttendanceSummaryForMember(
       member: member,
       attendanceEventDocs: attendanceEventsSnap.docs,
-      newAttendanceDocs: newAttendancesSnap.docs,
+      newAttendanceDocs: newAttendanceDocs,
       legacyEventDocs: legacyEventsSnap.docs,
       legacyAttendanceDocs: legacyAttendancesSnap.docs,
       personaDocs: personasSnap.docs,
