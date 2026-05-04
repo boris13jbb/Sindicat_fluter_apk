@@ -23,5 +23,29 @@ void main() {
       expect(parsed.employeeNumber, 'W-001');
       expect(parsed.role, UserRole.voter);
     });
+
+    test('reads optional avatar and gender from map', () {
+      final parsed = AppUser.fromMap({
+        'email': 'a@b.com',
+        'role': 'VOTER',
+        'gender': 'female',
+        'avatarMode': 'custom',
+        'avatarUrl': 'https://example.com/a.png',
+      }, 'uid-2');
+
+      expect(parsed.gender, 'female');
+      expect(parsed.avatarMode, 'custom');
+      expect(parsed.avatarUrl, 'https://example.com/a.png');
+    });
+
+    test('reads phoneNumber from map', () {
+      final parsed = AppUser.fromMap({
+        'email': 'a@b.com',
+        'role': 'VOTER',
+        'phoneNumber': '0991234567',
+      }, 'uid-3');
+
+      expect(parsed.phoneNumber, '0991234567');
+    });
   });
 }

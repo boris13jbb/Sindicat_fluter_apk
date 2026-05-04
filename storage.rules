@@ -38,5 +38,15 @@ service firebase.storage {
       allow create, update: if isAdmin() && isCandidateImageUpload();
       allow delete: if isAdmin();
     }
+
+    // Avatar de perfil: solo el UID dueño puede escribir en su carpeta.
+    // Nota: no exigimos contentType (Android/Flutter a veces envían octet-stream o vacío).
+    match /user_avatars/{userId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.auth.uid == userId
+        && (request.resource == null
+          || request.resource.size < 12 * 1024 * 1024);
+    }
   }
 }

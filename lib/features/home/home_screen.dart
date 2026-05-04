@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/models/user.dart';
+import '../../core/models/user_avatar_prefs.dart';
 import '../../core/models/user_role.dart';
 import '../../providers/auth_provider.dart';
+import 'widgets/dashboard_welcome_avatar.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -44,6 +47,7 @@ class HomeScreen extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   _WelcomeCard(
+                                    user: user,
                                     userName: _displayName(user),
                                     roleName: role.displayName,
                                   ),
@@ -342,8 +346,13 @@ class _HeaderActionButton extends StatelessWidget {
 }
 
 class _WelcomeCard extends StatelessWidget {
-  const _WelcomeCard({required this.userName, required this.roleName});
+  const _WelcomeCard({
+    required this.user,
+    required this.userName,
+    required this.roleName,
+  });
 
+  final AppUser? user;
   final String userName;
   final String roleName;
 
@@ -435,16 +444,16 @@ class _WelcomeCard extends StatelessWidget {
                   ),
                 ),
                 if (!compact)
-                  const SizedBox(
+                  SizedBox(
                     width: 210,
                     height: 190,
-                    child: _WelcomeIllustration(),
+                    child: _WelcomeAvatarBlock(user: user),
                   )
                 else
-                  const SizedBox(
+                  SizedBox(
                     width: 118,
                     height: 154,
-                    child: _WelcomeIllustration(compact: true),
+                    child: _WelcomeAvatarBlock(user: user, compact: true),
                   ),
               ],
             ),
@@ -455,14 +464,18 @@ class _WelcomeCard extends StatelessWidget {
   }
 }
 
-class _WelcomeIllustration extends StatelessWidget {
-  const _WelcomeIllustration({this.compact = false});
+class _WelcomeAvatarBlock extends StatelessWidget {
+  const _WelcomeAvatarBlock({required this.user, this.compact = false});
 
+  final AppUser? user;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    final avatarSize = compact ? 92.0 : 148.0;
+
     return Stack(
+      clipBehavior: Clip.none,
       alignment: Alignment.bottomCenter,
       children: [
         Positioned(
@@ -482,21 +495,59 @@ class _WelcomeIllustration extends StatelessWidget {
           ),
         ),
         Positioned(
-          right: compact ? 7 : 22,
-          bottom: compact ? 0 : 2,
-          child: Icon(
-            Icons.account_circle_rounded,
-            size: compact ? 116 : 176,
-            color: HomeScreen._primaryDark,
+          right: compact ? 10 : 24,
+          bottom: compact ? 4 : 6,
+          child: SizedBox(
+            width: avatarSize,
+            height: avatarSize,
+            child: Consumer<AuthProvider>(
+              builder: (_, auth, __) {
+                return Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    DashboardWelcomeAvatar(user: user, size: avatarSize),
+                    if (auth.isLoading)
+                      Positioned.fill(
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.65),
+                            shape: BoxShape.circle,
+                          ),
+                          child: SizedBox(
+                            width: compact ? 28 : 36,
+                            height: compact ? 28 : 36,
+                            child: const CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
         Positioned(
-          right: compact ? 38 : 72,
-          bottom: compact ? 20 : 28,
-          child: Icon(
-            Icons.checkroom_rounded,
-            size: compact ? 58 : 88,
-            color: HomeScreen._primary,
+          right: compact ? 2 : 8,
+          top: compact ? 18 : 14,
+          child: Material(
+            color: Colors.white,
+            elevation: 2,
+            shadowColor: Colors.black26,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: user == null ? null : () => _showDashboardAvatarSheet(context),
+              child: Padding(
+                padding: EdgeInsets.all(compact ? 5 : 7),
+                child: Icon(
+                  Icons.edit_rounded,
+                  size: compact ? 16 : 20,
+                  color: HomeScreen._primary,
+                ),
+              ),
+            ),
           ),
         ),
         Positioned(
@@ -512,6 +563,76 @@ class _WelcomeIllustration extends StatelessWidget {
       ],
     );
   }
+}
+
+Future<void> _showDashboardAvatarSheet(BuildContext context) async {
+  final auth = context.read<AuthProvider>();
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetCtx) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.man_2_outlined),
+              title: const Text('Avatar masculino (por defecto)'),
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                await auth.saveDefaultAvatar(UserAvatarMode.defaultMale);
+                if (context.mounted && auth.errorMessage == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Preferencia de avatar guardada')),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.woman_2_outlined),
+              title: const Text('Avatar femenino (por defecto)'),
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                await auth.saveDefaultAvatar(UserAvatarMode.defaultFemale);
+                if (context.mounted && auth.errorMessage == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Preferencia de avatar guardada')),
+                  );
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_outline_rounded),
+              title: const Text('Avatar neutro (por defecto)'),
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                await auth.saveDefaultAvatar(UserAvatarMode.defaultNeutral);
+                if (context.mounted && auth.errorMessage == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Preferencia de avatar guardada')),
+                  );
+                }
+              },
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Subir imagen desde galería'),
+              onTap: () async {
+                Navigator.pop(sheetCtx);
+                await auth.pickAndUploadCustomAvatar();
+                if (context.mounted && auth.errorMessage == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Avatar actualizado')),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 class _ModuleGrid extends StatelessWidget {

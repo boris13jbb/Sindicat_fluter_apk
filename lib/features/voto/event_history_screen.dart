@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/premium_card.dart';
 import '../../core/models/voto_event.dart';
-import '../../core/widgets/professional_app_bar.dart';
 import '../../services/event_service.dart';
+import '../elections/widgets/voto_premium_chrome.dart';
 
 class EventHistoryScreen extends StatefulWidget {
   const EventHistoryScreen({super.key});
@@ -44,17 +46,25 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Historial de Eventos',
-        onNavigateBack: () => Navigator.pop(context),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: () => _showFilterDialog(context),
+      backgroundColor: AppDesignTokens.background,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          VotoWaveHeader(
+            title: 'Historial',
+            subtitle: 'Auditoría del módulo de voto',
+            onBack: () => Navigator.pop(context),
+            trailing: Padding(
+              padding: const EdgeInsets.only(right: 4, top: 2),
+              child: IconButton(
+                icon: const Icon(Icons.filter_list_rounded, color: Colors.white),
+                tooltip: 'Filtrar por tipo',
+                onPressed: () => _showFilterDialog(context),
+              ),
+            ),
           ),
-        ],
-      ),
-      body: StreamBuilder<List<VotoEvent>>(
+          Expanded(
+            child: StreamBuilder<List<VotoEvent>>(
         stream: _filter == null
             ? _service.getAllEvents()
             : _service.getEventsByEntityType(_filter!),
@@ -129,7 +139,12 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
             );
           }
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(
+              AppDesignTokens.horizontalPadding,
+              12,
+              AppDesignTokens.horizontalPadding,
+              24,
+            ),
             itemCount: events.length,
             itemBuilder: (context, i) {
               final e = events[i];
@@ -137,6 +152,9 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
             },
           );
         },
+      ),
+          ),
+        ],
       ),
     );
   }
@@ -209,90 +227,132 @@ class _EventCard extends StatelessWidget {
 
   final VotoEvent event;
 
+  static const Color _success = Color(0xFF2E7D32);
+  static const Color _failure = Color(0xFFC62828);
+  static const Color _pending = Color(0xFFEF6C00);
+
   @override
   Widget build(BuildContext context) {
     final resultColor = event.result == VotoEventResult.success
-        ? Colors.green
+        ? _success
         : event.result == VotoEventResult.failure
-        ? Colors.red
-        : Colors.orange;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+            ? _failure
+            : _pending;
+
+    return PremiumCard(
+      margin: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 4,
+            height: 56,
+            decoration: BoxDecoration(
+              color: resultColor,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: resultColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppDesignTokens.lavanda.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
                         event.type.shortLabel,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        event.description,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Text(
-                            event.formattedDate,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                          ),
-                          if (event.userName != null &&
-                              event.userName!.isNotEmpty) ...[
-                            const SizedBox(width: 12),
-                            Text(
-                              'Por: ${event.userName}',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      if (event.errorMessage != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Error: ${event.errorMessage}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context).colorScheme.error,
-                          ),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: AppDesignTokens.primaryDark,
                         ),
-                      ],
-                    ],
-                  ),
+                      ),
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  event.description,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppDesignTokens.primaryDark.withValues(alpha: 0.88),
+                        height: 1.35,
+                      ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.schedule_rounded,
+                      size: 15,
+                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.45),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      event.formattedDate,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                AppDesignTokens.primaryDark.withValues(alpha: 0.48),
+                          ),
+                    ),
+                    if (event.userName != null &&
+                        event.userName!.isNotEmpty) ...[
+                      const SizedBox(width: 12),
+                      Icon(
+                        Icons.person_outline_rounded,
+                        size: 15,
+                        color:
+                            AppDesignTokens.primaryDark.withValues(alpha: 0.45),
+                      ),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Text(
+                          event.userName!,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppDesignTokens.primaryDark
+                                    .withValues(alpha: 0.48),
+                              ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (event.errorMessage != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color:
+                          Theme.of(context).colorScheme.errorContainer.withValues(
+                                alpha: 0.45,
+                              ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      event.errorMessage!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.error,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

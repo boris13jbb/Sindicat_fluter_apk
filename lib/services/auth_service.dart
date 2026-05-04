@@ -1,5 +1,9 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../core/models/user.dart' as app;
 import '../core/models/user_role.dart';
 
@@ -257,6 +261,107 @@ class AuthService {
         return 'Contraseña incorrecta';
       default:
         return 'Error de autenticación: $code';
+    }
+  }
+
+  /// Sube una imagen de perfil a `user_avatars/{uid}/profile.jpg` y devuelve la URL pública.
+  Future<String> uploadUserAvatarXFile(XFile file) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) {
+      throw Exception('Sesión no iniciada');
+    }
+    final ref = FirebaseStorage.instance.ref('user_avatars/$uid/profile.jpg');
+    final mime = file.mimeType ?? 'image/jpeg';
+    final meta = SettableMetadata(contentType: mime);
+    final bytes = await file.readAsBytes();
+    if (bytes.isEmpty) throw Exception('Imagen vacía');
+    await ref.putData(bytes, meta);
+    return ref.getDownloadURL();
+  }
+
+  /// Actualiza preferencias de avatar/género del propio usuario (Firestore).
+  Future<void> updateUserAvatarPreferences({
+    required String uid,
+    String? gender,
+    String? avatarMode,
+    String? avatarUrl,
+    bool removeAvatarUrl = false,
+    bool removeGender = false,
+  }) async {
+    final fb = _auth.currentUser;
+    if (fb == null || fb.uid != uid) {
+      throw Exception('Sesión no válida');
+    }
+    final updates = <String, dynamic>{
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+    if (removeGender) {
+      updates['gender'] = FieldValue.delete();
+    } else if (gender != null) {
+      updates['gender'] = gender;
+    }
+    if (avatarMode != null) {
+      updates['avatarMode'] = avatarMode;
+    }
+    if (removeAvatarUrl) {
+      updates['avatarUrl'] = FieldValue.delete();
+    } else if (avatarUrl != null) {
+      updates['avatarUrl'] = avatarUrl;
+    }
+    try {
+      await _firestore.collection(_usersCollection).doc(uid).update(updates);
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          '[AuthService] Firestore permission-denied al actualizar perfil. '
+          'Despliega reglas: firebase deploy --only firestore:rules '
+          '(campos gender, avatarUrl, avatarMode deben estar permitidos).',
+        );
+      }
+      rethrow;
+    }
+    if (_currentUser?.id == uid) {
+      _currentUser = await _getUserFromFirestore(uid);
+    }
+  }
+
+  /// Actualiza nombre y teléfono de contacto del propio usuario (`users/{uid}`).
+  Future<void> updateSelfUserProfile({
+    required String uid,
+    required String displayName,
+    required String phoneNumber,
+  }) async {
+    final fb = _auth.currentUser;
+    if (fb == null || fb.uid != uid) {
+      throw Exception('Sesión no válida');
+    }
+    final trimmedName = displayName.trim();
+    if (trimmedName.isEmpty) {
+      throw Exception('El nombre no puede estar vacío');
+    }
+    final updates = <String, dynamic>{
+      'displayName': trimmedName,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    };
+    final ph = phoneNumber.trim();
+    if (ph.isEmpty) {
+      updates['phoneNumber'] = FieldValue.delete();
+    } else {
+      updates['phoneNumber'] = ph;
+    }
+    try {
+      await _firestore.collection(_usersCollection).doc(uid).update(updates);
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint(
+          '[AuthService] permission-denied al actualizar perfil (displayName/phoneNumber). '
+          'Despliega reglas Firestore.',
+        );
+      }
+      rethrow;
+    }
+    if (_currentUser?.id == uid) {
+      _currentUser = await _getUserFromFirestore(uid);
     }
   }
 }

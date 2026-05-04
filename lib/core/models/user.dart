@@ -11,6 +11,10 @@ class AppUser {
     this.employeeNumber,
     this.memberId,
     this.createdAt,
+    this.gender,
+    this.avatarUrl,
+    this.avatarMode,
+    this.phoneNumber,
   });
 
   final String id;
@@ -20,6 +24,14 @@ class AppUser {
   final String? employeeNumber;
   final String? memberId;
   final int? createdAt;
+  /// `male` | `female` | `neutral` u omitido; usado para avatar por defecto.
+  final String? gender;
+  /// URL de foto personalizada (Storage) cuando [avatarMode] es `custom`.
+  final String? avatarUrl;
+  /// `custom` | `default_male` | `default_female` | `default_neutral`.
+  final String? avatarMode;
+  /// Teléfono de contacto del usuario (Firestore `phoneNumber`), editable por el propio usuario.
+  final String? phoneNumber;
 
   factory AppUser.fromMap(Map<String, dynamic> map, [String? id]) {
     final uid = id ?? map['id'] as String? ?? '';
@@ -31,6 +43,10 @@ class AppUser {
       employeeNumber: map['employeeNumber'] as String?,
       memberId: map['memberId'] as String?,
       createdAt: (map['createdAt'] as num?)?.toInt(),
+      gender: map['gender'] as String?,
+      avatarUrl: map['avatarUrl'] as String?,
+      avatarMode: map['avatarMode'] as String?,
+      phoneNumber: map['phoneNumber'] as String?,
     );
   }
 
@@ -42,6 +58,10 @@ class AppUser {
     String? employeeNumber,
     String? memberId,
     int? createdAt,
+    String? gender,
+    String? avatarUrl,
+    String? avatarMode,
+    String? phoneNumber,
   }) {
     return AppUser(
       id: id ?? this.id,
@@ -51,11 +71,15 @@ class AppUser {
       employeeNumber: employeeNumber ?? this.employeeNumber,
       memberId: memberId ?? this.memberId,
       createdAt: createdAt ?? this.createdAt,
+      gender: gender ?? this.gender,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      avatarMode: avatarMode ?? this.avatarMode,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
     );
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    final map = <String, dynamic>{
       'email': email,
       'displayName': displayName,
       'role': role.value,
@@ -65,5 +89,10 @@ class AppUser {
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
       'isActive': true,
     };
+    if (gender != null) map['gender'] = gender;
+    if (avatarUrl != null) map['avatarUrl'] = avatarUrl;
+    if (avatarMode != null) map['avatarMode'] = avatarMode;
+    if (phoneNumber != null) map['phoneNumber'] = phoneNumber;
+    return map;
   }
 }

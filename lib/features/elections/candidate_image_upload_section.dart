@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../core/design/app_design_tokens.dart';
 import '../../core/models/candidate.dart';
+import 'widgets/voto_premium_chrome.dart';
 
 import 'candidate_image_local_exists_io.dart' if (dart.library.html) 'candidate_image_local_exists_web.dart';
 
@@ -16,6 +18,7 @@ class CandidateImageUploadSection extends StatefulWidget {
     required this.electionId,
     required this.urlController,
     required this.stagedPickNotifier,
+    this.premiumLayout = false,
   });
 
   final String electionId;
@@ -23,6 +26,9 @@ class CandidateImageUploadSection extends StatefulWidget {
 
   /// Foto elegida desde el picker; permanece hasta guardar o limpiar.
   final ValueNotifier<XFile?> stagedPickNotifier;
+
+  /// Bloque de foto tipo mock premium (solo pantalla agregar candidato).
+  final bool premiumLayout;
 
   @override
   State<CandidateImageUploadSection> createState() =>
@@ -142,6 +148,10 @@ class _CandidateImageUploadSectionState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.premiumLayout) {
+      return _buildPremiumPhotoBlock(context);
+    }
+
     final staged = widget.stagedPickNotifier.value;
     final hasUrlText = widget.urlController.text.trim().isNotEmpty;
 
@@ -204,6 +214,103 @@ class _CandidateImageUploadSectionState
                 ),
               ),
           ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPremiumPhotoBlock(BuildContext context) {
+    final staged = widget.stagedPickNotifier.value;
+    final hasUrlText = widget.urlController.text.trim().isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: AppDesignTokens.lavanda.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            onTap: _openSourceSheet,
+            borderRadius: BorderRadius.circular(16),
+            child: SizedBox(
+              height: 136,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.groups_2_rounded,
+                    size: 48,
+                    color: AppDesignTokens.primary.withValues(alpha: 0.88),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Foto del candidato',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: AppDesignTokens.primaryDark,
+                    ),
+                  ),
+                  if (staged != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Archivo seleccionado · se subirá al guardar',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppDesignTokens.primaryDark.withValues(alpha: 0.5),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            TextButton.icon(
+              onPressed: _openSourceSheet,
+              icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
+              label: const Text('Elegir o cambiar foto'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppDesignTokens.primary,
+              ),
+            ),
+            const Spacer(),
+            if (hasUrlText || staged != null)
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                onPressed: _clearImageAndUrl,
+                child: const Text('Quitar'),
+              ),
+          ],
+        ),
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 4),
+            title: Text(
+              'URL manual (opcional)',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: AppDesignTokens.primaryDark.withValues(alpha: 0.65),
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            children: [
+              TextFormField(
+                controller: widget.urlController,
+                decoration: votoPremiumInputDecoration('URL https de la imagen'),
+                keyboardType: TextInputType.url,
+                validator: validateCandidateImageUrl,
+              ),
+            ],
+          ),
         ),
       ],
     );

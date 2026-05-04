@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'core/widgets/system_navigation_insets.dart';
+import 'core/widgets/startup_loading_screen.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
+import 'core/app_scaffold_messenger.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'features/auth/login_screen.dart';
@@ -60,6 +63,9 @@ Future<void> _initializeFirebase() async {
     );
   }
 
+  // App Check: sin proveedor, Storage/Firestore con "refuerzo" activo devuelven 403.
+  await _activateAppCheckForMobile();
+
   // Configuración de Firestore: solo activamos persistencia fuera de la Web
   // o de forma controlada para evitar el timeout del arranque.
   if (!kIsWeb) {
@@ -79,6 +85,32 @@ Future<void> _initializeFirebase() async {
   }
 
   debugPrint('✅ Firebase inicializado correctamente');
+}
+
+/// Activa App Check en Android/iOS. En `flutter run` (debug) usa el proveedor
+/// de depuración: registra el token que aparezca en logcat en Firebase Console
+/// > App Check > tu app > Gestionar tokens de depuración, o desactiva el
+/// refuerzo de App Check para Storage mientras desarrollas.
+Future<void> _activateAppCheckForMobile() async {
+  if (kIsWeb) return;
+  final mobile = defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+  if (!mobile) return;
+
+  try {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider:
+          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+      appleProvider:
+          kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
+    );
+    debugPrint(
+      '✅ App Check activo (${kDebugMode ? "modo depuración: registra el token en la consola Firebase si Storage devuelve 403" : "Play Integrity / App Attest"})',
+    );
+  } catch (e, st) {
+    debugPrint('⚠️ App Check no se pudo activar: $e');
+    debugPrint('$st');
+  }
 }
 
 Widget _authGuard(Widget child) => _RouteGuard(child: child);
@@ -133,7 +165,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
                 child: child,
               );
             },
-            home: const _StartupLoadingScreen(),
+            home: const StartupLoadingScreen(),
           );
         }
 
@@ -158,26 +190,6 @@ class _AppBootstrapState extends State<AppBootstrap> {
 
         return widget.readyApp ?? const MyApp();
       },
-    );
-  }
-}
-
-class _StartupLoadingScreen extends StatelessWidget {
-  const _StartupLoadingScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Inicializando servicios...'),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -253,6 +265,7 @@ class MyApp extends StatelessWidget {
         title: 'Sistema Integrado Sindicato',
         debugShowCheckedModeBanner: false,
         theme: appTheme,
+        scaffoldMessengerKey: appScaffoldMessengerKey,
         builder: (context, child) {
           if (child == null) return const SizedBox.shrink();
           return MediaQuery(

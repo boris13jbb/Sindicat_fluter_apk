@@ -9,7 +9,9 @@ import '../../providers/auth_provider.dart';
 import '../../services/election_service.dart';
 import '../../services/candidate_photo_storage_service.dart';
 import '../../services/asistencia_service.dart';
-import '../../core/widgets/professional_app_bar.dart';
+import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/premium_card.dart';
+import 'widgets/voto_premium_chrome.dart';
 import 'candidate_image_upload_section.dart';
 
 class EditElectionScreen extends StatefulWidget {
@@ -111,233 +113,482 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
     });
   }
 
+  String _formatDateTimeHuman(DateTime? d) {
+    if (d == null) return 'Seleccionar';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} '
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _premiumSwitchTile({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppDesignTokens.lavanda.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppDesignTokens.primary.withValues(alpha: 0.1),
+        ),
+      ),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: AppDesignTokens.primaryDark,
+            fontSize: 15,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            fontSize: 12,
+            color: AppDesignTokens.primaryDark.withValues(alpha: 0.55),
+            height: 1.25,
+          ),
+        ),
+        value: value,
+        onChanged: onChanged,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().user;
+    final role = user?.role ?? UserRole.voter;
     final isAdmin =
         user?.role == UserRole.admin || user?.role == UserRole.superadmin;
+    final mq = MediaQuery.of(context);
+    final scrollBottomPad =
+        24 + mq.viewPadding.bottom + mq.viewInsets.bottom + 80;
+
     if (!isAdmin) {
-      return const Scaffold(body: Center(child: Text('Acceso denegado')));
+      return Scaffold(
+        backgroundColor: AppDesignTokens.background,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            VotoWaveHeader(
+              title: 'Editar elección',
+              subtitle: 'Acceso restringido',
+              onBack: () => Navigator.pop(context),
+            ),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+                  child: PremiumCard(
+                    margin: EdgeInsets.zero,
+                    child: Text(
+                      'Acceso denegado',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: AppDesignTokens.primaryDark,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     if (_fetching) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: AppDesignTokens.background,
+        bottomNavigationBar: VotoModuleBottomNavigation(role: role),
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            VotoWaveHeader(
+              title: 'Editar elección',
+              subtitle: 'Cargando datos…',
+              onBack: () => Navigator.pop(context),
+            ),
+            const Expanded(
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ],
+        ),
+      );
     }
 
-    final mq = MediaQuery.of(context);
-    final scrollBottomPad =
-        24 + mq.viewPadding.bottom + mq.viewInsets.bottom;
+    final electionTitle = _election?.title.trim() ?? '';
+    final headerSubtitle =
+        electionTitle.isEmpty ? 'Datos y candidatos' : electionTitle;
 
     return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Editar Elección',
-        onNavigateBack: () => Navigator.pop(context),
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(16, 16, 16, scrollBottomPad),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: 'Título de la Elección *',
-                  prefixIcon: Icon(Icons.title),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+      backgroundColor: AppDesignTokens.background,
+      bottomNavigationBar: VotoModuleBottomNavigation(role: role),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          VotoWaveHeader(
+            title: 'Editar elección',
+            subtitle: headerSubtitle,
+            onBack: () => Navigator.pop(context),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                AppDesignTokens.horizontalPadding,
+                14,
+                AppDesignTokens.horizontalPadding,
+                scrollBottomPad,
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(
-                  labelText: 'Descripción *',
-                  prefixIcon: Icon(Icons.description),
-                ),
-                maxLines: 3,
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Requerido' : null,
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                title: Text(
-                  _startDate == null
-                      ? 'Fecha Inicio'
-                      : 'Inicio: ${_startDate.toString().substring(0, 16)}',
-                ),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () => _pickDate(true),
-              ),
-              ListTile(
-                title: Text(
-                  _endDate == null
-                      ? 'Fecha Fin'
-                      : 'Fin: ${_endDate.toString().substring(0, 16)}',
-                ),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () => _pickDate(false),
-              ),
-              SwitchListTile(
-                title: const Text('Elección Activa'),
-                subtitle: const Text('Permite recibir votos si está en fecha'),
-                value: _isActive,
-                onChanged: (v) => setState(() => _isActive = v),
-              ),
-              SwitchListTile(
-                title: const Text('Visible para Votantes'),
-                value: _isVisibleToVoters,
-                onChanged: (v) => setState(() => _isVisibleToVoters = v),
-              ),
-              SwitchListTile(
-                title: const Text('Mostrar resultados automáticamente'),
-                subtitle: const Text(
-                  'Al finalizar, los votantes pueden ver resultados',
-                ),
-                value: _showResultsAutomatically,
-                onChanged: (v) => setState(() => _showResultsAutomatically = v),
-              ),
-              SwitchListTile(
-                title: const Text('Requerir asistencia'),
-                subtitle: const Text(
-                  'Solo quienes figuren en el evento podrán votar',
-                ),
-                value: _requireAttendance,
-                onChanged: (v) => setState(() {
-                  _requireAttendance = v;
-                  if (!v) _eventoAsistenciaId = null;
-                }),
-              ),
-              if (_requireAttendance) ...[
-                const SizedBox(height: 8),
-                StreamBuilder<List<EventoAsistenciaVinculoEleccion>>(
-                  stream: _eventosVinculoStream,
-                  builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting &&
-                        !snap.hasData) {
-                      return const CircularProgressIndicator();
-                    }
-                    final eventos = snap.data ?? [];
-                    // Validate that _eventoAsistenciaId exists in the events list
-                    final isValidValue =
-                        _eventoAsistenciaId == null ||
-                        eventos.any((e) => e.id == _eventoAsistenciaId);
-
-                    return DropdownButtonFormField<String?>(
-                      isExpanded: true,
-                      initialValue: isValidValue ? _eventoAsistenciaId : null,
-                      decoration: const InputDecoration(
-                        labelText: 'Evento de asistencia',
-                        border: OutlineInputBorder(),
-                      ),
-                      items: [
-                        const DropdownMenuItem(
-                          value: null,
-                          child: Text(
-                            'Seleccionar evento',
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    PremiumCard(
+                      margin: EdgeInsets.zero,
+                      padding: const EdgeInsets.fromLTRB(18, 20, 18, 22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Datos principales',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppDesignTokens.primaryDark,
+                                ),
                           ),
-                        ),
-                        ...eventos.map(
-                          (e) => DropdownMenuItem(
-                            value: e.id,
-                            child: Text(
-                              '${e.nombre} (${_formatEventDateTime(e.fechaInicioMs)}'
-                              ' – ${_formatEventDateTime(e.fechaFinMs)})'
-                              '${e.esLegacy ? ' · histórico' : ''}',
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _titleController,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: votoPremiumInputDecoration(
+                              'Título de la elección *',
+                            ),
+                            validator: (v) =>
+                                (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _descriptionController,
+                            decoration: votoPremiumInputDecoration('Descripción *'),
+                            maxLines: 3,
+                            validator: (v) =>
+                                (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                          ),
+                          const SizedBox(height: 12),
+                          InkWell(
+                            onTap: () => _pickDate(true),
+                            borderRadius: BorderRadius.circular(14),
+                            child: InputDecorator(
+                              decoration: votoPremiumInputDecoration('Fecha inicio'),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _formatDateTimeHuman(_startDate),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: AppDesignTokens.primaryDark,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.event_rounded,
+                                    color: AppDesignTokens.primaryDark
+                                        .withValues(alpha: 0.45),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                      onChanged: (v) => setState(() => _eventoAsistenciaId = v),
-                    );
-                  },
+                          const SizedBox(height: 12),
+                          InkWell(
+                            onTap: () => _pickDate(false),
+                            borderRadius: BorderRadius.circular(14),
+                            child: InputDecorator(
+                              decoration: votoPremiumInputDecoration('Fecha fin'),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _formatDateTimeHuman(_endDate),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: AppDesignTokens.primaryDark,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.event_rounded,
+                                    color: AppDesignTokens.primaryDark
+                                        .withValues(alpha: 0.45),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    PremiumCard(
+                      margin: EdgeInsets.zero,
+                      padding: const EdgeInsets.fromLTRB(18, 20, 18, 22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Reglas y visibilidad',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppDesignTokens.primaryDark,
+                                ),
+                          ),
+                          const SizedBox(height: 10),
+                          _premiumSwitchTile(
+                            title: 'Elección activa',
+                            subtitle:
+                                'Permite recibir votos cuando corresponda por fechas y estado.',
+                            value: _isActive,
+                            onChanged: (v) => setState(() => _isActive = v),
+                          ),
+                          _premiumSwitchTile(
+                            title: 'Visible para votantes',
+                            subtitle: 'Si está desactivada, no aparece en el listado público.',
+                            value: _isVisibleToVoters,
+                            onChanged: (v) => setState(() => _isVisibleToVoters = v),
+                          ),
+                          _premiumSwitchTile(
+                            title: 'Mostrar resultados automáticamente',
+                            subtitle:
+                                'Al finalizar, los votantes pueden consultar estadísticas cuando las reglas lo permitan.',
+                            value: _showResultsAutomatically,
+                            onChanged: (v) =>
+                                setState(() => _showResultsAutomatically = v),
+                          ),
+                          _premiumSwitchTile(
+                            title: 'Requiere asistencia habilitante',
+                            subtitle:
+                                'Solo quienes figuren en el evento podrán votar.',
+                            value: _requireAttendance,
+                            onChanged: (v) => setState(() {
+                              _requireAttendance = v;
+                              if (!v) _eventoAsistenciaId = null;
+                            }),
+                          ),
+                          if (_requireAttendance) ...[
+                            const SizedBox(height: 6),
+                            StreamBuilder<List<EventoAsistenciaVinculoEleccion>>(
+                              stream: _eventosVinculoStream,
+                              builder: (context, snap) {
+                                if (snap.connectionState == ConnectionState.waiting &&
+                                    !snap.hasData) {
+                                  return const Padding(
+                                    padding: EdgeInsets.all(24),
+                                    child: Center(child: CircularProgressIndicator()),
+                                  );
+                                }
+                                final eventos = snap.data ?? [];
+                                final isValidValue =
+                                    _eventoAsistenciaId == null ||
+                                    eventos.any((e) => e.id == _eventoAsistenciaId);
+
+                                return DropdownButtonFormField<String?>(
+                                  isExpanded: true,
+                                  initialValue:
+                                      isValidValue ? _eventoAsistenciaId : null,
+                                  decoration:
+                                      votoPremiumInputDecoration(
+                                    'Evento de asistencia vinculado',
+                                  ),
+                                  items: [
+                                    const DropdownMenuItem<String?>(
+                                      value: null,
+                                      child: Text(
+                                        'Seleccionar evento',
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                    ),
+                                    ...eventos.map(
+                                      (e) => DropdownMenuItem<String?>(
+                                        value: e.id,
+                                        child: Text(
+                                          '${e.nombre} (${_formatEventDateTime(e.fechaInicioMs)}'
+                                          ' – ${_formatEventDateTime(e.fechaFinMs)})'
+                                          '${e.esLegacy ? ' · histórico' : ''}',
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 1,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  onChanged: (v) =>
+                                      setState(() => _eventoAsistenciaId = v),
+                                );
+                              },
+                            ),
+                          ],
+                          const Divider(height: 32),
+                          Text(
+                            'Candidatos',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppDesignTokens.primaryDark,
+                                ),
+                          ),
+                          const SizedBox(height: 10),
+                          StreamBuilder<List<Candidate>>(
+                            stream: _electionService.getCandidates(widget.electionId),
+                            initialData: _initialCandidates,
+                            builder: (context, snap) {
+                              if (snap.connectionState == ConnectionState.waiting &&
+                                  !snap.hasData) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: Center(child: CircularProgressIndicator()),
+                                );
+                              }
+
+                              if (snap.hasError) {
+                                return Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Text(
+                                    'Error al cargar candidatos: ${snap.error}',
+                                    style: TextStyle(
+                                      color: Theme.of(context).colorScheme.error,
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              final candidates = snap.data ?? [];
+
+                              if (candidates.isEmpty) {
+                                return Column(
+                                  children: [
+                                    Icon(
+                                      Icons.groups_2_outlined,
+                                      size: 44,
+                                      color: AppDesignTokens.primary
+                                          .withValues(alpha: 0.35),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'No hay candidatos registrados.',
+                                      style: AppDesignTokens.bodyMuted(context),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    OutlinedButton.icon(
+                                      onPressed: () => Navigator.pushNamed(
+                                        context,
+                                        '/voto/add_candidate',
+                                        arguments: widget.electionId,
+                                      ),
+                                      icon: const Icon(Icons.person_add_rounded),
+                                      label: const Text('Agregar candidato'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppDesignTokens.primary,
+                                        side: BorderSide(
+                                          color: AppDesignTokens.primary
+                                              .withValues(alpha: 0.55),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 18,
+                                          vertical: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }
+
+                              return Column(
+                                children: [
+                                  ...candidates.map(
+                                    (c) => _CandidateEditTile(
+                                      candidate: c,
+                                      onEdit: () =>
+                                          _showEditCandidateDialog(context, c),
+                                      onDelete: () =>
+                                          _confirmDeleteCandidate(context, c),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: () => Navigator.pushNamed(
+                                      context,
+                                      '/voto/add_candidate',
+                                      arguments: widget.electionId,
+                                    ),
+                                    icon: const Icon(Icons.person_add_rounded),
+                                    label: const Text('Agregar candidato'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppDesignTokens.primary,
+                                      side: BorderSide(
+                                        color: AppDesignTokens.primary
+                                            .withValues(alpha: 0.55),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 18,
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 22),
+                          if (_loading)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: CircularProgressIndicator(),
+                              ),
+                            )
+                          else
+                            FilledButton(
+                              onPressed: _handleUpdate,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppDesignTokens.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Guardar cambios',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-              const SizedBox(height: 16),
-              Text(
-                'Candidatos',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
-              const SizedBox(height: 8),
-              StreamBuilder<List<Candidate>>(
-                stream: _electionService.getCandidates(widget.electionId),
-                initialData: _initialCandidates,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting &&
-                      !snap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (snap.hasError) {
-                    return Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        'Error al cargar candidatos: ${snap.error}',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    );
-                  }
-
-                  final candidates = snap.data ?? [];
-
-                  if (candidates.isEmpty) {
-                    return Column(
-                      children: [
-                        const Icon(
-                          Icons.info_outline,
-                          size: 48,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text('No hay candidatos registrados'),
-                        const SizedBox(height: 16),
-                      ],
-                    );
-                  }
-
-                  return Column(
-                    children: [
-                      ...candidates.map(
-                        (c) => _CandidateEditTile(
-                          candidate: c,
-                          onEdit: () => _showEditCandidateDialog(context, c),
-                          onDelete: () => _confirmDeleteCandidate(context, c),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      OutlinedButton.icon(
-                        onPressed: () => Navigator.pushNamed(
-                          context,
-                          '/voto/add_candidate',
-                          arguments: widget.electionId,
-                        ),
-                        icon: const Icon(Icons.person_add),
-                        label: const Text('Agregar Candidato'),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              if (_loading)
-                const Center(child: CircularProgressIndicator())
-              else
-                FilledButton(
-                  onPressed: _handleUpdate,
-                  child: const Text('Guardar Cambios'),
-                ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -665,28 +916,44 @@ class _CandidateEditTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+    return PremiumCard(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: EdgeInsets.zero,
       child: ListTile(
-        title: Text(candidate.name),
+        title: Text(
+          candidate.name,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            color: AppDesignTokens.primaryDark,
+          ),
+        ),
         subtitle:
             candidate.description != null && candidate.description!.isNotEmpty
-            ? Text(
-                candidate.description!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              )
-            : null,
+                ? Text(
+                    candidate.description!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.55),
+                    ),
+                  )
+                : null,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(icon: const Icon(Icons.edit), onPressed: onEdit),
+            IconButton(
+              icon: const Icon(Icons.edit_rounded),
+              color: AppDesignTokens.primary,
+              onPressed: onEdit,
+              tooltip: 'Editar',
+            ),
             IconButton(
               icon: Icon(
-                Icons.delete,
+                Icons.delete_outline_rounded,
                 color: Theme.of(context).colorScheme.error,
               ),
               onPressed: onDelete,
+              tooltip: 'Eliminar',
             ),
           ],
         ),

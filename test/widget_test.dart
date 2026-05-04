@@ -11,8 +11,12 @@ void main() {
     await tester.pump();
 
     expect(find.text('Sistema Integrado Sindicato'), findsOneWidget);
-    expect(find.text('Inicia sesión para continuar'), findsOneWidget);
-    expect(find.text('Iniciar Sesión'), findsOneWidget);
+    expect(find.text('Iniciar sesión'), findsOneWidget);
+    expect(
+      find.text('Accede de forma segura a tu panel sindical.'),
+      findsOneWidget,
+    );
+    expect(find.text('Ingresar al sistema'), findsOneWidget);
   });
 
   testWidgets('shows Firebase init error and retries successfully', (

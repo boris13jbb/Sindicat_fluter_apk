@@ -170,6 +170,7 @@ service cloud.firestore {
     // ==================== USUARIOS ====================
     
     match /users/{userId} {
+      // Tras cambiar reglas: desplegar con `firebase deploy --only firestore:rules`
       // Leer: usuario autenticado puede leer su propio documento
       allow read: if isOwner(userId);
       
@@ -184,6 +185,10 @@ service cloud.firestore {
           'createdAt',
           'updatedAt',
           'isActive',
+          'gender',
+          'avatarUrl',
+          'avatarMode',
+          'phoneNumber',
         ])
         && request.resource.data.keys().hasAll(['email', 'role'])
         && request.resource.data.email is string
@@ -194,6 +199,18 @@ service cloud.firestore {
         && (!('employeeNumber' in request.resource.data) ||
           request.resource.data.employeeNumber == null ||
           request.resource.data.employeeNumber is string)
+        && (!('gender' in request.resource.data) ||
+          request.resource.data.gender == null ||
+          request.resource.data.gender is string)
+        && (!('avatarUrl' in request.resource.data) ||
+          request.resource.data.avatarUrl == null ||
+          request.resource.data.avatarUrl is string)
+        && (!('avatarMode' in request.resource.data) ||
+          request.resource.data.avatarMode == null ||
+          request.resource.data.avatarMode is string)
+        && (!('phoneNumber' in request.resource.data) ||
+          request.resource.data.phoneNumber == null ||
+          request.resource.data.phoneNumber is string)
         && validOptionalUserMemberId();
       
       // Actualizar: superadmin puede actualizar cualquier usuario, o el usuario puede actualizar su propio perfil
@@ -207,6 +224,10 @@ service cloud.firestore {
           'employeeNumber',
           'memberId',
           'updatedAt',
+          'gender',
+          'avatarUrl',
+          'avatarMode',
+          'phoneNumber',
         ])
         && validMemberIdBackfill()
       );

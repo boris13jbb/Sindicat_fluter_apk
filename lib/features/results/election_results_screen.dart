@@ -1,18 +1,21 @@
 import 'dart:async';
-
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/models/election.dart';
 import '../../core/models/candidate.dart';
 import '../../core/models/user_role.dart';
 import '../../core/security/election_visibility.dart';
+import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/premium_card.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/election_service.dart';
-import '../../core/widgets/professional_app_bar.dart';
+import '../../services/members_service.dart';
 import '../../core/reports/election_report_generator.dart';
+import '../elections/widgets/voto_premium_chrome.dart';
 
 class ElectionResultsScreen extends StatefulWidget {
   const ElectionResultsScreen({super.key, required this.electionId});
@@ -26,6 +29,8 @@ class ElectionResultsScreen extends StatefulWidget {
 class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
   late ElectionService _electionService;
   late Future<ResultsBootstrap> _bootstrap;
+  final MembersService _membersService = MembersService();
+  late final Future<int> _activeMembersCountFuture;
 
   static const Duration _bootstrapTimeout = Duration(seconds: 30);
 
@@ -34,6 +39,16 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
     super.initState();
     _electionService = ElectionService();
     _bootstrap = _loadBootstrap();
+    _activeMembersCountFuture = _loadActiveMemberCount();
+  }
+
+  Future<int> _loadActiveMemberCount() async {
+    try {
+      final list = await _membersService.getActiveMembers().first;
+      return list.isEmpty ? 1 : list.length;
+    } catch (_) {
+      return 1;
+    }
   }
 
   Future<ResultsBootstrap> _loadBootstrap() {
@@ -54,29 +69,65 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
     });
   }
 
+  void _showExportReportSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf_rounded),
+                title: const Text('Exportar PDF'),
+                subtitle: const Text(
+                  'Se abrirá el menú del sistema para guardar o compartir',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _handleExport(context, 'pdf');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_chart_rounded),
+                title: const Text('Exportar CSV'),
+                subtitle: const Text(
+                  'Se abrirá el menú del sistema para guardar o compartir',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _handleExport(context, 'csv');
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final userRole = context.watch<AuthProvider>().user?.role;
     final isAdmin =
         userRole == UserRole.admin || userRole == UserRole.superadmin;
     return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Resultados en Tiempo Real',
-        onNavigateBack: () => Navigator.pop(context),
-        actions: isAdmin
-            ? [
-                IconButton(
-                  icon: const Icon(Icons.history),
-                  tooltip: 'Historial de eventos',
-                  onPressed: () =>
-                      Navigator.pushNamed(context, '/voto/event_history'),
-                ),
-              ]
-            : null,
-      ),
+      backgroundColor: AppDesignTokens.background,
       body: FutureBuilder<ResultsBootstrap>(
         future: _bootstrap,
         builder: (context, bootSnap) {
+          final subtitle = bootSnap.connectionState == ConnectionState.waiting &&
+                  !bootSnap.hasData
+              ? 'Cargando…'
+              : (bootSnap.hasData &&
+                      (bootSnap.data!.election?.title.trim().isNotEmpty == true))
+                  ? bootSnap.data!.election!.title.trim()
+                  : 'Resultados electorales';
+
+          Widget inner() {
           if (bootSnap.hasError) {
             return _LoadError(
               message: '${bootSnap.error}',
@@ -112,34 +163,32 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
           final boot = bootSnap.data!;
           if (boot.election == null) {
             return Center(
-              child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(40),
+              child: Padding(
+                padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+                child: PremiumCard(
+                  margin: EdgeInsets.zero,
+                  padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        Icons.event_busy,
-                        size: 64,
-                        color: Theme.of(context).colorScheme.primary,
+                        Icons.event_busy_rounded,
+                        size: 56,
+                        color: AppDesignTokens.primary.withValues(alpha: 0.55),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                       Text(
-                        'Elección No Encontrada',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        'Elección no encontrada',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: AppDesignTokens.primaryDark,
+                            ),
+                        textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'La elección que buscas no existe o ha sido eliminada.\nVerifica el ID e inténtalo nuevamente.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                        'La elección no existe o fue eliminada.\nVerifica el enlace o vuelve al listado.',
+                        style: AppDesignTokens.bodyMuted(context),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -205,128 +254,80 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
                     children: [
                       Expanded(
                         child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.fromLTRB(
+                            AppDesignTokens.horizontalPadding,
+                            12,
+                            AppDesignTokens.horizontalPadding,
+                            16,
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               if (syncing) const _SyncRibbon(),
                               if (syncing) const SizedBox(height: 12),
-                              _HeaderCard(
-                                election: election,
-                                totalVotes: totalVotes,
-                                candidatesCount: sortedCandidates.length,
+                              FutureBuilder<int>(
+                                future: _activeMembersCountFuture,
+                                builder: (context, membersSnap) {
+                                  final members = math.max(
+                                    1,
+                                    membersSnap.data ?? 1,
+                                  );
+                                  final participationPct = totalVotes == 0
+                                      ? 0
+                                      : math.min(
+                                          100,
+                                          (100 * totalVotes / members).round(),
+                                        );
+                                  return _ResultsKpiRow(
+                                    totalVotes: totalVotes,
+                                    participationPct: participationPct,
+                                    candidatesCount: sortedCandidates.length,
+                                  );
+                                },
                               ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 18),
                               if (sortedCandidates.isEmpty)
                                 const _EmptyResultsCard()
                               else
-                                ...sortedCandidates.asMap().entries.map((
-                                  entry,
-                                ) {
-                                  final index = entry.key;
-                                  final candidate = entry.value;
-                                  return _ResultTile(
-                                    candidate: candidate,
-                                    rank: index + 1,
-                                    totalVotes: totalVotes,
-                                  );
-                                }),
+                                _LiveResultsSection(
+                                  candidates: sortedCandidates,
+                                  totalVotes: totalVotes,
+                                ),
+                              const SizedBox(height: 14),
+                              const _ObservacionesCard(),
                             ],
                           ),
                         ),
                       ),
-                      // Botones de exportación (solo admin)
+                      // Exportación (solo admin) — mismo lenguaje visual que el resto del módulo
                       if (isAdmin)
                         SafeArea(
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surface,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.05),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, -2),
-                                ),
-                              ],
+                          minimum: const EdgeInsets.fromLTRB(0, 10, 0, 14),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppDesignTokens.horizontalPadding,
                             ),
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                if (constraints.maxWidth < 400) {
-                                  // Diseño vertical para pantallas pequeñas
-                                  return Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: OutlinedButton.icon(
-                                          onPressed: () =>
-                                              _handleExport(context, 'csv'),
-                                          icon: const Icon(Icons.table_chart),
-                                          label: const Text('Descargar CSV'),
-                                          style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 16,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: FilledButton.icon(
-                                          onPressed: () =>
-                                              _handleExport(context, 'pdf'),
-                                          icon: const Icon(
-                                            Icons.picture_as_pdf,
-                                          ),
-                                          label: const Text('Descargar PDF'),
-                                          style: FilledButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 16,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                } else {
-                                  // Diseño horizontal para pantallas medianas/grandes
-                                  return Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          onPressed: () =>
-                                              _handleExport(context, 'csv'),
-                                          icon: const Icon(Icons.table_chart),
-                                          label: const Text('Descargar CSV'),
-                                          style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 12,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: FilledButton.icon(
-                                          onPressed: () =>
-                                              _handleExport(context, 'pdf'),
-                                          icon: const Icon(
-                                            Icons.picture_as_pdf,
-                                          ),
-                                          label: const Text('Descargar PDF'),
-                                          style: FilledButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 12,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                }
-                              },
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: FilledButton(
+                                onPressed: () =>
+                                    _showExportReportSheet(context),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppDesignTokens.primary,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Exportar reporte',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -335,6 +336,31 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
                 },
               );
             },
+          );
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              VotoWaveHeader(
+                title: 'Resultados',
+                subtitle: subtitle,
+                onBack: () => Navigator.pop(context),
+                trailing: isAdmin
+                    ? Padding(
+                        padding: const EdgeInsets.only(right: 4, top: 2),
+                        child: IconButton(
+                          icon: const Icon(Icons.history_rounded,
+                              color: Colors.white),
+                          tooltip: 'Historial de eventos',
+                          onPressed: () =>
+                              Navigator.pushNamed(context, '/voto/event_history'),
+                        ),
+                      )
+                    : null,
+              ),
+              Expanded(child: inner()),
+            ],
           );
         },
       ),
@@ -445,50 +471,69 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
 
       if (!context.mounted) return;
 
-      debugPrint('$type generado correctamente, abriendo visor...');
+      debugPrint('$type generado correctamente, abriendo panel de compartir...');
 
       // Cerrar loading inmediatamente
       Navigator.of(context).pop();
 
-      // Mostrar resultado
+      final safeTitle = electionTitle
+          .replaceAll(RegExp(r'[<>:"/\\|?*\n\r]'), '_')
+          .replaceAll(RegExp(r'\s+'), '_')
+          .trim();
+      final nameBase =
+          safeTitle.isEmpty ? 'resultados' : 'resultados_$safeTitle';
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+
       if (type == 'pdf') {
-        await Printing.sharePdf(
-          bytes: pdfBytes!,
-          filename:
-              'resultados_${electionTitle.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        final fileName = '${nameBase}_$stamp.pdf';
+        await Share.shareXFiles(
+          [
+            XFile.fromData(
+              pdfBytes!,
+              name: fileName,
+              mimeType: 'application/pdf',
+            ),
+          ],
+          subject: 'Resultados: $electionTitle',
+          text: 'Reporte PDF de resultados de la votación.',
         );
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle_outline, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text('✅ PDF generado'),
-                ],
+              content: Text(
+                'Usa el panel que se abrió para guardar el PDF, enviarlo por '
+                'correo o subirlo a la nube.',
               ),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
+              duration: Duration(seconds: 4),
             ),
           );
         }
       } else if (type == 'csv') {
-        await Clipboard.setData(ClipboardData(text: csv!));
-        debugPrint('CSV copiado al portapapeles');
+        final fileName = '${nameBase}_$stamp.csv';
+        final csvWithBom = '\uFEFF$csv';
+        await Share.shareXFiles(
+          [
+            XFile.fromData(
+              Uint8List.fromList(utf8.encode(csvWithBom)),
+              name: fileName,
+              mimeType: 'text/csv',
+            ),
+          ],
+          subject: 'Resultados CSV: $electionTitle',
+          text: 'Exportación CSV de resultados de la votación.',
+        );
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle_outline, color: Colors.white),
-                  SizedBox(width: 12),
-                  Text('✅ CSV copiado'),
-                ],
+              content: Text(
+                'Usa el panel que se abrió para guardar el CSV, compartirlo o '
+                'abrirlo en Excel / Hojas de cálculo.',
               ),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
+              duration: Duration(seconds: 4),
             ),
           );
         }
@@ -518,7 +563,9 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
           builder: (context) => AlertDialog(
             title: Text('Exportar resultados $label'),
             content: const Text(
-              'Se generará una exportación con conteos de votación. Verifica que la elección correcta esté seleccionada antes de compartir el archivo o copiar el contenido.',
+              'Se generará el archivo y se abrirá el menú de tu dispositivo '
+              '(Guardar, Compartir, Enviar por correo, etc.). Comprueba que '
+              'sea la elección correcta antes de compartir.',
             ),
             actions: [
               TextButton(
@@ -551,52 +598,51 @@ class _LoadError extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Card(
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.cloud_off_outlined,
-                  size: 64,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  'Error de Conexión',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                FilledButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Reintentar Conexión'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
+        padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+        child: PremiumCard(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.fromLTRB(24, 32, 24, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.cloud_off_rounded,
+                size: 56,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Error de conexión',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: AppDesignTokens.primaryDark,
                     ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: AppDesignTokens.bodyMuted(context),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Reintentar'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppDesignTokens.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -604,172 +650,255 @@ class _LoadError extends StatelessWidget {
   }
 }
 
-class _HeaderCard extends StatelessWidget {
-  const _HeaderCard({
-    required this.election,
+class _ResultsKpiRow extends StatelessWidget {
+  const _ResultsKpiRow({
     required this.totalVotes,
+    required this.participationPct,
     required this.candidatesCount,
   });
 
-  final Election election;
   final int totalVotes;
+  final int participationPct;
   final int candidatesCount;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      color: Theme.of(context).colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            Text(
-              election.title,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _StatItem(
-                  label: 'Total Votos',
-                  value: '$totalVotes',
-                  icon: Icons.how_to_vote,
-                ),
-                _StatItem(
-                  label: 'Candidatos',
-                  value: '$candidatesCount',
-                  icon: Icons.people,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatItem extends StatelessWidget {
-  const _StatItem({
-    required this.label,
-    required this.value,
-    required this.icon,
-  });
-  final String label;
-  final String value;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
+    return Row(
       children: [
-        Icon(icon, size: 28, color: Theme.of(context).colorScheme.primary),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        Expanded(
+          child: _KpiMiniCard(
+            value: '$totalVotes',
+            label: 'Votos',
+            valueColor: AppDesignTokens.primaryDark,
+          ),
         ),
-        Text(label, style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _KpiMiniCard(
+            value: '$participationPct%',
+            label: 'Participación',
+            valueColor: Colors.green.shade700,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _KpiMiniCard(
+            value: '$candidatesCount',
+            label: 'Candidatos',
+            valueColor: Colors.blue.shade700,
+          ),
+        ),
       ],
     );
   }
 }
 
-class _ResultTile extends StatelessWidget {
-  const _ResultTile({
-    required this.candidate,
-    required this.rank,
+class _KpiMiniCard extends StatelessWidget {
+  const _KpiMiniCard({
+    required this.value,
+    required this.label,
+    required this.valueColor,
+  });
+
+  final String value;
+  final String label;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return PremiumCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: valueColor,
+                  fontSize: 20,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: AppDesignTokens.primaryDark.withValues(alpha: 0.5),
+                  fontWeight: FontWeight.w600,
+                  height: 1.15,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Color _liveBarColorForIndex(int index) {
+  switch (index % 3) {
+    case 0:
+      return AppDesignTokens.primary;
+    case 1:
+      return Colors.blue.shade600;
+    default:
+      return Colors.green.shade600;
+  }
+}
+
+class _LiveResultsSection extends StatelessWidget {
+  const _LiveResultsSection({
+    required this.candidates,
     required this.totalVotes,
   });
 
-  final Candidate candidate;
-  final int rank;
+  final List<Candidate> candidates;
   final int totalVotes;
 
   @override
   Widget build(BuildContext context) {
-    final double percentage = totalVotes > 0
-        ? (candidate.voteCount / totalVotes)
-        : 0;
-    final bool isWinner = rank == 1 && totalVotes > 0;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: isWinner
-            ? Border.all(color: Colors.amber.shade700, width: 2)
-            : Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+    return PremiumCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Resultados en vivo',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: AppDesignTokens.primaryDark,
+                ),
+          ),
+          const SizedBox(height: 16),
+          ...candidates.asMap().entries.expand((e) {
+            final i = e.key;
+            final c = e.value;
+            return [
+              if (i > 0) ...[
+                Divider(
+                  height: 22,
+                  thickness: 1,
+                  color: AppDesignTokens.primaryDark.withValues(alpha: 0.08),
+                ),
+              ],
+              _LiveCandidateRow(
+                candidate: c,
+                totalVotes: totalVotes,
+                barColor: _liveBarColorForIndex(i),
+              ),
+            ];
+          }),
+        ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
+    );
+  }
+}
+
+class _LiveCandidateRow extends StatelessWidget {
+  const _LiveCandidateRow({
+    required this.candidate,
+    required this.totalVotes,
+    required this.barColor,
+  });
+
+  final Candidate candidate;
+  final int totalVotes;
+  final Color barColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final double ratio =
+        totalVotes > 0 ? candidate.voteCount / totalVotes : 0.0;
+    final int pctRounded =
+        totalVotes > 0 ? (candidate.voteCount * 100 / totalVotes).round() : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          candidate.name,
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            color: AppDesignTokens.primaryDark,
+            fontSize: 15,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 10),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
-              leading: CircleAvatar(
-                backgroundColor: isWinner
-                    ? Colors.amber
-                    : Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: isWinner
-                    ? const Icon(Icons.emoji_events, color: Colors.white)
-                    : Text(
-                        '#$rank',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-              ),
-              title: Text(
-                candidate.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-              ),
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${candidate.voteCount} votos',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    '${(percentage * 100).toStringAsFixed(1)}%',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
+            SizedBox(
+              width: 44,
+              child: Text(
+                '${candidate.voteCount}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  color: barColor,
+                ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: LinearProgressIndicator(
-                value: percentage,
-                minHeight: 8,
-                borderRadius: BorderRadius.circular(4),
-                backgroundColor: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest,
-                color: isWinner
-                    ? Colors.amber
-                    : Theme.of(context).colorScheme.primary,
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: ratio.clamp(0.0, 1.0),
+                  minHeight: 8,
+                  backgroundColor:
+                      AppDesignTokens.primaryDark.withValues(alpha: 0.08),
+                  color: barColor,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '$pctRounded%',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: AppDesignTokens.primaryDark.withValues(alpha: 0.55),
               ),
             ),
           ],
         ),
+      ],
+    );
+  }
+}
+
+class _ObservacionesCard extends StatelessWidget {
+  const _ObservacionesCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return PremiumCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Observaciones',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: AppDesignTokens.primaryDark,
+                ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'La candidata con mayor votación se muestra en primer lugar. '
+            'Los resultados definitivos se habilitan al cierre de la elección.',
+            style: AppDesignTokens.bodyMuted(context),
+          ),
+        ],
       ),
     );
   }
@@ -781,12 +910,11 @@ class _SyncRibbon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Material(
-      color: cs.secondaryContainer.withValues(alpha: 0.9),
-      borderRadius: BorderRadius.circular(12),
+      color: AppDesignTokens.lavanda.withValues(alpha: 0.82),
+      borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
             SizedBox(
@@ -794,16 +922,17 @@ class _SyncRibbon extends StatelessWidget {
               height: 18,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: cs.onSecondaryContainer,
+                color: AppDesignTokens.primary,
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Sincronizando con el servidor…',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: cs.onSecondaryContainer),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w600,
+                    ),
               ),
             ),
           ],
@@ -818,38 +947,32 @@ class _EmptyResultsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(48),
-        child: Column(
-          children: [
-            Icon(
-              Icons.how_to_vote_outlined,
-              size: 80,
-              color: Theme.of(
-                context,
-              ).colorScheme.primary.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Sin Votos Registrados',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Aún no se han registrado votos en esta elección.\nLos resultados aparecerán aquí a medida que los participantes voten.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+    return PremiumCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(28, 40, 28, 36),
+      child: Column(
+        children: [
+          Icon(
+            Icons.how_to_vote_outlined,
+            size: 56,
+            color: AppDesignTokens.primary.withValues(alpha: 0.45),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Sin votos registrados',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: AppDesignTokens.primaryDark,
+                ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Aún no se han registrado votos en esta elección.\nLos resultados aparecerán cuando los participantes voten.',
+            style: AppDesignTokens.bodyMuted(context),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
@@ -873,42 +996,50 @@ class _ResultsLockedCard extends StatelessWidget {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.lock_clock,
-                    size: 56,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Resultados no disponibles',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
+        padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+        child: PremiumCard(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.lock_clock_rounded,
+                  size: 52,
+                  color: AppDesignTokens.primary.withValues(alpha: 0.75),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Resultados no disponibles',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppDesignTokens.primaryDark,
+                      ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  lockedMessage,
+                  style: AppDesignTokens.bodyMuted(context),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 22),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  label: const Text('Volver'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppDesignTokens.primary,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    lockedMessage,
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Volver'),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
