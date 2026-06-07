@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../core/models/user.dart' as app;
@@ -243,11 +247,32 @@ class AuthService {
     } catch (_) {}
   }
 
+  static const String _passwordResetEndpoint =
+      'https://sistema-integrado-sindicato.web.app/api/request-password-reset';
+
   Future<void> sendPasswordResetEmail(String email) async {
     try {
-      await _auth.sendPasswordResetEmail(email: email.trim());
-    } on FirebaseAuthException catch (e) {
-      throw Exception(_firebaseErrorMessage(e.code));
+      final response = await http
+          .post(
+            Uri.parse(_passwordResetEndpoint),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({'email': email.trim()}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) return;
+
+      String message =
+          'No se pudo enviar el correo de recuperación. Inténtalo nuevamente.';
+      try {
+        final payload = jsonDecode(response.body) as Map<String, dynamic>;
+        message = payload['message'] as String? ?? message;
+      } catch (_) {}
+      throw Exception(message);
+    } on TimeoutException {
+      throw Exception(
+        'El servidor tardó demasiado en responder. Inténtalo nuevamente.',
+      );
     }
   }
 

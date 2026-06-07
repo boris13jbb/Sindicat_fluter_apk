@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 import 'package:fluter_apk/core/models/asistencia/asistencia.dart';
 import 'package:fluter_apk/core/models/asistencia/registro_asistencia_result.dart';
 import 'package:fluter_apk/core/models/member.dart';
 import 'package:fluter_apk/features/asistencia/scanner_screen.dart';
+import 'package:fluter_apk/providers/auth_provider.dart';
 import 'package:fluter_apk/services/asistencia_registro_api.dart';
 
 class _FakeAsistenciaService implements AsistenciaRegistroApi {
@@ -38,9 +40,7 @@ class _FakeAsistenciaService implements AsistenciaRegistroApi {
   }
 }
 
-Member _member({
-  required Modalidad? modalidad,
-}) {
+Member _member({required Modalidad? modalidad}) {
   final now = DateTime(2026, 1, 1);
   return Member(
     id: 'm1',
@@ -58,11 +58,11 @@ Member _member({
 }
 
 EventoAsistencia _evento() => EventoAsistencia(
-      id: 'evento-1',
-      nombre: 'Asamblea',
-      fecha: 1,
-      tipoReunion: TipoReunion.ordinaria,
-    );
+  id: 'evento-1',
+  nombre: 'Asamblea',
+  fecha: 1,
+  tipoReunion: TipoReunion.ordinaria,
+);
 
 void main() {
   testWidgets('muestra nombre y modalidad al registrar por código', (
@@ -76,49 +76,79 @@ void main() {
     );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: ScannerAsistenciaScreen(evento: _evento(), service: service),
+      ChangeNotifierProvider<AuthProvider>(
+        create: (_) => AuthProvider(),
+        child: MaterialApp(
+          home: ScannerAsistenciaScreen(evento: _evento(), service: service),
+        ),
       ),
     );
 
-    await tester.enterText(find.byType(TextField), '{"identificador":"123"}');
-    await tester.tap(find.text('Registrar asistencia'));
-    await tester.pump(); // inicia el Future / animación del diálogo
-    await tester.pump(const Duration(milliseconds: 300)); // termina transición
-
-    expect(find.text('✅ Asistencia registrada'), findsOneWidget);
-    expect(find.textContaining('Nombre: Juan Pérez'), findsOneWidget);
-    expect(find.textContaining('Modalidad:'), findsOneWidget);
-    expect(find.textContaining('Modalidad A'), findsOneWidget);
-
-    await tester.tap(find.text('OK'));
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('si modalidad es null, muestra "Sin asignar" sin bloquear registro', (
-    WidgetTester tester,
-  ) async {
-    final service = _FakeAsistenciaService(
-      RegistroAsistenciaResult(
-        asistenciaId: 'a1',
-        member: _member(modalidad: null),
-      ),
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.enterText(
+      find.byKey(const Key('scanner_manual_codigo')),
+      '{"identificador":"123"}',
     );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ScannerAsistenciaScreen(evento: _evento(), service: service),
-      ),
-    );
-
-    await tester.enterText(find.byType(TextField), '{"identificador":"123"}');
+    await tester.ensureVisible(find.text('Registrar asistencia'));
     await tester.tap(find.text('Registrar asistencia'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 350));
 
-    expect(find.text('✅ Asistencia registrada'), findsOneWidget);
-    expect(find.textContaining('Nombre: Juan Pérez'), findsOneWidget);
-    expect(find.textContaining('Sin asignar'), findsOneWidget);
+    expect(find.text('Asistencia registrada'), findsOneWidget);
+    expect(find.text('¡Registro confirmado!'), findsOneWidget);
+    expect(
+      find.text('La asistencia fue registrada correctamente.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Continuar escaneando'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byKey(const Key('scanner_manual_codigo')), findsOneWidget);
+    expect(find.textContaining('Juan Pérez'), findsWidgets);
   });
-}
 
+  testWidgets(
+    'registro con modalidad null abre confirmación y vuelve al escáner',
+    (WidgetTester tester) async {
+      final service = _FakeAsistenciaService(
+        RegistroAsistenciaResult(
+          asistenciaId: 'a1',
+          member: _member(modalidad: null),
+        ),
+      );
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) => AuthProvider(),
+          child: MaterialApp(
+            home: ScannerAsistenciaScreen(evento: _evento(), service: service),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.enterText(
+        find.byKey(const Key('scanner_manual_codigo')),
+        '{"identificador":"123"}',
+      );
+      await tester.ensureVisible(find.text('Registrar asistencia'));
+      await tester.tap(find.text('Registrar asistencia'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('Asistencia registrada'), findsOneWidget);
+      expect(find.text('¡Registro confirmado!'), findsOneWidget);
+
+      await tester.tap(find.text('Continuar escaneando'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byKey(const Key('scanner_manual_codigo')), findsOneWidget);
+      expect(find.textContaining('Juan Pérez'), findsWidgets);
+    },
+  );
+}

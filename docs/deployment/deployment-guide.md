@@ -15,15 +15,13 @@ Before deploying, ensure:
 ### 1. Code Quality
 
 ```bash
-# Run static analysis
-flutter analyze
-
-# Run tests (if available)
-flutter test
-
-# Check for issues
-flutter doctor
+# Ejecuta formato, análisis, pruebas Flutter, dry-run de reglas y Emulator.
+./tool/verify.ps1
 ```
+
+La entrega no debe continuar si este comando falla. Para una comprobación
+rápida sin Emulator se permite `./tool/verify.ps1 -SkipRules`, pero no sustituye
+la certificación previa al despliegue.
 
 ### 2. Update Version Information
 
@@ -42,8 +40,11 @@ Increment build number for each deployment.
 - Deploy production Firestore rules
 
 ```bash
-firebase deploy --only firestore:rules
+firebase deploy --only firestore:rules,firestore:indexes,storage
 ```
+
+Ejecuta primero el mismo comando con `--dry-run`. El despliegue real requiere
+una ventana controlada, respaldo y aprobación del responsable del proyecto.
 
 ### 4. Environment Variables
 
@@ -56,52 +57,34 @@ Review any hardcoded values:
 
 ### Android APK
 
-#### Build Release APK
+#### Firma obligatoria
 
-```bash
-flutter build apk --release
-```
-
-**Output**: `build/app/outputs/flutter-apk/app-release.apk`
-
-#### Build App Bundle (Recommended for Play Store)
-
-```bash
-flutter build appbundle --release
-```
-
-**Output**: `build/app/outputs/bundle/release/app-release.aab`
-
-#### Signing Configuration
-
-1. **Generate Keystore** (if first time):
+1. **Generar el keystore de carga** si aún no existe:
    ```bash
    keytool -genkey -v -keystore ~/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
    ```
 
-2. **Configure in `android/key.properties`**:
-   ```properties
-   storePassword=<password>
-   keyPassword=<password>
-   keyAlias=upload
-   storeFile=<path-to-keystore>
+2. Copiar `android/key.properties.example` como `android/key.properties` y
+   completar sus cuatro valores. El archivo real y los keystores están
+   ignorados por Git.
+
+3. Ejecutar los dos artefactos Android:
+   ```powershell
+   ./tool/build_release.ps1 -Android
    ```
 
-3. **Update `android/app/build.gradle.kts`**:
-   ```kotlin
-   android {
-       signingConfigs {
-           create("release") {
-               // Load from key.properties
-           }
-       }
-       buildTypes {
-           release {
-               signingConfig = signingConfigs.getByName("release")
-           }
-       }
-   }
-   ```
+El Gradle del proyecto bloquea cualquier tarea `release` Android si no existe
+firma productiva. Sólo para QA local se puede usar:
+
+```powershell
+./tool/build_release.ps1 -Android -AllowDebugAndroidSigning
+```
+
+No distribuir artefactos generados con `-AllowDebugAndroidSigning`.
+
+**Outputs**:
+- APK: `build/app/outputs/flutter-apk/app-release.apk`
+- App Bundle: `build/app/outputs/bundle/release/app-release.aab`
 
 #### Testing APK
 
@@ -118,7 +101,7 @@ adb install build/app/outputs/flutter-apk/app-release.apk
 #### Build for Web
 
 ```bash
-flutter build web --release
+./tool/build_release.ps1 -Web
 ```
 
 **Output**: `build/web/` directory
@@ -165,7 +148,7 @@ Copy contents of `build/web/` to your web server:
 #### Build Executable
 
 ```bash
-flutter build windows --release
+./tool/build_release.ps1 -Windows
 ```
 
 **Output**: `build/windows/x64/runner/Release/`
@@ -246,17 +229,17 @@ Use Firebase Performance Monitoring:
    - Prepare hotfix
 
 2. **Rollback Steps**:
-   
+
    **Web**:
    ```bash
    # Deploy previous version
    firebase hosting:rollback
    ```
-   
+
    **Android**:
    - Remove APK from distribution
    - Publish previous stable version
-   
+
    **Windows**:
    - Remove download link
    - Provide previous version
@@ -282,23 +265,23 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v3
-      
+
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.x'
-      
+
       - name: Install dependencies
         run: flutter pub get
-      
+
       - name: Analyze
         run: flutter analyze
-      
+
       - name: Build Web
         run: flutter build web --release
-      
+
       - name: Deploy to Firebase
         uses: w9jds/firebase-action@master
         with:

@@ -25,14 +25,17 @@ import 'features/asistencia/asistencia_home_screen.dart';
 import 'features/asistencia/crear_attendance_event_screen.dart';
 import 'features/asistencia/evento_detail_screen.dart';
 import 'features/asistencia/personas_screen.dart';
+import 'features/asistencia/asistencia_person_detail_screen.dart';
 import 'features/asistencia/registro_manual_screen.dart';
 import 'features/asistencia/asistencias_list_screen.dart';
+import 'features/asistencia/asistencia_acceso_restringido_screen.dart';
 import 'features/asistencia/exportar_screen.dart';
 import 'features/asistencia/scanner_screen.dart';
 import 'features/asistencia/importar_personas_screen.dart';
 import 'features/asistencia/qr_codes_screen.dart';
 import 'features/asistencia/route_args.dart';
 import 'features/asistencia/attendance_event_detail_screen.dart';
+import 'features/asistencia/registros_evento_screen.dart';
 // 🆕 Nuevas pantallas de gestión sindical
 import 'features/members/members_list_screen.dart';
 import 'features/members/import_members_screen.dart';
@@ -45,6 +48,9 @@ import 'core/models/user_role.dart';
 import 'core/security/route_access.dart';
 
 void main() {
+  if (kReleaseMode) {
+    debugPrint = (String? message, {int? wrapWidth}) {};
+  }
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const AppBootstrap());
 }
@@ -95,16 +101,17 @@ Future<void> _initializeFirebase() async {
 /// refuerzo de App Check para Storage mientras desarrollas.
 Future<void> _activateAppCheckForMobile() async {
   if (kIsWeb) return;
-  final mobile = defaultTargetPlatform == TargetPlatform.android ||
+  final mobile =
+      defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS;
   if (!mobile) return;
 
   try {
     await FirebaseAppCheck.instance.activate(
-      androidProvider:
-          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-      appleProvider:
-          kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
+      androidProvider: kDebugMode
+          ? AndroidProvider.debug
+          : AndroidProvider.playIntegrity,
+      appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
     );
     debugPrint(
       '✅ App Check activo (${kDebugMode ? "modo depuración: registra el token en la consola Firebase si Storage devuelve 403" : "Play Integrity / App Attest"})',
@@ -120,6 +127,12 @@ Widget _authGuard(Widget child) => _RouteGuard(child: child);
 Widget _roleGuard(Widget child, Set<UserRole> allowedRoles) {
   return _RouteGuard(allowedRoles: allowedRoles, child: child);
 }
+
+/// Coincide con [attendanceRouteRoles] como conjunto (misma longitud y mismos elementos).
+bool _matchesAttendanceGate(Set<UserRole>? allowedRoles) =>
+    allowedRoles != null &&
+    allowedRoles.length == attendanceRouteRoles.length &&
+    allowedRoles.every(attendanceRouteRoles.contains);
 
 class AppBootstrap extends StatefulWidget {
   const AppBootstrap({super.key, this.firebaseInitializer, this.readyApp});
@@ -357,10 +370,38 @@ class MyApp extends StatelessWidget {
               attendanceRouteRoles,
             );
           },
+          '/asistencia/evento_registros': (ctx) {
+            final eventId =
+                ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
+            if (eventId.isEmpty) {
+              return _roleGuard(
+                const AsistenciaHomeScreen(),
+                attendanceRouteRoles,
+              );
+            }
+            return _roleGuard(
+              RegistrosEventoScreen(eventId: eventId),
+              attendanceRouteRoles,
+            );
+          },
           '/asistencia/personas': (_) => _roleGuard(
             const PersonasAsistenciaScreen(),
             attendanceRouteRoles,
           ),
+          '/asistencia/persona_detalle': (ctx) {
+            final memberId =
+                ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
+            if (memberId.isEmpty) {
+              return _roleGuard(
+                const AsistenciaHomeScreen(),
+                attendanceRouteRoles,
+              );
+            }
+            return _roleGuard(
+              AsistenciaPersonDetailScreen(memberId: memberId),
+              attendanceRouteRoles,
+            );
+          },
           '/asistencia/registro_manual': (ctx) {
             final raw = ModalRoute.of(ctx)?.settings.arguments;
             EventoAsistencia? evento;
@@ -443,9 +484,9 @@ class MyApp extends StatelessWidget {
           '/audit/logs': (_) =>
               _roleGuard(const AuditLogsScreen(), adminRouteRoles),
           '/settings/report_branding': (_) => _roleGuard(
-                const ReportBrandingSettingsScreen(),
-                superAdminRouteRoles,
-              ),
+            const ReportBrandingSettingsScreen(),
+            superAdminRouteRoles,
+          ),
           '/profile': (_) => _authGuard(const UserProfileScreen()),
         },
       ),
@@ -480,6 +521,9 @@ class _RouteGuard extends StatelessWidget {
           case RouteAccessDecision.allowed:
             return child;
           case RouteAccessDecision.denied:
+            if (_matchesAttendanceGate(allowedRoles)) {
+              return const AsistenciaAccesoRestringidoScreen();
+            }
             return const _AccessDeniedScreen();
         }
       },

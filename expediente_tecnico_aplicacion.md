@@ -1,5 +1,30 @@
 # Expediente Técnico de la Aplicación
 
+## 0. Estado de cierre técnico - 2026-06-06
+
+**Fase identificada como faltante:** preproducción, aceptación y despliegue
+controlado. La parte automatizable de esa fase queda implementada y validada
+localmente; no corresponde declarar producción completa mientras falten claves,
+autorizaciones, cuentas QA, datos representativos y dispositivos físicos.
+
+| Frente | Estado al 2026-06-06 | Evidencia |
+|---|---|---|
+| Puerta automática | Cerrado localmente | `./tool/verify.ps1`: formato de Dart modificado, `dart analyze lib test`, higiene Git, 61 pruebas Flutter, dry-run de reglas/índices y 11 pruebas de reglas en Emulator. |
+| Reglas e índices | Cerrado localmente | `firestore.indexes.json` queda versionado y referenciado por `firebase.json`; Firestore y Storage compilan en dry-run. |
+| Seguridad operativa | Cerrado localmente | Los `debugPrint` quedan anulados en release; se eliminó la limpieza cliente incompatible con auditoría append-only; Android bloquea releases accidentales con firma debug. |
+| Builds de entrega | Cerrado localmente para QA | Web, Windows, APK y AAB Android release compilan. Los artefactos Android productivos requieren la clave de firma real; iOS requiere macOS/dispositivo. |
+| Despliegue y aceptación | Pendiente externo | Deploy real autorizado, matriz manual por rol, cámara/QR y compartir archivos en dispositivos, prueba concurrente con datos reales y smoke test posterior. |
+
+Documentos operativos: `docs/deployment/production-acceptance-checklist.md`,
+`docs/deployment/deployment-guide.md`, `tool/verify.ps1` y
+`tool/build_release.ps1`.
+
+La cadena Android quedó actualizada y recompilada con Gradle `8.14`, Android
+Gradle Plugin `8.11.1` y Kotlin `2.2.20`. Permanece una advertencia futura de
+migración a Built-in Kotlin porque `image_picker_android`, `mobile_scanner` y
+`share_plus` todavía aplican KGP; no bloquea los builds actuales y debe
+abordarse junto con una actualización compatible de esos plugins.
+
 ## 1. Información general del proyecto
 
 | Ítem | Detalle |
@@ -11,7 +36,7 @@
 | Roles identificados | `SUPERADMIN`, `ADMIN`, `OPERADOR_ASISTENCIA`, `VOTER`, `USER`. |
 | Tecnologías utilizadas | Flutter, Dart, Firebase Core, Firebase Auth, Cloud Firestore, **Firebase Storage**, Provider, PDF/Printing, File Picker, **image_picker**, Excel, CSV, Mobile Scanner, QR Flutter, Share Plus. |
 | Backend / servicios externos | Firebase Authentication, Cloud Firestore y **Firebase Storage** (uso para fotos opcionales de candidatos tras aprovisionar Storage en consola y desplegar **`storage.rules`**). |
-| Estado actual estimado | MVP avanzado / desarrollo funcional. La UI operativa de asistencia queda unificada para crear eventos nuevos en `attendance_events`, con **modalidades no convocadas** configurables en el alta (**`CrearAttendanceEventScreen`**) y editables desde el detalle (**`AttendanceEventDetailScreen`**, diálogo + icono en AppBar). `eventos` legacy se conserva como histórico/compatibilidad mediante `AsistenciaEventRouteArgs`. En **Mi Perfil**, el resumen de asistencia se consume con una **`StreamSubscription` única** compatible con **TabBarView** (véase **E-042**). **Alta/edición de candidatos**: URL de imagen opcional y foto opcional (**E-044**, ampliación **E-045** /**2026-05-02**): **`CandidateImageUploadSection`**, **`CandidatePhotoStorage`** (`uploadCandidateImage`, **`FirebaseStorage.instance`**, mismo ref para **`putFile`/`putData`** y **`snapshot.ref.getDownloadURL()`**); objetos bajo **`elections/{electionId}/candidates/{candidateId}/{archivo}`**; **`storage.rules`** mantiene además **`candidate_photos/`** por compatibilidad y quedó endurecido localmente en **E-046** para que sólo `SUPERADMIN`/`ADMIN` escriban/eliminen fotos. **`AndroidManifest`**: **`CAMERA`**; **`Info.plist`**: fototeca/cámara. Tras activar Storage en consola (**2026-05-02**), hubo deploy previo de reglas en **`sistema-integrado-sindicato`** (§F); el endurecimiento **E-046** compila en dry-run y requiere deploy real antes de operación. El modal **Editar candidato** usa **`await showDialog`** + **`finally`** para **dispose**, y omite **`setModal(saving=false)`** justo antes de **`Navigator.pop`** en guardado OK (evita assert **`_dependents.isEmpty`**). Tras **E-054**, el resumen de perfil ya no depende de un índice `COLLECTION_GROUP_ASC` sobre `asistencias.personaId`; en el estado local actual no existe `firestore.indexes.json` referenciado en `firebase.json`. Sigue recomendándose validación con datos/usuarios reales. |
+| Estado actual estimado | MVP avanzado en fase de preproducción. La puerta automática, las pruebas locales de reglas, los índices versionados y los builds disponibles en Windows quedan validados; falta aceptación manual, firma Android productiva, despliegue real autorizado y validación con datos/dispositivos reales. |
 | Arquitectura | Capa de UI en `lib/features`, estado global en `lib/providers`, servicios en `lib/services`, modelos en `lib/core/models`, tema y widgets compartidos en `lib/core`. |
 | Punto de entrada | `lib/main.dart`. `AppBootstrap` inicializa Firebase con timeout de 10 segundos, muestra carga/error con reintento y sólo crea `AuthProvider` cuando Firebase está disponible; Firestore offline se configura fuera de Web. |
 
@@ -37,11 +62,11 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 
 | Comando | Resultado | Observación |
 |---|---|---|
-| `flutter analyze --no-pub` | Correcto | Sin issues detectados al 2026-05-01 después de correcciones. |
-| `flutter test --no-pub --reporter expanded` | Correcto | 45 pruebas pasan: smoke de login sin sesión, error/reintento de `AppBootstrap`, contrato `AppUser.memberId`, matriz local de acceso por rol, validaciones de candidatos, rechazo lógico de borrado con votos y bloqueo lógico de nombres duplicados, visibilidad de resultados por rol/estado, regla `canVoteInElection`, serialización de `Election.status`, validación de fechas de elección, scanner, configuración de importación, parser CSV, modalidad de socios, plantillas XLSX/CSV de importación, prevalidación de archivos, exportación completa de socios y serialización/compatibilidad de `modalidadesNoConvocadas` en eventos legacy. |
-| `firebase deploy --only firestore --dry-run` | Correcto | `firestore.rules` compila correctamente en dry-run después de alinear permisos de `members`/`import_logs`, endurecer `audit_logs` y validar `users.memberId`. |
-| Firebase Emulator Suite para reglas | Pendiente/bloqueado | No se ejecutó por requisito local de Java 21+ para Firebase Tools/emuladores. |
-| `firebase deploy --only storage` (CLI) contra **`sistema-integrado-sindicato`** | Correcto para deploy previo (**2026-05-02**); **E-046** sólo dry-run | Tras **Comenzar** en Storage (consola), **`firebase deploy --only storage`** liberó **`storage.rules`** de E-045. La versión endurecida **E-046** compila con **`--dry-run`** y queda pendiente de deploy real. Histórico: hasta **2026-04-30** el mismo comando fallaba si el proyecto no tenía bucket inicializado (*«Firebase Storage has not been set up…»*). |
+| `./tool/verify.ps1` | Correcto | Puerta completa ejecutada al 2026-06-06: análisis limpio, 61 pruebas Flutter, dry-run de Firestore/índices/Storage y 11 pruebas Emulator. |
+| `git -c core.whitespace=cr-at-eol diff --check` | Correcto | Sin errores de whitespace. |
+| `firebase deploy --only firestore:rules,firestore:indexes --dry-run` | Correcto | Reglas e índices versionados compilan correctamente. |
+| `firebase deploy --only storage --dry-run` | Correcto | `storage.rules` compila correctamente; el deploy real sigue sujeto a aprobación. |
+| Builds release | Correcto para QA local | Web, Windows, APK y AAB Android compilan; Android productivo requiere firma real e iOS requiere entorno Apple. |
 
 ### Convención de mantenimiento del expediente
 
@@ -52,13 +77,41 @@ La revisión se realizó sobre el repositorio local `D:\Sindicat_fluter_apk`, me
 
 - No se ejecutó una sesión manual completa con usuario real, Firebase real ni datos reales de producción.
 - No se validó cámara física para escaneo QR en dispositivos Android/iOS.
-- Despliegue por CLI de **reglas** al proyecto **`sistema-integrado-sindicato`** se ha ejecutado en entorno de desarrollo; la documentación histórica menciona despliegue de índices, pero en el estado local actual no existe `firestore.indexes.json` referenciado en `firebase.json`. Si se agregan índices compuestos, deben versionarse antes de desplegarlos y contrastarse en Firebase Console.
+- Despliegues previos de reglas al proyecto **`sistema-integrado-sindicato`** constan en el historial, pero la versión local actual de reglas e índices no se desplegó porque requiere autorización y ventana controlada.
 - **Firebase Storage:** **`storage.rules`** (v2) incluye **`elections/{electionId}/candidates/{candidateId}/{fileName}`** y regla paralela **`elections/{electionId}/candidate_photos/{fileName}`** para objetos legacy. La lectura exige usuario autenticado; **`create`/`update`/`delete`** quedan restringidos localmente a `SUPERADMIN`/`ADMIN` consultando **`users/{uid}.role`** desde reglas Storage (**E-046**). `create`/`update` validan imagen **&lt; 5 MB** y **`contentType`** `image/*`. Proyecto CLI en **`.firebaserc`**. La app nueva sube bajo **`candidates/{candidateId}/`** (**E-045**). Si el bucket no existiera en consola, **`firebase deploy --only storage`** no podría aplicarse hasta completar el asistente inicial; tras E-046 queda pendiente deploy real para que la restricción admin rija en el bucket remoto.
 - No se revisaron capturas de pantalla ni diseño visual en navegador/dispositivo.
-- En el estado local actual no se encontró **`firestore.indexes.json`**; cualquier índice creado solo en consola debe exportarse al archivo y agregarse a `firebase.json` antes de un deploy de índices. Tras **E-054**, el perfil evita la consulta que requería índice `COLLECTION_GROUP_ASC` sobre `asistencias.personaId`.
+- Los índices compuestos requeridos por auditoría están versionados en **`firestore.indexes.json`** y referenciados por `firebase.json`; deben desplegarse y contrastarse en Firebase Console durante la ventana autorizada.
 - No se probaron credenciales, roles reales ni permisos desde usuarios distintos.
 - Las rutas protegidas se validaron por análisis estático y pruebas automatizadas de la decisión de acceso por rol; falta prueba manual por rol real con cuentas Firebase.
 - Cualquier comportamiento dependiente de datos existentes queda marcado como pendiente de confirmar.
+
+### Revisión integral histórica 2026-05-04
+
+**Resultado general:** el sistema queda **estable y validado en local** para los flujos principales cubiertos por código y pruebas automatizadas. No debe declararse todavía como **100% producción** hasta completar validación manual con cuentas reales por rol, datos reales, dispositivos móviles, cámara física, Storage desplegado y, si aplica, suite de emuladores/reglas.
+
+| Área | Estado local | Qué está al 100% en el repositorio local | Qué falta para 100% producción | Prioridad |
+|---|---|---|---|---|
+| Compilación/análisis | Completo | `flutter analyze --no-pub` sin issues al 2026-05-04. | Ejecutar en CI y repetir tras cada cambio. | Alta |
+| Pruebas automatizadas | Completo/parcial | 52/52 pruebas pasan; cubren rutas, modelos, importación, candidatos, scanner, exportación de socios y reglas funcionales críticas. | Agregar pruebas de integración con Firebase Emulator para permisos reales, voto transaccional y asistencia completa. | Alta |
+| Reglas Firestore | Completo/parcial | `firestore.rules` compila en dry-run; acceso por rol alineado con UI y servicios. | Probar matriz real `SUPERADMIN`/`ADMIN`/`OPERADOR_ASISTENCIA`/`VOTER`/`USER` en Emulator o proyecto QA. | Alta |
+| Reglas Storage | Parcial | `storage.rules` compila en dry-run; fotos y branding restringidos por rol. | Desplegar versión endurecida y probar subida/borrado como admin y bloqueo como votante. | Alta |
+| Autenticación y roles | Completo/parcial | Registro fuerza `VOTER`, rutas usan `_RouteGuard`, home oculta módulos no permitidos y las reglas no dependen sólo de UI. | Probar cuentas reales sin `users/{uid}`, socios inactivos y migración/backfill de `memberId`. | Alta |
+| Socios | Completo local | Alta/edición/estado, modalidad obligatoria, campo canónico `modalidad`, duplicados por socio/documento/workerCode, importación y exportación completa con resumen. | Validar con padrón real grande, caracteres especiales y perfiles existentes con datos antiguos. | Media |
+| Asistencia | Completo/parcial | Hub unificado, creación en `attendance_events`, `modalidadesNoConvocadas`, registro manual/scanner, resumen en perfil, exportación Legacy/Eventos/Ambos. | Prueba física de cámara/doble escaneo, eventos con datos reales, y decidir retiro definitivo de rutas legacy visibles sólo por URL. | Alta |
+| Votación | Completo/parcial | Elecciones votables sólo activas/visibles/en rango; voto único por ID determinístico; batch actualiza voto/candidato/elección; candidatos con votos no se eliminan. | Prueba real concurrente de doble voto, reglas en Emulator y conteo con latencia/red móvil. | Alta |
+| Auditoría | Parcial | Acciones críticas escriben `audit_logs`; lectura sólo admin; historial visual consume `audit_logs`. | Definir política de retención/exportación; resolver método técnico `cleanOldLogs` frente a reglas append-only; versionar índices si filtros reales lo requieren. | Media |
+| Importaciones/exportaciones | Completo/parcial | Parser CSV robusto, XLSX, plantillas, prevalidación, duplicados, exportación completa de socios y asistencia. | Probar archivos reales grandes y flujo móvil de compartir/guardar por plataforma. | Media |
+| UI móvil/responsive | Completo/parcial | Home rediseñado, pie de navegación, perfil/QR corregido, acciones redundantes retiradas del hub. | Validación visual en Android/iOS reales, tamaños de fuente grandes y accesibilidad. | Media |
+
+#### Hallazgos pendientes para cerrar 100% producción
+
+| ID | Hallazgo | Impacto | Recomendación | Prioridad |
+|---|---|---|---|---|
+| R-2026-05-04-02 | Falta matriz de pruebas manuales por rol con cuentas Firebase reales. | Riesgo de permisos divergentes entre UI, servicios y reglas en producción. | Crear usuarios QA por cada rol y validar rutas, lecturas, escrituras, exportaciones, voto y asistencia. | Alta |
+| R-2026-05-04-04 | Storage E-046 está validado en dry-run, pero requiere deploy real. | En remoto podrían quedar permisos anteriores de fotos/branding. | Ejecutar `firebase deploy --only storage` en ventana controlada y probar subida/bloqueo por rol. | Alta |
+| R-2026-05-04-05 | Rutas legacy de asistencia (`personas`, `qr_codes`, `importar_personas`) siguen disponibles por URL protegida aunque no aparecen en el hub. | Puede confundir a operadores si acceden por enlace antiguo; también mantiene superficie legacy. | Mantener sólo como compatibilidad documentada o retirar rutas cuando se confirme migración completa a `members`/Mi Perfil QR. | Media |
+| R-2026-05-04-07 | El modo combinado de exportación de asistencia mezcla stream legacy con carga puntual de eventos nuevos. | Puede no refrescar automáticamente ante cambios sólo en `attendance_events` hasta que el usuario recargue o haya emisión legacy. | Convertir el modo combinado a stream/future controlado con botón de actualización claro o escucha dual. | Media |
+| R-2026-06-06-01 | Falta suministrar y custodiar la clave de firma Android productiva. | Sin ella no debe distribuirse APK/AAB como producción. | Completar `android/key.properties` fuera de Git, custodiar el keystore y ejecutar `./tool/build_release.ps1 -Android`. | Alta |
 
 ## 3. Mapa general de la aplicación
 
@@ -290,7 +343,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Objetivo de la pantalla:** mostrar información de cuenta, información sindical vinculada al padrón, resumen global de asistencia/faltas y QR personal de asistencia.
 
-**Elementos visibles:** app bar, logout, tabs `Información` y `Código QR`, avatar, datos de cuenta, datos de socio (**modalidad visible solo como `Modalidad {letra}`** vía `JustificacionHelper.etiquetaModalidad`, p. ej. `Modalidad N`; sin texto descriptivo *Turno Mañana/Tarde/Noche*), tarjeta **Resumen de Asistencia** con eventos convocados, asistencias, faltas injustificadas, eventos no convocados y últimos eventos, mensaje de error resumido si el cálculo falla, QR o mensajes de indisponibilidad.
+**Elementos visibles:** app bar, logout, tabs `Información` y `Código QR`, avatar, datos de cuenta, datos de socio (**modalidad visible solo como `Modalidad {letra}`** vía `JustificacionHelper.etiquetaModalidad`, p. ej. `Modalidad N`; sin texto descriptivo *Turno Mañana/Tarde/Noche*), tarjeta **Resumen de Asistencia** con eventos convocados, asistencias, faltas injustificadas, eventos no convocados y últimos eventos, mensaje de error resumido si el cálculo falla, QR con fondo blanco en pantalla y en PNG compartido, o mensajes de indisponibilidad.
 
 **Acciones disponibles:** alternar pestañas, cerrar sesión, volver.
 
@@ -310,7 +363,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 **Estados posibles:** cargando socio, socio encontrado, socio no encontrado, sin socios, socio sin workerCode, calculando resumen, resumen disponible, error/permisos del resumen, error de generación QR.
 
-**Observaciones técnicas o funcionales:** el resumen se implementa como stream combinado: cambios en eventos, asistencias nuevas, eventos legacy o datos del socio disparan recalculo. Las faltas contabilizadas son injustificadas: asistencia ausente con `justificacion` se muestra como **Ausente justificado** y no suma a `totalFaltas`; socios en `modalidadesNoConvocadas` o fuera de una lista explícita `miembrosConvocados` se muestran como **No convocado** y tampoco suman faltas. Por compatibilidad, legacy considera convocados a todos los socios salvo eventos ya normalizados con `modalidadesNoConvocadas`. Corregido localmente (**E-042**): `AttendanceService.watchMemberAttendanceSummary` ya no usa `async*` + `yield*` (stream de una sola suscripción) y expone la cadena vía `Stream.fromFuture(...).asyncExpand(...).asBroadcastStream()`. Además, `UserProfileScreen` ya no monta un `StreamBuilder` para el resumen: usa una única `StreamSubscription`, cancela la suscripción anterior al cambiar de socio y cancela en `dispose`, evitando **`Bad state: Stream has already been listened to`** durante reconstrucciones de **TabBarView** / **PageView** en Windows. Corregido localmente (**E-054**): se elimina el `collectionGroup('asistencias').where('personaId')` que producía `failed-precondition` por índice `COLLECTION_GROUP_ASC`; ahora se crean listeners por evento y se agregan documentos en memoria. La UI del error deja de mostrar el enlace técnico de Firebase completo. La pantalla aún contiene mucha lógica de búsqueda y diagnóstico dentro de la UI.
+**Observaciones técnicas o funcionales:** el resumen se implementa como stream combinado: cambios en eventos, asistencias nuevas, eventos legacy o datos del socio disparan recalculo. Las faltas contabilizadas son injustificadas: asistencia ausente con `justificacion` se muestra como **Ausente justificado** y no suma a `totalFaltas`; socios en `modalidadesNoConvocadas` o fuera de una lista explícita `miembrosConvocados` se muestran como **No convocado** y tampoco suman faltas. Por compatibilidad, legacy considera convocados a todos los socios salvo eventos ya normalizados con `modalidadesNoConvocadas`. Corregido localmente (**E-042**): `AttendanceService.watchMemberAttendanceSummary` ya no usa `async*` + `yield*` (stream de una sola suscripción) y expone la cadena vía `Stream.fromFuture(...).asyncExpand(...).asBroadcastStream()`. Además, `UserProfileScreen` ya no monta un `StreamBuilder` para el resumen: usa una única `StreamSubscription`, cancela la suscripción anterior al cambiar de socio y cancela en `dispose`, evitando **`Bad state: Stream has already been listened to`** durante reconstrucciones de **TabBarView** / **PageView** en Windows. Corregido localmente (**E-054**): se elimina el `collectionGroup('asistencias').where('personaId')` que producía `failed-precondition` por índice `COLLECTION_GROUP_ASC`; ahora se crean listeners por evento y se agregan documentos en memoria. La UI del error deja de mostrar el enlace técnico de Firebase completo. Corregido localmente (**E-055**): el PNG compartido del QR pinta un rectángulo blanco antes de dibujar el código, evitando que apps como WhatsApp muestren fondo negro por transparencia. La pantalla aún contiene mucha lógica de búsqueda y diagnóstico dentro de la UI.
 
 **Problemas encontrados:** corregido localmente el error `failed-precondition` del resumen de asistencia mostrado en perfil. Persisten como deuda técnica el uso intensivo de `debugPrint`, la lógica compleja en widget y mensajes al usuario con pasos administrativos extensos.
 
@@ -1323,10 +1376,10 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 ### Clasificación por tipo
 
-- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024, E-025, E-026, E-027, E-028, E-031, E-032, E-033, E-034, E-035, E-036, E-037, E-038, E-039, E-041, E-042, E-043, **E-044**, **E-045**, **E-046** y **E-048** (foto candidato + modal edición + permisos Storage + exportación completa de socios); pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico, prueba manual de cuenta sin perfil/historial y pruebas Storage con emulator/cuentas reales más allá del smoke administrativo.
+- Errores funcionales: corregidos localmente E-001, E-003, E-004, E-005, E-008, E-009, E-010, E-011, E-016, E-021, E-022, E-024, E-025, E-026, E-027, E-028, E-031, E-032, E-033, E-034, E-035, E-036, E-037, E-038, E-039, E-041, E-042, E-043, **E-044**, **E-045**, **E-046**, **E-048**, **E-049**, **E-050**, **E-051**, **E-052**, **E-053**, **E-054** y **E-055** (foto candidato, modal edición, permisos Storage, exportación completa de socios con asistencias/faltas, limpieza de import/export redundante, Home/pie responsive, resumen de perfil sin índice global y QR compartido con fondo blanco); pendientes funcionales relevantes: reporte/resumen con datos reales, reset con Firebase real, doble escaneo físico, prueba manual de cuenta sin perfil/historial y pruebas Storage con emulator/cuentas reales más allá del smoke administrativo.
 - Errores visuales/UX: mensajes extensos en perfil/importación y falta de filtros; E-012, E-029, E-040 y E-041 quedan corregidos localmente con pendiente de validación manual.
 - Errores de navegación: E-014 y E-027 corregidos localmente, pendiente validación manual con cuentas reales.
-- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**), E-024 (**modalidades no convocadas opcionales en legacy**), E-025 (**faltas injustificadas vs ausencias justificadas/no convocados**), E-028 (**publicación de resultados**), E-035 (**fechas/evento requerido en elecciones**), E-036 (**URL/orden de candidatos**), E-038 (**nombres duplicados de candidatos por elección**), E-039 (**borrado de candidatos con votos**), E-043 (**mismas exclusiones en `attendance_events`**), **E-044**, **E-045**, **E-046** (**imagen candidato**: URL http(s), subida bajo **`candidates/{id}/`**, reglas Storage con escritura admin), **E-047** (**plantilla import socios** con encabezados canónicos) y **E-048** (**CSV export socios como archivo completo**); faltan pruebas sistemáticas con emulator Storage si se desea garantía fuerte.
+- Errores de validación: corregidos localmente E-002, E-006 (**incluye columna modalidad en import socios**), E-007, E-013, E-017, E-018 (**modalidad en padrón**), E-024 (**modalidades no convocadas opcionales en legacy**), E-025 (**faltas injustificadas vs ausencias justificadas/no convocados**), E-028 (**publicación de resultados**), E-035 (**fechas/evento requerido en elecciones**), E-036 (**URL/orden de candidatos**), E-038 (**nombres duplicados de candidatos por elección**), E-039 (**borrado de candidatos con votos**), E-043 (**mismas exclusiones en `attendance_events`**), **E-044**, **E-045**, **E-046** (**imagen candidato**: URL http(s), subida bajo **`candidates/{id}/`**, reglas Storage con escritura admin), **E-047** (**plantilla import socios** con encabezados canónicos), **E-048/E-049** (**CSV export socios como archivo completo con asistencias/faltas**) y **E-054/E-055** (**perfil/QR sin errores visibles para usuario final**); faltan pruebas sistemáticas con emulator Storage si se desea garantía fuerte.
 - Errores de permisos: E-001, E-002, E-014, E-019, E-020, E-026, E-027 y **E-046** corregidos localmente, pendientes pruebas con emulator/usuarios reales.
 - Errores de rendimiento: E-015 parcialmente mitigado por E-023 en el listado de socios y E-030 en auditoría; persisten lecturas completas en búsqueda/exportación y algunas pantallas de asistencia.
 - Errores de contenido: instrucciones contradictorias de importación/QR corregidas en perfil; mantener revisión de copy operativo con usuarios reales.
@@ -1339,7 +1392,7 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | H-014 | **Mitigado localmente (2026-05-01):** vínculo canónico `users.memberId` para consultas de perfil/resumen | Perfil / Seguridad | Queda riesgo residual hasta desplegar reglas y completar datos históricos; las reglas aún mantienen lecturas amplias en colecciones de asistencia por compatibilidad | Desplegar reglas, validar auto-registro/backfill con usuarios reales y preparar migración para `users` antiguos sin `memberId` | Alta |
 | H-001 | **Mitigado localmente (2026-05-01):** test puro de decisión de acceso por rol y matriz documentada; falta validación manual con cuentas reales | Navegación | Regresión futura reducida en acceso por URL/ruta; persiste riesgo si reglas desplegadas o claims reales difieren | Ejecutar pruebas manuales por `SUPERADMIN`, `ADMIN`, `OPERADOR_ASISTENCIA`, `VOTER` y `USER` en Firebase real | Media |
 | H-002 | Cobertura baja de login/voto/asistencia, mitigada parcialmente con pruebas de ruta/roles y visibilidad de resultados | QA | Regresiones no detectadas en flujos críticos de negocio con Firestore real | Crear tests de widgets y servicios con mocks/emulator para voto, resumen de asistencia, login y reglas | Alta |
-| H-003 | No hay Firebase Emulator tests para reglas | Seguridad | Reglas rotas en producción | Agregar suite de reglas y Java 21+ local | Alta |
+| H-003 | Suite Firebase Emulator de reglas | Seguridad | Corregido localmente: 11 casos positivos/negativos para Firestore y Storage | Mantenerla en la puerta `./tool/verify.ps1` y ampliarla cuando cambien reglas | Cerrado local |
 | H-004 | Dos modelos de asistencia coexistiendo | Asistencia | Divergencias si operación no sigue pestañas en UI export/home | **`generateAttendanceReport`** y **`/asistencia/exportar`** contemplan legacy + **`attendance_events`** (pestaña Reporte/Ambos) | Media |
 | H-005 | Mitigado parcialmente 2026-05-01: paginación básica en listado de socios (`/members`) y carga incremental en auditoría (`/audit/logs`) | Socios/asistencia/auditoría | Persisten costes en búsqueda/exportación y algunos listados de asistencia | Extender paginación a asistencia, búsqueda indexada y exportaciones por rango/evento | Media |
 | H-006 | **Mitigado localmente (2026-05-01):** exportaciones sensibles de socios, asistencia y resultados piden confirmación previa; cambios de estado/eliminaciones ya tenían confirmación | Exportaciones/estado | Riesgo residual si se agregan nuevas exportaciones sin seguir el patrón | Mantener confirmación y advertencia de datos sensibles en toda exportación nueva | Baja |
@@ -1376,9 +1429,9 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | Registro funcional | Parcial | Implementado; reglas locales restringen rol, falta validar con Firebase real/emulator. |
 | Validaciones de formularios | Parcial | Hay obligatorios, email en login/registro y unicidad de socios reforzada; faltan formatos estrictos (tel./documento) en algunos puntos. |
 | Manejo de errores | Parcial | Hay mensajes, pero algunos son genéricos o solo `debugPrint`. |
-| Responsive design | Pendiente | No se verificó visualmente; algunos layouts tienen adaptaciones. |
-| Roles y permisos | Parcial | UI y rutas ya incluyen guard; falta validación manual/test por rol real. |
-| Seguridad básica | Parcial | Firebase Auth y reglas locales compilan; falta suite emulator y despliegue controlado. |
+| Responsive design | Parcial | Home, pie de navegación y perfil fueron corregidos localmente; falta validación visual en Android/iOS reales y tamaños de fuente grandes. |
+| Roles y permisos | Completo/parcial | UI, rutas y reglas principales están alineadas; falta validación manual/test por rol real con cuentas Firebase. |
+| Seguridad básica | Completo/parcial | Firebase Auth, reglas Firestore y reglas Storage compilan en dry-run; falta suite emulator, deploy Storage real de E-046 y prueba controlada. |
 | Estados de carga | Completo/parcial | Existen en la mayoría de pantallas. |
 | Estados vacíos | Completo/parcial | Implementados en listados principales. |
 | Mensajes al usuario | Parcial | Presentes, pero algunos son excesivos o inconsistentes. |
@@ -1386,8 +1439,8 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 | Resumen asistencia en perfil | Parcial | Implementado con stream nuevo + legacy y exclusión por modalidad; falta validación Firebase real/emulator y datos representativos. |
 | Auditoría | Parcial | `audit_logs` activo; Historial de Eventos ya se alimenta desde `audit_logs`; `events` queda legacy. |
 | Exportaciones | Parcial | CSV/PDF/XLSX real; exportación de socios como archivo CSV completo corregida en E-048; falta prueba manual de apertura y filtros por evento/fecha. |
-| Pruebas automatizadas | Parcial | 45 pruebas pasan; cobertura local creció en roles, elecciones, candidatos, socios/exportación, importación, scanner y arranque, pero aún falta emulator/Firestore real para flujos críticos. |
-| Análisis estático | Completo/parcial | `flutter analyze` / `--no-pub` sin issues en verificaciones recientes (**E-044** a **E-047** Mayo 2026). |
+| Pruebas automatizadas | Completo/parcial | 61 pruebas Flutter y 11 pruebas Emulator pasan; falta validación con proyecto QA/datos reales para flujos críticos. |
+| Análisis estático | Completo | `flutter analyze --no-pub` sin issues al 2026-05-04. |
 
 ## 11. Casos de prueba sugeridos
 
@@ -1433,17 +1486,17 @@ La matriz refleja el contrato actual de navegación en `lib/main.dart` y la deci
 
 ## 12. Conclusión general
 
-La aplicación tiene una base funcional amplia y una arquitectura entendible por módulos. Están implementados los flujos principales de autenticación, votación, asistencia, socios, QR, exportaciones y auditoría. Después de las correcciones locales del 2026-05-01, el estado mejora a MVP avanzado con riesgos críticos mitigados, pero aún no listo para producción sin validación con Firebase real/emulator, usuarios por rol y datos representativos.
+La aplicación tiene una base funcional amplia y una arquitectura entendible por módulos. Están implementados los flujos principales de autenticación, votación, asistencia, socios, QR, exportaciones y auditoría. Después del cierre técnico del **2026-06-06**, el estado local es estable: análisis sin issues, 61 pruebas Flutter y 11 pruebas Emulator correctas, reglas/índices/Storage compilando en dry-run y builds QA de entrega generados. Aun así, no debe declararse producción 100% hasta completar firma Android productiva, despliegue autorizado, usuarios reales por rol, dispositivos móviles y datos representativos.
 
 Para **fotos de candidatos** (**E-044**/ **E-045**/ **E-046**), el entorno **`sistema-integrado-sindicato`** quedó con Storage iniciado y un deploy previo de reglas (**2026-05-02**). La versión local actual de **`storage.rules`** ya restringe escritura y borrado a `SUPERADMIN`/`ADMIN`; compila en dry-run y debe desplegarse con **`firebase deploy --only storage`** antes de pruebas operativas. Revisar objetos **`candidates/{candidateId}/`** en consola ante incidencias.
 
 El mayor riesgo residual en datos de asistencia es **organizativo**: conviven **`eventos`** y **`attendance_events`** pero la aplicación ya enruta y persiste cada flujo coherentemente (**`AsistenciaEventRouteArgs`** + servicios); el reporte (**`generateAttendanceReport`**) consume ambos. Quedan mejoras como exportación única desde modelo nuevo si se desea vista global. El riesgo de seguridad de reglas de voto/usuarios fue corregido localmente y las reglas compilan en dry-run; falta suite emulator con casos negativos.
 
-La completitud funcional estimada es alta en cobertura de pantallas y media-alta en robustez local. El nivel de completitud global estimado sube a **86-90%**, condicionado por pruebas automatizadas adicionales, validación con Firebase real/emulator y pruebas manuales por rol/datos reales.
+La completitud técnico-local estimada es **90-92%** para lo cubierto por código, rutas, servicios y pruebas automatizadas. La preparación productiva se mantiene alrededor de **86-90%**, porque los pendientes restantes dependen de validación real por rol, emuladores/reglas, Storage desplegado, cámara/dispositivos y datos operativos.
 
 Para considerar la aplicación **100% completa** antes de entrega productiva todavía falta:
 
-1. Ejecutar suite Firebase Emulator con casos positivos y negativos de reglas para `users`, `members`, `votes`, `attendance_events`, `asistencias`, `audit_logs` y acceso por rol.
+1. Mantener y ampliar la suite Firebase Emulator cuando cambien reglas o contratos de datos.
 2. Validar manualmente con cuentas reales `SUPERADMIN`, `ADMIN`, `OPERADOR_ASISTENCIA`, `VOTER` y `USER`, incluyendo rutas directas protegidas, botones ocultos y acciones bloqueadas por servicio/reglas.
 3. Probar en dispositivo físico el escáner QR, permisos de cámara, doble escaneo, registro manual y actualización del resumen de asistencia del perfil.
 4. Ejecutar pruebas end-to-end con datos representativos de socios, eventos legacy, eventos reporte, elecciones activas/inactivas, candidatos y votos reales de prueba.
@@ -1543,17 +1596,17 @@ Prioridades antes de entrega o producción:
 
 ### D. Resultados de análisis estático
 
-`flutter analyze` / `--no-pub` ejecutado sin issues en revisiones previas (**2026-05-01** global; **2026-04-30** en archivos **E-044**). Tras **E-047** (**2026-05-02**), **`flutter analyze --no-pub`** queda limpio sobre el proyecto completo.
+`dart analyze lib test` ejecutado sin issues en el cierre técnico del **2026-06-06**.
 
 Resultado actual:
 
-- Comando: `flutter analyze` / `--no-pub` según ciclo local.
-- Estado: sin issues conocidos sobre el código documentado (**E-044** a **E-047**).
-- Observación: la revisión estática local queda limpia después de las correcciones aplicadas y la ampliación de candidatos con Storage.
+- Comando: `dart analyze lib test`.
+- Estado: sin issues sobre el proyecto completo.
+- Observación: la revisión estática local queda limpia después de las correcciones aplicadas, incluyendo perfil, asistencia, socios, exportaciones, Storage y rediseño Home/QR.
 
 ### E. Resultados de pruebas
 
-`flutter test --no-pub --reporter expanded` se ejecutó nuevamente el 2026-05-01 y pasó correctamente:
+`./tool/verify.ps1` se ejecutó nuevamente el **2026-06-06** y pasó correctamente:
 
 - `test/widget_test.dart`: valida que se muestre Login cuando no hay sesión activa y que `AppBootstrap` muestre error Firebase con **Reintentar** y se recupere al segundo intento.
 - `test/app_user_test.dart`: valida serialización y lectura de `AppUser.memberId`.
@@ -1565,15 +1618,15 @@ Resultado actual:
 - `test/evento_asistencia_test.dart`: valida serialización canónica de `modalidadesNoConvocadas`, lectura de `modalidad` legacy como exclusión única y descarte de valores inválidos/duplicados.
 - `test/route_access_test.dart`: valida decisión de acceso por rol para estados de carga, sesión requerida, rutas autenticadas, rutas administrativas y rutas de asistencia.
 - `test/scanner_screen_test.dart`: valida que el scanner muestre nombre/modalidad al registrar por código y no bloquee registros cuando la modalidad está sin asignar.
-- Estado: 45 pruebas pasan.
-- Acción recomendada: ampliar cobertura de reglas Firestore, voto, resumen de asistencia, login e importación con datos representativos/emulator.
+- Estado: **61 pruebas Flutter y 11 pruebas Firebase Emulator pasan**.
+- Acción recomendada: ampliar cobertura con datos representativos y pruebas manuales por rol/dispositivo.
 
 ### F. Validación de reglas Firestore
 
-- `firebase deploy --only firestore --dry-run` se ejecutó nuevamente el 2026-05-01: correcto (compilación local de reglas actuales, incluyendo E-019 y E-020).
+- `firebase deploy --only firestore:rules,firestore:indexes --dry-run` se ejecutó nuevamente el **2026-06-06**: correcto.
 - `firebase deploy --only firestore` (sin dry-run) al proyecto **`sistema-integrado-sindicato`** se ejecutó previamente el mismo día: **deploy complete** según ejecución en entorno de desarrollo. Tras E-019/E-020 se validó con dry-run, pero queda pendiente repetir deploy real antes de pruebas operativas con `ADMIN`.
-- **Actualización 2026-05-02 / revisada 2026-05-04:** en entorno de desarrollo se ejecutaron despliegues parciales explícitos **`firebase deploy --only firestore:rules`** contra **`sistema-integrado-sindicato`**; la referencia previa a **`firestore:indexes`** queda marcada como pendiente de confirmar porque el estado local actual no incluye **`firestore.indexes.json`** ni entrada `indexes` en **`firebase.json`**. Tras **E-054**, el resumen de perfil evita la consulta que requería índice `COLLECTION_GROUP_ASC`.
-- Limitación: no sustituye pruebas con Firebase Emulator; para emuladores suele hacer falta Java 21+ local.
+- **Actualización 2026-06-06:** `firestore.indexes.json` queda versionado y referenciado por `firebase.json`; la suite Emulator ejecuta 11 casos de permisos y contratos críticos usando Java 21 local.
+- Limitación: Emulator y dry-run no sustituyen el despliegue autorizado ni las pruebas con cuentas/datos reales.
 
 **Firebase Storage (reglas):**
 
@@ -1581,7 +1634,7 @@ Resultado actual:
 - Operación: **`firebase deploy --only storage`**.
 - **2026-04-30:** error *«Firebase Storage has not been set up…»* hasta **Comenzar** en consola.
 - **2026-05-02:** tras aprovisionamiento, **`firebase deploy --only storage`** completado (reglas liberadas). La app cliente sube fotos nuevas por **`CandidatePhotoStorage`** bajo **`candidates/{candidateId}/`** (**E-045**).
-- **2026-05-02 / E-046:** **`storage.rules`** se endurece localmente: lectura autenticada, escritura/borrado sólo `SUPERADMIN`/`ADMIN`, validación `image/*` &lt; 5 MB. **`firebase deploy --only storage --dry-run`** compila correctamente; pendiente deploy real para liberar esta versión.
+- **2026-05-04 / E-056:** **`firebase deploy --only storage --dry-run`** compila correctamente la versión local actual de **`storage.rules`**; sigue pendiente deploy real para liberar la versión endurecida en remoto.
 
 ### G. Bitácora de correcciones
 
@@ -1589,6 +1642,9 @@ _Se añaden entradas nuevas arriba; las anteriores se conservan como historial._
 
 | Fecha | Corrección | Archivos | Validación | Estado |
 |---|---|---|---|---|
+| 2026-06-06 | **E-057**: cierre de la fase automatizable de preproducción. Se agregan puerta integral, pruebas de reglas Firestore/Storage en Emulator, índices versionados, CI de calidad, protección de logs release, pruebas de asistencia, firma Android obligatoria, script reproducible de builds y actualización de Gradle/AGP/Kotlin. | `tool/verify.ps1`, `tool/build_release.ps1`, `firebase_rules_test/`, `firestore.indexes.json`, `firebase.json`, `.gitlab-ci.yml`, `android/`, `lib/main.dart`, `lib/services/audit_service.dart`, `test/`, `docs/deployment/`, `expediente_tecnico_aplicacion.md` | `./tool/verify.ps1` OK (61 Flutter + 11 Emulator); dry-run Firestore/índices/Storage OK; Web/Windows/APK/AAB QA OK; Android productivo correctamente bloqueado sin clave | Cerrado localmente; aceptación/despliegue externos pendientes |
+| 2026-05-04 | **E-056**: revisión integral técnico-funcional paso a paso del sistema contra expediente, rutas, servicios, modelos, reglas Firestore/Storage, módulos de socios, asistencia, votación, auditoría, importación/exportación y perfil. Se documenta qué queda validado localmente al 100% y qué falta para declarar 100% producción. | `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (52/52); `firebase deploy --only firestore:rules --dry-run` OK; `firebase deploy --only storage --dry-run` OK; `git diff --check` OK | Documentado |
+| 2026-05-04 | **E-055**: corrección visual del **QR compartido desde Mi Perfil**. El PNG generado por `_shareMemberAttendanceQr()` ahora pinta fondo blanco sólido antes de dibujar el QR con `QrPainter`, evitando que WhatsApp u otros visores representen la transparencia como fondo negro. | `lib/features/profile/user_profile_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (52/52); pendiente prueba manual compartiendo QR en Android/WhatsApp | Aplicado localmente |
 | 2026-05-04 | **E-054**: corrección del error en **Mi Perfil / Resumen de asistencia** mostrado como `[cloud_firestore/failed-precondition]` por índice `COLLECTION_GROUP_ASC` en `asistencias.personaId`. `AttendanceService.watchMemberAttendanceSummary()` deja de usar `collectionGroup('asistencias')` y escucha cada subcolección `attendance_events/{eventId}/asistencias` filtrada por `personaId`; `UserProfileScreen` reemplaza el detalle técnico largo por un mensaje resumido para usuario. | `lib/services/attendance_service.dart`, `lib/features/profile/user_profile_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (52/52); búsqueda local confirma que ya no hay `collectionGroup('asistencias')` en `lib/` | Aplicado localmente |
 | 2026-05-02 | **E-053**: ajuste de **Home / Dashboard principal** para completar el pie de navegación y eliminar desbordamientos. Se agrega barra inferior flotante tipo pill con Inicio, Voto, Asist., Socios y Perfil según rol; las tarjetas de módulos pasan de altura fija a altura mínima flexible para evitar `BOTTOM OVERFLOWED` en móvil. | `lib/features/home/home_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (45/45) | Aplicado localmente |
 | 2026-05-02 | **E-052**: rediseño visual del **Home / Dashboard principal** según referencia entregada. `HomeScreen` reemplaza app bar/tarjetas lineales por header morado con onda, logo, acciones rápidas, tarjeta de bienvenida, grilla responsiva de módulos y aviso de seguridad; conserva rutas y visibilidad por rol. | `lib/features/home/home_screen.dart`, `expediente_tecnico_aplicacion.md` | `flutter analyze --no-pub` OK; `flutter test --no-pub --reporter expanded` OK (45/45) | Aplicado localmente |

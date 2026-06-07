@@ -182,6 +182,8 @@ class _ReportBrandingSettingsScreenState
                                     ? Image.network(
                                         url,
                                         fit: BoxFit.cover,
+                                        webHtmlElementStrategy:
+                                            WebHtmlElementStrategy.fallback,
                                         errorBuilder: (_, __, ___) => Icon(
                                           Icons.broken_image_outlined,
                                           size: 48,

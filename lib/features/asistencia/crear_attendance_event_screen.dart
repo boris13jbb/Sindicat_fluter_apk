@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/premium_card.dart';
 import '../../core/models/asistencia/evento.dart';
 import '../../core/models/member.dart';
-import '../../core/widgets/professional_app_bar.dart';
+import '../../core/models/user_role.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/attendance_service.dart';
 import '../../services/members_service.dart';
+import '../elections/widgets/voto_premium_chrome.dart';
 
 /// Alta de eventos operativos en la colección `attendance_events`.
 class CrearAttendanceEventScreen extends StatefulWidget {
@@ -29,6 +35,17 @@ class _CrearAttendanceEventScreenState
   _TipoCrearEvento _tipoCrear = _TipoCrearEvento.ordinaria;
   bool _loading = false;
 
+  /// UI mock (`03_asistencia_crear_evento`): sin persistencia en modelo actual.
+  bool _toggleQrRegistro = true;
+  bool _toggleManualRegistro = true;
+  bool _toggleBloquearDuplicados = true;
+
+  /// Estado inicial del evento (`AttendanceEvent.estado`).
+  String _estadoInicial = 'programado';
+
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _advancedSectionKey = GlobalKey();
+
   /// `true`: `miembrosConvocados` vacío → el cálculo usa todos los activos (`AttendanceService`).
   bool _convocatoriaTodosActivos = true;
   final Set<String> _miembrosConvocadosIds = <String>{};
@@ -49,6 +66,7 @@ class _CrearAttendanceEventScreenState
     _descripcionController.dispose();
     _lugarController.dispose();
     _tipoCustomController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -60,14 +78,60 @@ class _CrearAttendanceEventScreenState
       case _TipoCrearEvento.extraordinaria:
         return 'extraordinaria';
       case _TipoCrearEvento.escribir:
-        var t = _tipoCustomController.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+        var t = _tipoCustomController.text.trim().replaceAll(
+          RegExp(r'\s+'),
+          ' ',
+        );
         if (t.isEmpty) return 'personalizado';
         if (t.length > 80) t = t.substring(0, 80);
         return t.toLowerCase();
     }
   }
 
-  Future<void> _pickDateTime() async {
+  Future<void> _pickDateOnly() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _fecha,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (date == null || !mounted) return;
+    setState(() {
+      _fecha = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        _fecha.hour,
+        _fecha.minute,
+      );
+      if (!_fechaFin.isAfter(_fecha)) {
+        _fechaFin = DateTime(_fecha.year, _fecha.month, _fecha.day, 23, 59);
+      }
+    });
+  }
+
+  Future<void> _pickStartTime() async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_fecha),
+    );
+    if (time == null || !mounted) return;
+    setState(() {
+      _fecha = DateTime(
+        _fecha.year,
+        _fecha.month,
+        _fecha.day,
+        time.hour,
+        time.minute,
+      );
+      if (!_fechaFin.isAfter(_fecha)) {
+        _fechaFin = DateTime(_fecha.year, _fecha.month, _fecha.day, 23, 59);
+      }
+    });
+  }
+
+  /// Ajuste conjunto inicio (opciones avanzadas).
+  Future<void> _pickDateTimeCombined() async {
     final date = await showDatePicker(
       context: context,
       initialDate: _fecha,
@@ -89,13 +153,7 @@ class _CrearAttendanceEventScreenState
         time.minute,
       );
       if (!_fechaFin.isAfter(_fecha)) {
-        _fechaFin = DateTime(
-          _fecha.year,
-          _fecha.month,
-          _fecha.day,
-          23,
-          59,
-        );
+        _fechaFin = DateTime(_fecha.year, _fecha.month, _fecha.day, 23, 59);
       }
     });
   }
@@ -186,7 +244,9 @@ class _CrearAttendanceEventScreenState
         _tipoCustomController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Describe el tipo personalizado o elige Ordinaria / Extraordinaria.'),
+          content: Text(
+            'Describe el tipo personalizado o elige Ordinaria / Extraordinaria.',
+          ),
         ),
       );
       return;
@@ -212,6 +272,7 @@ class _CrearAttendanceEventScreenState
               .toList(),
           creadoPor: '',
           createdAt: 0,
+          estado: _estadoInicial,
         ),
       );
       if (!mounted) return;
@@ -236,230 +297,518 @@ class _CrearAttendanceEventScreenState
     }
   }
 
+  InputDecoration _premiumInputDec(String label, {String? hint}) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(
+          color: AppDesignTokens.primary.withValues(alpha: 0.2),
+        ),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(
+          color: AppDesignTokens.primary.withValues(alpha: 0.2),
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(
+          color: AppDesignTokens.primary,
+          width: 1.6,
+        ),
+      ),
+    );
+  }
+
+  String _fechaDMYText() {
+    return '${_fecha.day.toString().padLeft(2, '0')}/'
+        '${_fecha.month.toString().padLeft(2, '0')}/'
+        '${_fecha.year}';
+  }
+
+  String _horaInicioText() {
+    return '${_fecha.hour.toString().padLeft(2, '0')}:'
+        '${_fecha.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _lavenderSwitchRow({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppDesignTokens.lavanda,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+                color: AppDesignTokens.primaryDark,
+              ),
+            ),
+          ),
+          Switch(
+            value: value,
+            activeThumbColor: Colors.white,
+            activeTrackColor: AppDesignTokens.primary,
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: AppDesignTokens.primaryDark.withValues(
+              alpha: 0.25,
+            ),
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _scrollToAdvanced() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _advancedSectionKey.currentContext;
+      if (ctx != null && mounted) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 380),
+          curve: Curves.easeOutCubic,
+          alignment: 0.05,
+        );
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final auth = context.watch<AuthProvider>();
+    final role = auth.user?.role ?? UserRole.user;
 
     return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Crear evento de asistencia',
-        onNavigateBack: () => Navigator.pop(context),
+      backgroundColor: AppDesignTokens.background,
+      bottomNavigationBar: VotoModuleBottomNavigation(
+        role: role,
+        selection: VotoNavSlot.asistencia,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          VotoWaveHeader(
+            title: 'Crear evento',
+            subtitle: 'Nuevo control de asistencia',
+            onBack: () => Navigator.pop(context),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                VotoCircleIconButton(
+                  icon: Icons.help_outline_rounded,
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Completa los datos principales. Convocatoria, tipo de '
+                          'reunión y fin de vigencia están en «Más opciones».',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 6),
+                VotoCircleIconButton(
+                  icon: Icons.edit_calendar_outlined,
+                  onTap: _pickDateTimeCombined,
+                ),
+                const SizedBox(width: 6),
+                VotoCircleIconButton(
+                  icon: Icons.tune_rounded,
+                  onTap: _scrollToAdvanced,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(
+                AppDesignTokens.horizontalPadding,
+                12,
+                AppDesignTokens.horizontalPadding,
+                32,
+              ),
+              child: PremiumCard(
+                margin: EdgeInsets.zero,
+                padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Evento de asistencia',
-                      style: theme.textTheme.titleMedium,
+                      'Datos principales',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppDesignTokens.primaryDark,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _nombreController,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: _premiumInputDec(
+                        'Nombre del evento',
+                        hint: 'Asamblea general',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _descripcionController,
+                      maxLines: 3,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: _premiumInputDec(
+                        'Descripción',
+                        hint: 'Control de asistencia mensual',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    InkWell(
+                      onTap: _pickDateOnly,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InputDecorator(
+                        decoration:
+                            _premiumInputDec(
+                              'Fecha',
+                              hint: 'dd/mm/aaaa',
+                            ).copyWith(
+                              suffixIcon: Icon(
+                                Icons.calendar_today_outlined,
+                                color: AppDesignTokens.primary.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                            ),
+                        child: Text(
+                          _fechaDMYText(),
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: AppDesignTokens.primaryDark,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    InkWell(
+                      onTap: _pickStartTime,
+                      borderRadius: BorderRadius.circular(14),
+                      child: InputDecorator(
+                        decoration:
+                            _premiumInputDec(
+                              'Hora inicio',
+                              hint: '09:00',
+                            ).copyWith(
+                              suffixIcon: Icon(
+                                Icons.schedule_rounded,
+                                color: AppDesignTokens.primary.withValues(
+                                  alpha: 0.7,
+                                ),
+                              ),
+                            ),
+                        child: Text(
+                          _horaInicioText(),
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: AppDesignTokens.primaryDark,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _lugarController,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: _premiumInputDec(
+                        'Lugar',
+                        hint: 'Auditorio principal',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      initialValue: _estadoInicial,
+                      decoration: _premiumInputDec('Estado'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'programado',
+                          child: Text('Programado'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'en_curso',
+                          child: Text('En curso'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'finalizado',
+                          child: Text('Finalizado'),
+                        ),
+                      ],
+                      onChanged: _loading
+                          ? null
+                          : (v) => setState(
+                              () => _estadoInicial = v ?? 'programado',
+                            ),
+                    ),
+                    const SizedBox(height: 18),
+                    _lavenderSwitchRow(
+                      label: 'Permitir registro por QR',
+                      value: _toggleQrRegistro,
+                      onChanged: _loading
+                          ? (_) {}
+                          : (v) => setState(() => _toggleQrRegistro = v),
+                    ),
+                    _lavenderSwitchRow(
+                      label: 'Permitir registro manual',
+                      value: _toggleManualRegistro,
+                      onChanged: _loading
+                          ? (_) {}
+                          : (v) => setState(() => _toggleManualRegistro = v),
+                    ),
+                    _lavenderSwitchRow(
+                      label: 'Bloquear duplicados',
+                      value: _toggleBloquearDuplicados,
+                      onChanged: _loading
+                          ? (_) {}
+                          : (v) =>
+                                setState(() => _toggleBloquearDuplicados = v),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Define la convocatoria del evento y permite calcular presentes, faltas y socios no convocados. '
-                      'Con «Todos los socios activos», se incluye el padrón activo completo.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      'Los interruptores reflejan la configuración deseada; el '
+                      'comportamiento efectivo de QR/manual sigue las pantallas de '
+                      'registro. Los duplicados ya se bloquean al registrar en Firestore.',
+                      style: AppDesignTokens.bodyMuted(context),
+                    ),
+                    const SizedBox(height: 20),
+                    if (_loading)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator(),
+                        ),
+                      )
+                    else
+                      FilledButton(
+                        onPressed: _guardar,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppDesignTokens.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: const Text(
+                          'Guardar cambios',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
                       ),
+                    const SizedBox(height: 16),
+                    Divider(
+                      height: 1,
+                      color: AppDesignTokens.primary.withValues(alpha: 0.12),
+                    ),
+                    const SizedBox(height: 8),
+                    ExpansionTile(
+                      key: _advancedSectionKey,
+                      tilePadding: EdgeInsets.zero,
+                      title: Text(
+                        'Más opciones: convocatoria, tipo y vigencia',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: AppDesignTokens.primaryDark,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Tipo de reunión, modalidades excluidas y fin de vigencia',
+                        style: AppDesignTokens.bodyMuted(context),
+                      ),
+                      childrenPadding: const EdgeInsets.only(bottom: 12),
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Convocatoria'),
+                          subtitle: Text(
+                            _convocatoriaTodosActivos
+                                ? 'Todos los socios activos'
+                                : 'Lista personalizada (${_miembrosConvocadosIds.length})',
+                          ),
+                          value: _convocatoriaTodosActivos,
+                          onChanged: (v) => setState(() {
+                            _convocatoriaTodosActivos = v;
+                            if (v) _miembrosConvocadosIds.clear();
+                          }),
+                        ),
+                        if (!_convocatoriaTodosActivos)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: OutlinedButton.icon(
+                              onPressed: _abrirSeleccionConvocados,
+                              icon: const Icon(Icons.group_add_outlined),
+                              label: Text(
+                                _miembrosConvocadosIds.isEmpty
+                                    ? 'Elegir convocados'
+                                    : 'Editar convocados (${_miembrosConvocadosIds.length})',
+                              ),
+                            ),
+                          ),
+                        Text('Tipo', style: theme.textTheme.labelLarge),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilterChip(
+                              label: const Text('Ordinaria'),
+                              selected:
+                                  _tipoCrear == _TipoCrearEvento.ordinaria,
+                              onSelected: (_) => setState(
+                                () => _tipoCrear = _TipoCrearEvento.ordinaria,
+                              ),
+                            ),
+                            FilterChip(
+                              label: const Text('Extraordinaria'),
+                              selected:
+                                  _tipoCrear == _TipoCrearEvento.extraordinaria,
+                              onSelected: (_) => setState(
+                                () => _tipoCrear =
+                                    _TipoCrearEvento.extraordinaria,
+                              ),
+                            ),
+                            FilterChip(
+                              label: const Text('Escribir…'),
+                              selected: _tipoCrear == _TipoCrearEvento.escribir,
+                              onSelected: (_) => setState(
+                                () => _tipoCrear = _TipoCrearEvento.escribir,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_tipoCrear == _TipoCrearEvento.escribir) ...[
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _tipoCustomController,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: _premiumInputDec(
+                              'Tipo personalizado',
+                              hint: 'Ej.: reunión de delegados',
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        Text(
+                          'Modalidades no convocadas',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Marca las modalidades que no aplican a esta convocatoria.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _CrearAttendanceInfoBox(
+                          icon: Icons.info_outline,
+                          color: Colors.blue,
+                          text:
+                              'Solo las modalidades marcadas quedan fuera del cómputo de convocatoria.',
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: Modalidad.valoresParaJustificacionAsistencia
+                              .map((modalidad) {
+                                final selected = _modalidadesNoConvocadas
+                                    .contains(modalidad);
+                                return FilterChip(
+                                  selected: selected,
+                                  avatar: selected
+                                      ? const Icon(Icons.check, size: 18)
+                                      : null,
+                                  label: Text(
+                                    JustificacionHelper.etiquetaModalidad(
+                                      modalidad,
+                                    ),
+                                  ),
+                                  onSelected: (checked) {
+                                    setState(() {
+                                      if (checked) {
+                                        _modalidadesNoConvocadas.add(modalidad);
+                                      } else {
+                                        _modalidadesNoConvocadas.remove(
+                                          modalidad,
+                                        );
+                                      }
+                                    });
+                                  },
+                                );
+                              })
+                              .toList(),
+                        ),
+                        const SizedBox(height: 8),
+                        _CrearAttendanceInfoBox(
+                          icon: Icons.rule,
+                          color: _modalidadesNoConvocadas.isEmpty
+                              ? Colors.orange
+                              : Colors.green,
+                          text: _modalidadesNoConvocadas.isEmpty
+                              ? 'Sin exclusiones: todas las modalidades entran en la convocatoria según la lista de socios.'
+                              : 'No convocadas: ${_modalidadesNoConvocadas.map(JustificacionHelper.etiquetaModalidad).join(', ')}.',
+                        ),
+                        const SizedBox(height: 12),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          title: const Text('Fecha y hora de fin de vigencia'),
+                          subtitle: Text(
+                            '${_fechaFin.day}/${_fechaFin.month}/${_fechaFin.year} '
+                            '${_fechaFin.hour.toString().padLeft(2, '0')}:'
+                            '${_fechaFin.minute.toString().padLeft(2, '0')}',
+                          ),
+                          trailing: Icon(
+                            Icons.event_available_outlined,
+                            color: AppDesignTokens.primary,
+                          ),
+                          onTap: _pickFechaFin,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'El evento permanece vigente para vínculos (p. ej. elecciones) '
+                          'mientras esté activo y no haya pasado la fecha de fin.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            SwitchListTile(
-              title: const Text('Convocatoria'),
-              subtitle: Text(
-                _convocatoriaTodosActivos
-                    ? 'Todos los socios activos'
-                    : 'Lista personalizada (${_miembrosConvocadosIds.length})',
-              ),
-              value: _convocatoriaTodosActivos,
-              onChanged: (v) => setState(() {
-                _convocatoriaTodosActivos = v;
-                if (v) _miembrosConvocadosIds.clear();
-              }),
-            ),
-            if (!_convocatoriaTodosActivos)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: OutlinedButton.icon(
-                  onPressed: _abrirSeleccionConvocados,
-                  icon: const Icon(Icons.group_add_outlined),
-                  label: Text(
-                    _miembrosConvocadosIds.isEmpty
-                        ? 'Elegir convocados'
-                        : 'Editar convocados (${_miembrosConvocadosIds.length})',
-                  ),
-                ),
-              ),
-            TextField(
-              controller: _nombreController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del evento *',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _descripcionController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Descripción',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _lugarController,
-              decoration: const InputDecoration(
-                labelText: 'Lugar / sede *',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Tipo', style: theme.textTheme.labelLarge),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilterChip(
-                  label: const Text('Ordinaria'),
-                  selected: _tipoCrear == _TipoCrearEvento.ordinaria,
-                  onSelected: (_) => setState(() => _tipoCrear = _TipoCrearEvento.ordinaria),
-                ),
-                FilterChip(
-                  label: const Text('Extraordinaria'),
-                  selected: _tipoCrear == _TipoCrearEvento.extraordinaria,
-                  onSelected: (_) =>
-                      setState(() => _tipoCrear = _TipoCrearEvento.extraordinaria),
-                ),
-                FilterChip(
-                  label: const Text('Escribir…'),
-                  selected: _tipoCrear == _TipoCrearEvento.escribir,
-                  onSelected: (_) => setState(() => _tipoCrear = _TipoCrearEvento.escribir),
-                ),
-              ],
-            ),
-            if (_tipoCrear == _TipoCrearEvento.escribir) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _tipoCustomController,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  labelText: 'Tipo personalizado *',
-                  hintText: 'Ej.: reunión de delegados',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-            const SizedBox(height: 24),
-            Text(
-              'Modalidades no convocadas',
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Marca las modalidades que no aplican a esta convocatoria. '
-              'Los socios en esas modalidades no se cuentan como convocados ni como faltas injustificadas.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _CrearAttendanceInfoBox(
-              icon: Icons.info_outline,
-              color: Colors.blue,
-              text:
-                  'Solo las modalidades marcadas quedan fuera del cómputo de convocatoria.',
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children:
-                  Modalidad.valoresParaJustificacionAsistencia.map((modalidad) {
-                    final selected =
-                        _modalidadesNoConvocadas.contains(modalidad);
-                    return FilterChip(
-                      selected: selected,
-                      avatar: selected ? const Icon(Icons.check, size: 18) : null,
-                      label: Text(
-                        JustificacionHelper.etiquetaModalidad(modalidad),
-                      ),
-                      onSelected: (checked) {
-                        setState(() {
-                          if (checked) {
-                            _modalidadesNoConvocadas.add(modalidad);
-                          } else {
-                            _modalidadesNoConvocadas.remove(modalidad);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
-            ),
-            const SizedBox(height: 8),
-            _CrearAttendanceInfoBox(
-              icon: Icons.rule,
-              color: _modalidadesNoConvocadas.isEmpty
-                  ? Colors.orange
-                  : Colors.green,
-              text: _modalidadesNoConvocadas.isEmpty
-                  ? 'Sin exclusiones: todas las modalidades entran en la convocatoria según la lista de socios.'
-                  : 'No convocadas: ${_modalidadesNoConvocadas.map(JustificacionHelper.etiquetaModalidad).join(', ')}.',
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Fecha y hora de inicio'),
-              subtitle: Text(
-                '${_fecha.day}/${_fecha.month}/${_fecha.year} '
-                '${_fecha.hour.toString().padLeft(2, '0')}:'
-                '${_fecha.minute.toString().padLeft(2, '0')}',
-              ),
-              trailing: const Icon(Icons.calendar_today),
-              onTap: _pickDateTime,
-            ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Fecha y hora de fin'),
-              subtitle: Text(
-                '${_fechaFin.day}/${_fechaFin.month}/${_fechaFin.year} '
-                '${_fechaFin.hour.toString().padLeft(2, '0')}:'
-                '${_fechaFin.minute.toString().padLeft(2, '0')}',
-              ),
-              trailing: const Icon(Icons.event_available_outlined),
-              onTap: _pickFechaFin,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'El evento se considera vigente para vínculos (p. ej. elecciones) '
-              'mientras esté activo y no haya pasado la fecha de fin.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (_loading)
-              const Center(child: CircularProgressIndicator())
-            else
-              FilledButton.icon(
-                onPressed: _guardar,
-                icon: const Icon(Icons.save),
-                label: const Text('Guardar evento'),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -670,8 +1019,8 @@ class _CrearAttendanceInfoBox extends StatelessWidget {
             child: Text(
               text,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: color.withValues(alpha: 0.9),
-                  ),
+                color: color.withValues(alpha: 0.9),
+              ),
             ),
           ),
         ],

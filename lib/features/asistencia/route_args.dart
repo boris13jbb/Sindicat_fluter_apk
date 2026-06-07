@@ -12,15 +12,15 @@ class AsistenciaEventRouteArgs {
   const AsistenciaEventRouteArgs.attendance(
     String id, {
     this.openScannerDirectly = false,
-  })  : evento = null,
-        attendanceEventId = id;
+  }) : evento = null,
+       attendanceEventId = id;
 
   final EventoAsistencia? evento;
 
   /// Id del documento en `attendance_events`.
   final String? attendanceEventId;
 
-  /// Si es true, [ScannerAsistenciaScreen] abre al vuelo la cámara (no web).
+  /// Si es true, [ScannerAsistenciaScreen] abre al vuelo la cámara.
   final bool openScannerDirectly;
 
   bool get isAttendanceReport =>

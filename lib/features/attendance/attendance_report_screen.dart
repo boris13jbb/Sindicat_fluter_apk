@@ -1,25 +1,38 @@
+import 'dart:math' show pi;
+
 import 'package:flutter/material.dart';
-import '../../core/models/asistencia/evento.dart';
-import '../../core/widgets/professional_app_bar.dart';
+import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/premium_card.dart';
+import '../../core/design/widgets/primary_button.dart';
+import '../../core/models/asistencia/asistencia.dart';
+import '../../core/models/member.dart';
+import '../../core/models/user_role.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/app_branding_service.dart';
+import '../../services/asistencia_service.dart';
 import '../../services/attendance_service.dart';
+import '../elections/widgets/voto_premium_chrome.dart';
 
-/// Pantalla de reporte de asistencia con cálculo automático de faltas
+/// Pantalla de reporte de asistencia (mock `11_asistencia_reporte`).
 class AttendanceReportScreen extends StatefulWidget {
-  final String eventId;
-
   const AttendanceReportScreen({super.key, required this.eventId});
+
+  final String eventId;
 
   @override
   State<AttendanceReportScreen> createState() => _AttendanceReportScreenState();
 }
 
 class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
-  final AttendanceService _service = AttendanceService();
+  final AttendanceService _attendanceSvc = AttendanceService();
 
   bool _isLoading = true;
   AttendanceReport? _report;
   String? _error;
-  bool _showAbsentees = false; // Toggle para mostrar solo faltantes
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -34,7 +47,9 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     });
 
     try {
-      final report = await _service.generateAttendanceReport(widget.eventId);
+      final report = await _attendanceSvc.generateAttendanceReport(
+        widget.eventId,
+      );
       setState(() {
         _report = report;
         _isLoading = false;
@@ -47,34 +62,343 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
     }
   }
 
+  static String _horaMin(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.hour.toString().padLeft(2, '0')}:'
+        '${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  static int? _firstRegistroMs(AttendanceReport r) {
+    final ts = [
+      for (final a in r.attendances)
+        if (a.fechaRegistro != null && a.fechaRegistro! > 0) a.fechaRegistro!,
+    ];
+    ts.sort();
+    return ts.isEmpty ? null : ts.first;
+  }
+
+  static int? _lastRegistroMs(AttendanceReport r) {
+    final ts = [
+      for (final a in r.attendances)
+        if (a.fechaRegistro != null && a.fechaRegistro! > 0) a.fechaRegistro!,
+    ];
+    ts.sort();
+    return ts.isEmpty ? null : ts.last;
+  }
+
+  static int _duplicateExtraDocs(AttendanceReport r) {
+    final counts = <String, int>{};
+    for (final a in r.attendances) {
+      final id = a.personaId.trim();
+      if (id.isEmpty) continue;
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    var extra = 0;
+    counts.forEach((_, c) {
+      if (c > 1) extra += c - 1;
+    });
+    return extra;
+  }
+
+  /// Filas compatibles con [AttendanceReportGenerator] (solo lecturas reales).
+  List<AsistenciaConDatos> _buildExportRows(AttendanceReport r) {
+    if (r.attendances.isEmpty) return [];
+    final evUi = EventoAsistencia(
+      id: r.event.id,
+      nombre: r.event.nombre,
+      fecha: r.event.fecha,
+      fechaFin: r.event.fechaFin,
+      activo: r.event.activo,
+      tipoReunion: TipoReunion.fromString(r.event.tipo),
+      descripcion: r.event.descripcion.isNotEmpty ? r.event.descripcion : null,
+    );
+    final mmap = <String, Member>{
+      for (final m in [
+        ...r.presentMembers,
+        ...r.absentMembers,
+        ...r.notConvokedMembers,
+      ])
+        m.id: m,
+    };
+    return r.attendances.map((a) {
+      final mb = mmap[a.personaId];
+      final persona = mb != null
+          ? PersonaAsistencia(
+              id: mb.id,
+              nombres: mb.firstName,
+              apellidos: mb.lastName,
+              identificador: mb.workerCode?.trim().isNotEmpty == true
+                  ? mb.workerCode
+                  : (mb.memberNumber.trim().isNotEmpty
+                        ? mb.memberNumber
+                        : mb.documentId),
+            )
+          : PersonaAsistencia(
+              id: a.personaId,
+              nombres: '',
+              apellidos: '(Sin ficha)',
+              identificador: null,
+            );
+      return AsistenciaConDatos(asistencia: a, persona: persona, evento: evUi);
+    }).toList();
+  }
+
+  Future<void> _exportarPdf(BuildContext context) async {
+    final report = _report;
+    if (report == null) return;
+    final rows = _buildExportRows(report);
+    if (rows.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay documentos en la subcolección de asistencias para '
+            'exportar. Las cifras de presentes pueden venir sólo del cruce '
+            'con el padrón.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(28),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      ),
+    );
+
+    setState(() => _exporting = true);
+    try {
+      final branding = await AppBrandingService().getReportBrandingOnce();
+      final logoBytes = await AppBrandingService.loadReportLogoBytes(
+        branding?.reportLogoUrl,
+      );
+      final bytes = await AsistenciaService.generatePDFExportStatic(
+        rows,
+        reportLogoBytes: logoBytes,
+      );
+      if (!context.mounted) return;
+      Navigator.of(context).pop();
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename:
+            'reporte_asistencia_${widget.eventId}_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF listo para compartir o guardar'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo exportar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  void _infoIndicador(String titulo, String detalle) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(titulo, style: AppDesignTokens.titleLarge(ctx)),
+                const SizedBox(height: 12),
+                Text(detalle, style: AppDesignTokens.bodyMuted(ctx)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _indicatorRow({
+    required Color accent,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.event_note_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: Color(0xFF2B2265),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 34,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _horizontalBar({
+    required String label,
+    required double percentZeroTo100,
+    required Color color,
+  }) {
+    final v = percentZeroTo100.clamp(0, 100) / 100.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: Colors.grey.shade800,
+              ),
+            ),
+            Text(
+              '${percentZeroTo100.round()}%',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: color,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: v > 0 ? v : null,
+            minHeight: 10,
+            backgroundColor: const Color(0xFFEEEEF2),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final role = auth.user?.role ?? UserRole.user;
+
     return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Reporte de Asistencia',
-        onNavigateBack: () => Navigator.pop(context),
-        actions: [
-          if (_report != null)
-            IconButton(
-              icon: Icon(
-                _showAbsentees ? Icons.visibility : Icons.visibility_off,
-              ),
-              tooltip: _showAbsentees
-                  ? 'Mostrar todos'
-                  : 'Mostrar solo faltantes',
-              onPressed: () {
-                setState(() => _showAbsentees = !_showAbsentees);
-              },
+      backgroundColor: Colors.white,
+      bottomNavigationBar: VotoModuleBottomNavigation(
+        role: role,
+        selection: VotoNavSlot.asistencia,
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          VotoWaveHeader(
+            title: 'Reporte de asistencia',
+            subtitle: 'Resumen del evento',
+            onBack: () => Navigator.pop(context),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                VotoCircleIconButton(
+                  icon: Icons.format_list_bulleted_rounded,
+                  onTap: () => Navigator.pushNamed(
+                    context,
+                    '/asistencia/evento_registros',
+                    arguments: widget.eventId,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                VotoCircleIconButton(
+                  icon: Icons.refresh_rounded,
+                  onTap: _loadReport,
+                ),
+              ],
             ),
+          ),
+          Expanded(child: _buildBody()),
         ],
       ),
-      body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: CircularProgressIndicator(color: AppDesignTokens.primary),
+      );
     }
 
     if (_error != null) {
@@ -97,7 +421,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 24),
-              ElevatedButton.icon(
+              FilledButton.icon(
                 onPressed: _loadReport,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Reintentar'),
@@ -108,342 +432,303 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
       );
     }
 
-    if (_report == null) {
+    final report = _report;
+    if (report == null) {
       return const Center(child: Text('No hay datos disponibles'));
     }
 
+    final rate = report.attendanceRate.clamp(0, 100).toDouble();
+    final absentPct = report.totalConvoked > 0
+        ? report.absenceRate.clamp(0, 100).toDouble()
+        : (report.totalPresent == 0 ? 100.0 : 0.0);
+    final firstMs = _firstRegistroMs(report);
+    final lastMs = _lastRegistroMs(report);
+    final dup = _duplicateExtraDocs(report);
+    final green = const Color(0xFF2ECC71);
+    final red = const Color(0xFFE74C3C);
+    final blue = const Color(0xFF3498DB);
+    final orange = const Color(0xFFE67E22);
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Información del evento
-          _buildEventInfoCard(),
-
-          const SizedBox(height: 16),
-
-          // Estadísticas
-          _buildStatisticsCard(),
-
-          const SizedBox(height: 16),
-
-          // Gráfico de asistencia
-          _buildAttendanceChart(),
-
-          const SizedBox(height: 16),
-
-          // Lista de asistentes/faltantes
-          _buildMembersList(),
-        ],
+      padding: EdgeInsets.fromLTRB(
+        AppDesignTokens.horizontalPadding,
+        8,
+        AppDesignTokens.horizontalPadding,
+        24,
       ),
-    );
-  }
-
-  Widget _buildEventInfoCard() {
-    final event = _report!.event;
-    final fecha = DateTime.fromMillisecondsSinceEpoch(event.fecha);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              event.nombre,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Transform.translate(
+            offset: const Offset(0, -12),
+            child: Row(
               children: [
-                const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
-                const SizedBox(width: 8),
-                Text('${fecha.day}/${fecha.month}/${fecha.year}'),
+                Expanded(
+                  child: PremiumCard(
+                    margin: EdgeInsets.zero,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 8,
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          '${report.totalPresent}',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: green,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Presentes',
+                          style: AppDesignTokens.bodyMuted(context),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: PremiumCard(
+                    margin: EdgeInsets.zero,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 8,
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          '${report.totalAbsent}',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: red,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Ausentes',
+                          style: AppDesignTokens.bodyMuted(context),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: PremiumCard(
+                    margin: EdgeInsets.zero,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 8,
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          report.totalConvoked > 0 ? '${rate.round()}%' : '—',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: blue,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Cumplimiento',
+                          style: AppDesignTokens.bodyMuted(context),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 4),
-            Row(
+          ),
+          PremiumCard(
+            margin: EdgeInsets.zero,
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                const SizedBox(width: 8),
-                Text(event.lugar),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.category, size: 16, color: Colors.grey),
-                const SizedBox(width: 8),
-                Text(event.tipo.toUpperCase()),
-              ],
-            ),
-            if (event.modalidadesNoConvocadas.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: event.modalidadesNoConvocadas
-                    .map(
-                      (m) => Chip(
-                        avatar: const Icon(Icons.do_not_disturb, size: 16),
-                        label: Text('No convocada: Modalidad $m'),
+                Text(
+                  'Distribución de asistencia',
+                  style: AppDesignTokens.titleLarge(context),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 120,
+                      height: 120,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          CustomPaint(
+                            size: const Size(120, 120),
+                            painter: _DonutAttendancePainter(
+                              progress: rate / 100,
+                              activeColor: green,
+                              trackColor: const Color(0xFFE8E8ED),
+                              strokeWidth: 14,
+                            ),
+                          ),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                report.totalConvoked > 0
+                                    ? '${rate.round()}%'
+                                    : '0%',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 22,
+                                  color: green,
+                                ),
+                              ),
+                              Text(
+                                'avance',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    )
-                    .toList(),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatisticsCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Estadísticas',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatBox(
-                    'Convocados',
-                    '${_report!.totalConvoked}',
-                    Colors.blue,
-                    Icons.people,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatBox(
-                    'Presentes',
-                    '${_report!.totalPresent}',
-                    Colors.green,
-                    Icons.check_circle,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatBox(
-                    'Faltantes',
-                    '${_report!.totalAbsent}',
-                    Colors.red,
-                    Icons.cancel,
-                  ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _horizontalBar(
+                            label: 'Presentes',
+                            percentZeroTo100: rate,
+                            color: green,
+                          ),
+                          const SizedBox(height: 16),
+                          _horizontalBar(
+                            label: 'Ausentes',
+                            percentZeroTo100: absentPct,
+                            color: red,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            if (_report!.totalNotConvoked > 0) ...[
-              const SizedBox(height: 12),
-              _buildStatBox(
-                'No convocados',
-                '${_report!.totalNotConvoked}',
-                Colors.grey,
-                Icons.do_not_disturb_on_outlined,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatBox(String label, String value, Color color, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: color.withValues(alpha: 0.8)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAttendanceChart() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Tasa de Asistencia',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            LinearProgressIndicator(
-              value: _report!.attendanceRate / 100,
-              backgroundColor: Colors.grey[200],
-              valueColor: AlwaysStoppedAnimation<Color>(
-                _getAttendanceColor(_report!.attendanceRate),
-              ),
-              minHeight: 24,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${_report!.attendanceRate.toStringAsFixed(1)}% asistieron',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: _getAttendanceColor(_report!.attendanceRate),
-                  ),
-                ),
-                Text(
-                  '${_report!.absenceRate.toStringAsFixed(1)}% faltaron',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Color _getAttendanceColor(double rate) {
-    if (rate >= 80) return Colors.green;
-    if (rate >= 60) return Colors.orange;
-    return Colors.red;
-  }
-
-  Widget _buildMembersList() {
-    final membersToShow = _showAbsentees
-        ? _report!.absentMembers
-        : _report!.presentMembers +
-              _report!.absentMembers +
-              _report!.notConvokedMembers;
-
-    if (membersToShow.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Center(
+          const SizedBox(height: 14),
+          Text('Indicadores', style: AppDesignTokens.titleLarge(context)),
+          const SizedBox(height: 10),
+          PremiumCard(
+            margin: EdgeInsets.zero,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Column(
               children: [
-                Icon(
-                  _showAbsentees ? Icons.check_circle : Icons.people_outline,
-                  size: 48,
-                  color: Colors.grey,
+                _indicatorRow(
+                  accent: AppDesignTokens.primary,
+                  title: 'Primera lectura',
+                  subtitle: firstMs != null ? _horaMin(firstMs) : '—',
+                  onTap: () => _infoIndicador(
+                    'Primera lectura',
+                    'Hora local del primer registro con marca de tiempo en la '
+                        'subcolección de asistencias de este evento.',
+                  ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  _showAbsentees ? '¡Todos asistieron! 🎉' : 'No hay registros',
-                  style: Theme.of(context).textTheme.titleMedium,
+                Divider(height: 1, color: Colors.grey.shade200),
+                _indicatorRow(
+                  accent: blue,
+                  title: 'Última lectura',
+                  subtitle: lastMs != null ? _horaMin(lastMs) : '—',
+                  onTap: () => _infoIndicador(
+                    'Última lectura',
+                    'Último registro horario conocido entre los mismos datos.',
+                  ),
+                ),
+                Divider(height: 1, color: Colors.grey.shade200),
+                _indicatorRow(
+                  accent: orange,
+                  title: 'Duplicados bloqueados',
+                  subtitle: '$dup',
+                  onTap: () => _infoIndicador(
+                    'Duplicados bloqueados',
+                    'Suma de documentos extra en Firestore después del primero '
+                        'para el mismo personaId (posibles relecturas registradas '
+                        'como nuevas filas).',
+                  ),
                 ),
               ],
             ),
           ),
-        ),
-      );
-    }
-
-    return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              _showAbsentees
-                  ? 'Faltantes (${membersToShow.length})'
-                  : 'Lista Completa (${membersToShow.length})',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          const Divider(height: 1),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: membersToShow.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final member = membersToShow[index];
-              final isAbsent = _report!.absentMembers.contains(member);
-              final isNotConvoked = _report!.notConvokedMembers.contains(
-                member,
-              );
-              final modalidad = member.modalidad == null
-                  ? ''
-                  : ' · ${JustificacionHelper.etiquetaModalidad(member.modalidad!)}';
-
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: isNotConvoked
-                      ? Colors.grey
-                      : (isAbsent ? Colors.red : Colors.green),
-                  child: Text(
-                    member.firstName.isNotEmpty
-                        ? member.firstName[0].toUpperCase()
-                        : '?',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
-                title: Text(
-                  member.fullName,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500,
-                    color: isNotConvoked
-                        ? Colors.grey[700]
-                        : (isAbsent ? Colors.red[700] : null),
-                  ),
-                ),
-                subtitle: Text(
-                  isNotConvoked
-                      ? 'N° Socio: ${member.memberNumber}$modalidad · No convocado · Justificado por modalidad'
-                      : 'N° Socio: ${member.memberNumber}$modalidad',
-                ),
-                trailing: isNotConvoked
-                    ? const Icon(
-                        Icons.do_not_disturb_on_outlined,
-                        color: Colors.grey,
-                      )
-                    : isAbsent
-                    ? const Icon(Icons.cancel, color: Colors.red)
-                    : const Icon(Icons.check_circle, color: Colors.green),
-              );
-            },
+          const SizedBox(height: 20),
+          PrimaryButton(
+            label: 'Exportar reporte',
+            icon: Icons.picture_as_pdf_rounded,
+            isLoading: _exporting,
+            onPressed: (_exporting || _isLoading)
+                ? null
+                : () => _exportarPdf(context),
           ),
         ],
       ),
     );
   }
+}
+
+class _DonutAttendancePainter extends CustomPainter {
+  _DonutAttendancePainter({
+    required this.progress,
+    required this.activeColor,
+    required this.trackColor,
+    required this.strokeWidth,
+  });
+
+  final double progress;
+  final Color activeColor;
+  final Color trackColor;
+  final double strokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r = size.shortestSide / 2 - strokeWidth / 2;
+    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
+
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round;
+
+    final sweep = (progress.clamp(0.0, 1.0)) * 2 * pi;
+
+    canvas.drawArc(rect, -pi / 2, 2 * pi, false, trackPaint);
+
+    if (sweep > 0) {
+      final activePaint = Paint()
+        ..color = activeColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(rect, -pi / 2, sweep, false, activePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutAttendancePainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.activeColor != activeColor ||
+      oldDelegate.trackColor != trackColor ||
+      oldDelegate.strokeWidth != strokeWidth;
 }

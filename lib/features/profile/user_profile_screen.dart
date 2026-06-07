@@ -714,17 +714,18 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         gapless: false,
         eyeStyle: const QrEyeStyle(
           eyeShape: QrEyeShape.square,
-          color: AppDesignTokens.primary,
+          color: Colors.black,
         ),
         dataModuleStyle: const QrDataModuleStyle(
           dataModuleShape: QrDataModuleShape.square,
-          color: AppDesignTokens.primary,
+          color: Colors.black,
         ),
       );
 
       final recorder = ui.PictureRecorder();
       final canvas = Canvas(recorder);
       final size = const Size(exportSize, exportSize);
+      canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
       painter.paint(canvas, size);
       final picture = recorder.endRecording();
       final image = await picture.toImage(
@@ -1720,11 +1721,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           gapless: false,
                           eyeStyle: const QrEyeStyle(
                             eyeShape: QrEyeShape.square,
-                            color: AppDesignTokens.primary,
+                            color: Colors.black,
                           ),
                           dataModuleStyle: const QrDataModuleStyle(
                             dataModuleShape: QrDataModuleShape.square,
-                            color: AppDesignTokens.primary,
+                            color: Colors.black,
                           ),
                           backgroundColor: Colors.white,
                         ),

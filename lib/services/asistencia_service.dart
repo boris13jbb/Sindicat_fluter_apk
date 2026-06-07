@@ -52,7 +52,8 @@ class AsistenciaService implements AsistenciaRegistroApi {
   ///
   /// Cachee la referencia al stream en el `State` (p. ej. `late final`) para no
   /// abrir suscripciones duplicadas en cada reconstrucción.
-  Stream<List<EventoAsistenciaVinculoEleccion>> watchEventosParaVinculoEleccion() {
+  Stream<List<EventoAsistenciaVinculoEleccion>>
+  watchEventosParaVinculoEleccion() {
     late StreamController<List<EventoAsistenciaVinculoEleccion>> controller;
     StreamSubscription<List<EventoAsistencia>>? subLegacy;
     StreamSubscription<List<AttendanceEvent>>? subOp;
@@ -62,7 +63,9 @@ class AsistenciaService implements AsistenciaRegistroApi {
     void emit() {
       final nowMs = DateTime.now().millisecondsSinceEpoch;
       final merged = <EventoAsistenciaVinculoEleccion>[
-        ...operative.where((e) => e.activo && nowMs <= e.fechaFinVigenciaMs).map(
+        ...operative
+            .where((e) => e.activo && nowMs <= e.fechaFinVigenciaMs)
+            .map(
               (e) => EventoAsistenciaVinculoEleccion(
                 id: e.id,
                 nombre: e.nombre,
@@ -71,7 +74,9 @@ class AsistenciaService implements AsistenciaRegistroApi {
                 fuente: EventoAsistenciaVinculoFuente.operativo,
               ),
             ),
-        ...legacy.where((e) => e.activo && nowMs <= e.fechaFinVigenciaMs).map(
+        ...legacy
+            .where((e) => e.activo && nowMs <= e.fechaFinVigenciaMs)
+            .map(
               (e) => EventoAsistenciaVinculoEleccion(
                 id: e.id,
                 nombre: e.nombre,
@@ -88,21 +93,16 @@ class AsistenciaService implements AsistenciaRegistroApi {
     controller =
         StreamController<List<EventoAsistenciaVinculoEleccion>>.broadcast(
           onListen: () {
-            subLegacy = getAllEventos().listen(
-              (list) {
-                legacy = list;
-                emit();
-              },
-              onError: controller.addError,
-            );
-            subOp =
-                AttendanceService(firestore: _firestore).getAllEvents().listen(
-                      (list) {
-                        operative = list;
-                        emit();
-                      },
-                      onError: controller.addError,
-                    );
+            subLegacy = getAllEventos().listen((list) {
+              legacy = list;
+              emit();
+            }, onError: controller.addError);
+            subOp = AttendanceService(firestore: _firestore)
+                .getAllEvents()
+                .listen((list) {
+                  operative = list;
+                  emit();
+                }, onError: controller.addError);
           },
           onCancel: () async {
             await subLegacy?.cancel();
@@ -1212,12 +1212,14 @@ class AsistenciaService implements AsistenciaRegistroApi {
 
   /// Genera PDF con reporte profesional de asistencias (static para compute)
   static Future<Uint8List> generatePDFExportStatic(
-    List<AsistenciaConDatos> asistencias,
-  ) async {
+    List<AsistenciaConDatos> asistencias, {
+    Uint8List? reportLogoBytes,
+  }) async {
     // Usar el generador profesional de reportes
     final generator = AttendanceReportGenerator(
       asistencias: asistencias,
       evento: null,
+      reportLogoBytes: reportLogoBytes,
     );
 
     return await generator.generateReport();
@@ -1226,8 +1228,9 @@ class AsistenciaService implements AsistenciaRegistroApi {
   /// Genera PDF con reporte profesional de asistencias
   Future<Uint8List> generatePDFExport(
     List<AsistenciaConDatos> asistencias,
-    String? eventoId,
-  ) async {
+    String? eventoId, {
+    Uint8List? reportLogoBytes,
+  }) async {
     // Obtener información del evento si está disponible
     EventoAsistencia? evento;
     if (eventoId != null && eventoId.isNotEmpty) {
@@ -1238,6 +1241,7 @@ class AsistenciaService implements AsistenciaRegistroApi {
     final generator = AttendanceReportGenerator(
       asistencias: asistencias,
       evento: evento,
+      reportLogoBytes: reportLogoBytes,
     );
 
     return await generator.generateReport();

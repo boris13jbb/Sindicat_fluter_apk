@@ -71,6 +71,7 @@ class DashboardWelcomeAvatar extends StatelessWidget {
           child: Image.network(
             url,
             fit: BoxFit.cover,
+            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
             loadingBuilder: (context, child, loadingProgress) {
               if (loadingProgress == null) return child;
               return Center(

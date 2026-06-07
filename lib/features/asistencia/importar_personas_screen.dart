@@ -1,15 +1,31 @@
-import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:excel/excel.dart' hide Border;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:csv/csv.dart';
+import 'package:excel/excel.dart' hide Border;
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/premium_card.dart';
+import '../../core/design/widgets/primary_button.dart';
+import '../../core/models/asistencia/evento.dart';
 import '../../core/models/asistencia/persona.dart';
-import '../../core/widgets/professional_app_bar.dart';
+import '../../core/models/user_role.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/asistencia_service.dart';
 import '../../services/import_service.dart';
+import '../elections/widgets/voto_premium_chrome.dart';
 
-/// Pantalla legacy para importar personas de asistencia.
+/// Pantalla premium para importación masiva de personas de asistencia.
+///
+/// Opcionalmente, [ModalRoute.settings.arguments] puede ser:
+/// - [String]: id del documento en `eventos/{id}`
+/// - [Map] con clave `'eventoId'` o `'eventId'`
 class ImportarPersonasScreen extends StatefulWidget {
   const ImportarPersonasScreen({super.key});
 
@@ -24,6 +40,31 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
   bool _exito = false;
   int _personasImportadas = 0;
   List<String> _errores = [];
+
+  Future<EventoAsistencia?> _eventFuture = Future.value(null);
+  String? _resolvedEventRouteArg;
+
+  static String? _parseRouteEventId(BuildContext context) {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is String && args.trim().isNotEmpty) return args.trim();
+    if (args is Map) {
+      final dynamic v = args['eventoId'] ?? args['eventId'] ?? args['id'];
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+    }
+    return null;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final id = _parseRouteEventId(context);
+    if (id != _resolvedEventRouteArg) {
+      _resolvedEventRouteArg = id;
+      _eventFuture = id == null
+          ? Future.value(null)
+          : _service.getEventoById(id);
+    }
+  }
 
   /// Primera fila de plantilla típica (nombre / apellido / identificador).
   bool _looksLikePersonasHeader(List<String> row) {
@@ -102,7 +143,6 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
   Future<void> _importarDesdeExcel() async {
     debugPrint('🔵 [IMPORTAR] Función llamada');
     try {
-      // Seleccionar archivo
       debugPrint('🔵 [IMPORTAR] Abriendo file picker...');
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -124,7 +164,6 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
       );
       debugPrint('🔵 [IMPORTAR] Ruta: ${file.path}');
 
-      // Leer bytes manualmente si son null
       List<int>? fileBytes = file.bytes;
 
       if (fileBytes == null && file.path != null) {
@@ -227,12 +266,6 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
 
         final sheet = excel.tables.values.first;
         final dataRows = <List<String>>[];
-        debugPrint('📊 Total de filas: ${sheet.rows.length}');
-        if (sheet.rows.isNotEmpty) {
-          debugPrint(
-            '📊 Primera fila: ${sheet.rows[0].map((c) => c?.value?.toString()).toList()}',
-          );
-        }
 
         var startIdx = 0;
         if (sheet.rows.isNotEmpty) {
@@ -269,7 +302,6 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
         errores = r.errores;
       }
 
-      // Construir mensaje de resultado
       String mensajeFinal;
       bool exitoFinal;
 
@@ -310,321 +342,172 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Importar personas',
-        onNavigateBack: () => Navigator.pop(context),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Instrucciones
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '📋 Formato esperado (.xlsx, .xls o .csv)',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    SizedBox(height: 12),
-                    Text(
-                      'Tu archivo ya tiene el formato correcto:',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    SizedBox(height: 8),
-                    Text('• Columna A: Nombres ✅'),
-                    Text('• Columna B: Apellidos ✅'),
-                    Text('• Columna C: N° Trabajador ✅'),
-                    SizedBox(height: 12),
-                    Text(
-                      'Al importar, se generarán automáticamente QRs con este formato:',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Container(
-                      padding: EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.blue.shade200),
-                      ),
-                      child: Text(
-                        '{"nombres":"Juan Gabriel","apellidos":"Burbano Bonifaz","identificador":"37325"}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontFamily: 'monospace',
-                          color: Colors.blue.shade800,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 12),
-                    Text(
-                      '💡 El QR canónico de cada socio se consulta desde "Mi Perfil".',
-                      style: TextStyle(fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+  String _eventoEstadoEtiqueta(EventoAsistencia ev) =>
+      ev.activo ? 'Programado' : 'Cerrado';
 
-            const SizedBox(height: 24),
+  String _fechaEventoFmt(EventoAsistencia ev) {
+    if (ev.fecha <= 0) return '—';
+    final dt = DateTime.fromMillisecondsSinceEpoch(ev.fecha);
+    return DateFormat('dd/MM/yyyy').format(dt);
+  }
 
-            // Botón de importar
-            ElevatedButton.icon(
-              onPressed: _cargando ? null : _importarDesdeExcel,
-              icon: _cargando
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.upload_file),
-              label: Text(
-                _cargando ? 'Procesando...' : 'Seleccionar archivo',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
+  String _horaInicioFmt(EventoAsistencia ev) {
+    if (ev.fecha <= 0) return '—';
+    final dt = DateTime.fromMillisecondsSinceEpoch(ev.fecha);
+    return DateFormat('HH:mm').format(dt);
+  }
 
-            // Mensaje de resultado
-            if (_mensaje != null) ...[
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _exito ? Colors.green.shade50 : Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _exito
-                        ? Colors.green.shade200
-                        : Colors.orange.shade200,
-                    width: 2,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Icono y mensaje principal
-                    Row(
-                      children: [
-                        Icon(
-                          _exito
-                              ? Icons.check_circle
-                              : Icons.warning_amber_rounded,
-                          color: _exito
-                              ? Colors.green.shade700
-                              : Colors.orange.shade700,
-                          size: 28,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _mensaje!,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: _exito
-                                  ? Colors.green.shade800
-                                  : Colors.orange.shade800,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    // Detalles
-                    if (_personasImportadas > 0 || _errores.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      const Divider(),
-                      const SizedBox(height: 8),
-                      if (_personasImportadas > 0)
-                        Text(
-                          '✅ $_personasImportadas persona(s) importadas',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.green,
-                          ),
-                        ),
-                    ],
-                    if (_errores.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Errores encontrados:',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ..._errores
-                          .take(10)
-                          .map(
-                            (e) => Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Icon(
-                                    Icons.error_outline,
-                                    size: 16,
-                                    color: Colors.red,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      e,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.red,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      if (_errores.length > 10)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '... y ${_errores.length - 10} errores más',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.red,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
+  Future<void> _generarDescargaPlantilla() async {
+    try {
+      const rows = <List<String>>[
+        ['Nombres', 'Apellidos', 'N° Trabajador'],
+        ['Juan Gabriel', 'Burbano Bonifaz', '37325'],
+      ];
+      final csv = const ListToCsvConverter(fieldDelimiter: ',').convert(rows);
+      final bytes = Uint8List.fromList(utf8.encode(csv));
 
-            // Ejemplo visual
-            const SizedBox(height: 24),
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Ejemplo de formato:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildFilaEjemplo(
-                            context,
-                            'Juan Gabriel',
-                            'Burbano Bonifaz',
-                            '37325',
-                          ),
-                          _buildFilaEjemplo(
-                            context,
-                            'Mayra',
-                            'Bonifaz',
-                            '21548',
-                          ),
-                          _buildFilaEjemplo(
-                            context,
-                            'Carla',
-                            'Valenzuela',
-                            '69875',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Nota importante
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.amber.shade200),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.amber),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'Importante:',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          '• El número de trabajador debe ser único\n'
-                          '• Personas con mismo número no se duplicarán\n'
-                          '• El QR canónico de cada socio se consulta desde "Mi Perfil"',
-                          style: TextStyle(fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+      await Share.shareXFiles(
+        [
+          XFile.fromData(
+            bytes,
+            name: 'plantilla_personas_asistencia.csv',
+            mimeType: 'text/csv',
+          ),
+        ],
+        subject: 'Plantilla importación personas asistencia',
+        text:
+            'Columnas: Nombres, Apellidos, N° Trabajador (compatible con esta app). '
+            'Al importarse se crearán personas con código QR derivado.',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Plantilla lista para usar o enviar.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo generar la plantilla: $e'),
+          backgroundColor: Colors.red,
         ),
-      ),
+      );
+    }
+  }
+
+  void _showInstruccionesSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppDesignTokens.background,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Formato del archivo (.xlsx, .xls o .csv)',
+                  style: AppDesignTokens.titleLarge(ctx),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Tu archivo debe incluir:',
+                  style: Theme.of(
+                    ctx,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                const Text('• Columna A: Nombres'),
+                const Text('• Columna B: Apellidos'),
+                const Text('• Columna C: N° Trabajador'),
+                const SizedBox(height: 12),
+                Text(
+                  'Al importar, se generará un QR con formato JSON:',
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    color: AppDesignTokens.primaryDark.withValues(alpha: 0.65),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppDesignTokens.lavanda.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(
+                      AppDesignTokens.radiusMedium,
+                    ),
+                    border: Border.all(
+                      color: AppDesignTokens.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Text(
+                    '{"nombres":"Juan Gabriel","apellidos":"Burbano Bonifaz","identificador":"37325"}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'El QR canónico de cada socio aparece también en Mi Perfil.',
+                  style: AppDesignTokens.bodyMuted(ctx),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Ejemplo:',
+                  style: Theme.of(
+                    ctx,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                _buildFilaEjemplo(
+                  ctx,
+                  'Juan Gabriel',
+                  'Burbano Bonifaz',
+                  '37325',
+                ),
+                _buildFilaEjemplo(ctx, 'Mayra', 'Bonifaz', '21548'),
+                _buildFilaEjemplo(ctx, 'Carla', 'Valenzuela', '69875'),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8E1),
+                    borderRadius: BorderRadius.circular(
+                      AppDesignTokens.radiusMedium,
+                    ),
+                    border: Border.all(
+                      color: Colors.amber.shade200.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'Importante',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        '• El número de trabajador debe ser único.\n'
+                        '• Filas ya existentes se omitirán.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -653,15 +536,300 @@ class _ImportarPersonasScreenState extends State<ImportarPersonasScreen> {
           Expanded(
             child: Text(
               numero,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: Colors.blue,
+                color: AppDesignTokens.primary,
               ),
               textAlign: TextAlign.right,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _readOnlyRow(String label, String value) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F6F8),
+        borderRadius: BorderRadius.circular(AppDesignTokens.radiusMedium),
+        border: Border.all(color: const Color(0xFFE6E9EF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppDesignTokens.primaryDark.withValues(alpha: 0.45),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: AppDesignTokens.primaryDark.withValues(alpha: 0.92),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bloqueDatosPrincipal(
+    BuildContext context,
+    EventoAsistencia? ev,
+    bool loadingEv,
+  ) {
+    final nombreEv = loadingEv
+        ? '…'
+        : (ev?.nombre.isNotEmpty == true ? ev!.nombre : '—');
+    final desc = loadingEv
+        ? '…'
+        : ((ev?.descripcion != null && ev!.descripcion!.trim().isNotEmpty)
+              ? ev.descripcion!.trim()
+              : '—');
+    final fecha = loadingEv ? '…' : (ev != null ? _fechaEventoFmt(ev) : '—');
+    final hora = loadingEv ? '…' : (ev != null ? _horaInicioFmt(ev) : '—');
+    const lugar = '—';
+
+    final estado = loadingEv
+        ? '…'
+        : (ev != null ? _eventoEstadoEtiqueta(ev) : '—');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Datos principales', style: AppDesignTokens.titleLarge(context)),
+        const SizedBox(height: 8),
+        Text(
+          ev == null && !loadingEv
+              ? 'Sin evento vinculado (opcional). La importación usa el formato indicado más abajo o en el apartado Ayuda.'
+              : 'Información orientativa antes de cargar datos.',
+          style: AppDesignTokens.bodyMuted(context),
+        ),
+        const SizedBox(height: 16),
+        _readOnlyRow('Nombre del evento', nombreEv),
+        _readOnlyRow('Descripción', desc),
+        _readOnlyRow('Fecha', fecha),
+        _readOnlyRow('Hora inicio', hora),
+        _readOnlyRow('Lugar', lugar),
+        _readOnlyRow('Estado', estado),
+        const SizedBox(height: 8),
+        PrimaryButton(
+          label: 'Generar descarga',
+          icon: Icons.download_rounded,
+          onPressed: _generarDescargaPlantilla,
+        ),
+        const SizedBox(height: 12),
+        TextButton(
+          onPressed: _cargando ? null : _importarDesdeExcel,
+          child: Text(
+            'Seleccionar archivo e importar',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: AppDesignTokens.primary,
+            ),
+          ),
+        ),
+        if (_cargando) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: AppDesignTokens.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Procesando archivo…',
+                style: AppDesignTokens.bodyMuted(context),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final role = auth.user?.role ?? UserRole.user;
+
+    return Scaffold(
+      backgroundColor: AppDesignTokens.background,
+      bottomNavigationBar: VotoModuleBottomNavigation(
+        role: role,
+        selection: VotoNavSlot.asistencia,
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          VotoWaveHeader(
+            title: 'Importar personas',
+            subtitle: 'Carga masiva',
+            onBack: () => Navigator.pop(context),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                VotoCircleIconButton(
+                  icon: Icons.info_outline_rounded,
+                  onTap: _showInstruccionesSheet,
+                ),
+                const SizedBox(width: 6),
+                VotoCircleIconButton(
+                  icon: Icons.upload_file_rounded,
+                  onTap: _cargando ? () {} : _importarDesdeExcel,
+                ),
+                const SizedBox(width: 6),
+                VotoCircleIconButton(
+                  icon: Icons.download_rounded,
+                  onTap: _generarDescargaPlantilla,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<EventoAsistencia?>(
+              future: _eventFuture,
+              builder: (context, snapshot) {
+                final loadingEv =
+                    _resolvedEventRouteArg != null &&
+                    snapshot.connectionState == ConnectionState.waiting;
+                final eventoParaCard = loadingEv ? null : snapshot.data;
+
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.only(
+                    bottom: AppDesignTokens.horizontalPadding,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Transform.translate(
+                        offset: const Offset(0, -18),
+                        child: PremiumCard(
+                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                          child: _bloqueDatosPrincipal(
+                            context,
+                            eventoParaCard,
+                            loadingEv,
+                          ),
+                        ),
+                      ),
+                      if (_mensaje != null) ...[
+                        PremiumCard(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                          child: _bloqueResultado(),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bloqueResultado() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              _exito ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+              color: _exito ? const Color(0xFF27AE60) : const Color(0xFFE67E22),
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _mensaje!,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: _exito
+                      ? const Color(0xFF1E8449)
+                      : const Color(0xFFCA6F1E),
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_personasImportadas > 0 || _errores.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          if (_personasImportadas > 0)
+            Text(
+              '✅ $_personasImportadas persona(s) importadas',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF229954),
+              ),
+            ),
+        ],
+        if (_errores.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          const Text(
+            'Errores encontrados:',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          ..._errores
+              .take(10)
+              .map(
+                (e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 16,
+                        color: Colors.red,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          e,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          if (_errores.length > 10)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '... y ${_errores.length - 10} errores más',
+                style: const TextStyle(fontSize: 12, color: Colors.red),
+              ),
+            ),
+        ],
+      ],
     );
   }
 }

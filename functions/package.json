@@ -1,0 +1,17 @@
+{
+  "name": "sistema-integrado-sindicato-functions",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "check": "node --check index.js && node --test",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.5.0",
+    "firebase-functions": "^7.0.0",
+    "nodemailer": "^8.0.10"
+  }
+}

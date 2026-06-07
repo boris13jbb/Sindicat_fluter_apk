@@ -471,10 +471,20 @@ class _VotingCandidateAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     const radius = 26.0;
     if (imageUrl != null && imageUrl!.isNotEmpty) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: accent.withValues(alpha: 0.12),
-        backgroundImage: NetworkImage(imageUrl!),
+      return ClipOval(
+        child: SizedBox.square(
+          dimension: radius * 2,
+          child: ColoredBox(
+            color: accent.withValues(alpha: 0.12),
+            child: Image.network(
+              imageUrl!,
+              fit: BoxFit.cover,
+              webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+              errorBuilder: (_, __, ___) =>
+                  Icon(Icons.person_rounded, color: accent, size: 28),
+            ),
+          ),
+        ),
       );
     }
     return CircleAvatar(

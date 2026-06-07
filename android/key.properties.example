@@ -1,0 +1,7 @@
+# Copia este archivo como android/key.properties y reemplaza los valores.
+# android/key.properties y los archivos de claves están ignorados por Git.
+storePassword=<password-del-almacen>
+keyPassword=<password-de-la-clave>
+keyAlias=upload
+# Ruta absoluta o relativa a android/app.
+storeFile=<ruta-al-upload-keystore.jks>

@@ -106,7 +106,8 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _authService.sendPasswordResetEmail(email);
       _successMessage =
-          'Se ha enviado un correo para restablecer tu contraseña';
+          'Si la cuenta está registrada, recibirás un correo profesional con '
+          'un enlace seguro. Revisa también la carpeta de correo no deseado.';
     } catch (e) {
       _errorMessage = e.toString().replaceFirst('Exception: ', '');
     } finally {
@@ -188,7 +189,9 @@ class AuthProvider extends ChangeNotifier {
   void _showAvatarErrorSnackBar(String message) {
     final messenger = appScaffoldMessengerKey.currentState;
     if (messenger == null) {
-      debugPrint('[AuthProvider] Error de avatar (sin ScaffoldMessenger): $message');
+      debugPrint(
+        '[AuthProvider] Error de avatar (sin ScaffoldMessenger): $message',
+      );
       return;
     }
     messenger.clearSnackBars();

@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/premium_card.dart';
+import '../../core/design/widgets/primary_button.dart';
 import '../../core/models/asistencia/asistencia.dart';
 import '../../core/models/member.dart';
-import '../../core/widgets/professional_app_bar.dart';
+import '../../core/models/user_role.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/asistencia_service.dart';
-import '../../services/members_service.dart';
 import '../../services/attendance_service.dart';
+import '../../services/members_service.dart';
+import '../elections/widgets/voto_premium_chrome.dart';
 
 /// Registro contra **`eventos/{id}`** histórico **o** `attendance_events/{id}` actual.
 class RegistroManualScreen extends StatefulWidget {
@@ -225,449 +232,546 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
     }
   }
 
+  String _soloFecha(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.day.toString().padLeft(2, '0')}/'
+        '${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  String _soloHora(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.hour.toString().padLeft(2, '0')}:'
+        '${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _estadoAttendanceLegible(String raw) {
+    final s = raw.trim().toLowerCase();
+    switch (s) {
+      case 'programado':
+        return 'Programado';
+      case 'en_curso':
+      case 'en curso':
+        return 'En curso';
+      case 'finalizado':
+        return 'Finalizado';
+      default:
+        if (raw.isEmpty) return '—';
+        if (raw.length == 1) return raw.toUpperCase();
+        return raw.substring(0, 1).toUpperCase() + raw.substring(1);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final role = auth.user?.role ?? UserRole.user;
+
     return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Registro Manual',
-        onNavigateBack: () => Navigator.pop(context),
+      backgroundColor: AppDesignTokens.background,
+      bottomNavigationBar: VotoModuleBottomNavigation(
+        role: role,
+        selection: VotoNavSlot.asistencia,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minHeight: MediaQuery.of(context).size.height - 150,
-          ),
-          child: IntrinsicHeight(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          VotoWaveHeader(
+            title: 'Registro manual',
+            subtitle: 'Marcar asistencia',
+            onBack: () => Navigator.pop(context),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // Tarjeta de información del evento
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
+                VotoCircleIconButton(
+                  icon: Icons.sync_rounded,
+                  onTap: _sincronizarMiembros,
+                ),
+                const SizedBox(width: 6),
+                VotoCircleIconButton(
+                  icon: Icons.info_outline_rounded,
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          _esModoAttendanceNuevo
+                              ? 'Los registros quedan vinculados al evento para presentes y faltantes.'
+                              : 'Selecciona la persona y completa la justificación para guardar.',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 6),
+                VotoCircleIconButton(
+                  icon: Icons.event_note_outlined,
+                  onTap: () {
+                    if (_esModoAttendanceNuevo &&
+                        widget.attendanceEventId != null) {
+                      Navigator.pushNamed(
+                        context,
+                        '/attendance/report',
+                        arguments: widget.attendanceEventId,
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Resumen de evento disponible en modo attendance_events.',
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppDesignTokens.horizontalPadding,
+                12,
+                AppDesignTokens.horizontalPadding,
+                28,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PremiumCard(
+                    margin: EdgeInsets.zero,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.event_note,
-                              color: Theme.of(context).colorScheme.primary,
-                              size: 28,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Información del Evento',
-                                style: Theme.of(context).textTheme.titleLarge
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                    ),
+                        Text(
+                          'Datos principales',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: AppDesignTokens.primaryDark,
                               ),
-                            ),
-                          ],
                         ),
-                        const SizedBox(height: 12),
                         if (_esModoAttendanceNuevo) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              'Este registro se asociará al evento de asistencia seleccionado '
-                              'y se usará para calcular presentes y faltantes.',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: Colors.blue.shade800),
-                            ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Este registro se asocia al evento de asistencia actual.',
+                            style: AppDesignTokens.bodyMuted(context),
                           ),
-                          _infoRow(
-                            label: 'Nombre:',
+                        ],
+                        const SizedBox(height: 14),
+                        if (_esModoAttendanceNuevo) ...[
+                          _PremiumInfoField(
+                            label: 'Nombre del evento',
                             value:
                                 _attendanceEventCached?.nombre ?? 'Cargando…',
                           ),
-                          _infoRow(
-                            label: 'Fecha:',
-                            value: _formatDate(
-                              _attendanceEventCached?.fecha ??
-                                  DateTime.now().millisecondsSinceEpoch,
-                            ),
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Descripción',
+                            value: () {
+                              final d =
+                                  _attendanceEventCached?.descripcion ?? '';
+                              return d.trim().isEmpty ? '—' : d.trim();
+                            }(),
                           ),
-                          _infoRow(
-                            label: 'Lugar:',
-                            value: _attendanceEventCached?.lugar ?? '—',
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Fecha',
+                            value: _attendanceEventCached == null
+                                ? '…'
+                                : _soloFecha(_attendanceEventCached!.fecha),
                           ),
-                          _infoRow(
-                            label: 'Tipo:',
-                            value: _attendanceEventCached?.tipo ?? '—',
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Hora inicio',
+                            value: _attendanceEventCached == null
+                                ? '…'
+                                : _soloHora(_attendanceEventCached!.fecha),
+                          ),
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Lugar',
+                            value: () {
+                              final l = _attendanceEventCached?.lugar ?? '';
+                              return l.trim().isEmpty ? '—' : l.trim();
+                            }(),
+                          ),
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Estado',
+                            value: _attendanceEventCached == null
+                                ? '…'
+                                : _estadoAttendanceLegible(
+                                    _attendanceEventCached!.estado,
+                                  ),
                           ),
                         ] else if (widget.evento != null) ...[
-                          _infoRow(
-                            label: 'Nombre:',
+                          _PremiumInfoField(
+                            label: 'Nombre del evento',
                             value: widget.evento!.nombre,
                           ),
-                          _infoRow(
-                            label: 'Fecha:',
-                            value: _formatDate(widget.evento!.fecha),
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Descripción',
+                            value: () {
+                              final d = widget.evento!.descripcion;
+                              if (d == null || d.trim().isEmpty) return '—';
+                              return d.trim();
+                            }(),
                           ),
-                          _infoRow(
-                            label: 'Tipo:',
-                            value: _formatTipoReunion(
-                              widget.evento!.tipoReunion.value,
-                            ),
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Fecha',
+                            value: _soloFecha(widget.evento!.fecha),
+                          ),
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Hora inicio',
+                            value: _soloHora(widget.evento!.fecha),
+                          ),
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(label: 'Lugar', value: '—'),
+                          const SizedBox(height: 10),
+                          _PremiumInfoField(
+                            label: 'Estado',
+                            value: widget.evento!.activo
+                                ? _formatTipoReunion(
+                                    widget.evento!.tipoReunion.value,
+                                  )
+                                : 'Inactivo',
                           ),
                         ],
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                // Selector de tipo de registro
-                if (!_esModoAttendanceNuevo) ...[
-                  Text(
-                    'Tipo de Registro',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(
-                        value: false,
-                        label: Text('Persona Existente'),
-                        icon: Icon(Icons.person),
+                  const SizedBox(height: 22),
+                  // Selector de tipo de registro
+                  if (!_esModoAttendanceNuevo) ...[
+                    Text(
+                      'Tipo de Registro',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
-                      ButtonSegment(
-                        value: true,
-                        label: Text('Nueva Persona'),
-                        icon: Icon(Icons.person_add),
-                      ),
-                    ],
-                    selected: {_usarNueva},
-                    onSelectionChanged: (s) =>
-                        setState(() => _usarNueva = s.first),
-                  ),
-                  const SizedBox(height: 24),
-                ] else ...[
-                  Text(
-                    'Selecciona un socio del padrón (personas marcadas provenientes del módulo Socios aparecen como verificado).',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontStyle: FontStyle.italic,
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                // Campos según el tipo de registro
-                if (_usarNueva) ...[
-                  _buildSectionTitle(context, 'Datos de la Persona'),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _nombresController,
-                    decoration: InputDecoration(
-                      labelText: 'Nombres *',
-                      hintText: 'Ingrese los nombres completos',
-                      prefixIcon: const Icon(Icons.badge),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      filled: true,
-                    ),
-                    onChanged: (_) => setState(() {}),
-                    textCapitalization: TextCapitalization.words,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _apellidosController,
-                    decoration: InputDecoration(
-                      labelText: 'Apellidos *',
-                      hintText: 'Ingrese los apellidos completos',
-                      prefixIcon: const Icon(Icons.badge),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      filled: true,
-                    ),
-                    onChanged: (_) => setState(() {}),
-                    textCapitalization: TextCapitalization.words,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _identificadorController,
-                    decoration: InputDecoration(
-                      labelText: 'Número de Trabajador *',
-                      hintText:
-                          'Ej: 12345 (obligatorio para evitar duplicados)',
-                      prefixIcon: const Icon(Icons.qr_code),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      filled: true,
-                    ),
-                    onChanged: (_) => setState(() {}),
-                    textCapitalization: TextCapitalization.characters,
-                  ),
-                ] else
-                  // Mostrar lista combinada de Members y Personas legacy
-                  StreamBuilder<List<Map<String, dynamic>>>(
-                    stream: _buildCombinedMembersStream(),
-                    builder: (context, snap) {
-                      // Manejar errores
-                      if (snap.hasError) {
-                        return Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.error_outline,
-                                  size: 48,
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Error al cargar personas',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'No se pudieron cargar los datos. Intente nuevamente.',
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 16),
-                                FilledButton.icon(
-                                  onPressed: () => setState(
-                                    () {},
-                                  ), // Rebuild para reintentar
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text('Reintentar'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-
-                      // Estado de carga
-                      if (!snap.hasData) {
-                        return Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                CircularProgressIndicator(
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Cargando personas...',
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-
-                      final personas = snap.data!;
-
-                      // Estado vacío
-                      if (personas.isEmpty) {
-                        return Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.person_off,
-                                  size: 48,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No hay personas registradas',
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Agregue personas en la sección "Socios" o use la opción "Nueva Persona"',
-                                  style: Theme.of(context).textTheme.bodyMedium,
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-
-                      // Si no hay persona seleccionada, seleccionar la primera
-                      if (_personaIdSeleccionada == null) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted && personas.isNotEmpty) {
-                            setState(() {
-                              _personaIdSeleccionada =
-                                  personas.first['id'] as String;
-                              _personaObj =
-                                  personas.first['persona']
-                                      as PersonaAsistencia;
-                              _personaSource =
-                                  personas.first['source'] as String? ??
-                                  'member';
-                            });
-                          }
-                        });
-                      }
-
-                      // Asegurar que _personaObj esté sincronizado
-                      if (_personaIdSeleccionada != null) {
-                        final found = personas
-                            .where((p) => p['id'] == _personaIdSeleccionada)
-                            .firstOrNull;
-
-                        if (found != null) {
-                          _personaObj = found['persona'] as PersonaAsistencia;
-                          _personaSource =
-                              found['source'] as String? ?? 'persona';
-                        } else {
-                          // Si no se encuentra, limpiar selección
-                          _personaIdSeleccionada = null;
-                          _personaObj = null;
-                          _personaSource = 'member';
-                        }
-                      }
-
-                      return _selectorPersonaBuscable(context, personas);
-                    },
-                  ),
-                const SizedBox(height: 24),
-                // Sección de estado de asistencia
-                _buildSectionTitle(context, 'Estado de Asistencia'),
-                const SizedBox(height: 12),
-                Card(
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: SwitchListTile(
-                    title: Row(
-                      children: [
-                        Icon(
-                          _asistio ? Icons.check_circle : Icons.cancel,
-                          color: _asistio
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.error,
+                    const SizedBox(height: 12),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          label: Text('Persona Existente'),
+                          icon: Icon(Icons.person),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _asistio
-                                ? 'La persona ASISTIÓ al evento'
-                                : 'La persona NO ASISTIÓ al evento',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: _asistio
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context).colorScheme.error,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text('Nueva Persona'),
+                          icon: Icon(Icons.person_add),
                         ),
                       ],
+                      selected: {_usarNueva},
+                      onSelectionChanged: (s) =>
+                          setState(() => _usarNueva = s.first),
                     ),
-                    subtitle: Text(
-                      _asistio
-                          ? 'Registrado como presente'
-                          : 'Registrado como ausente',
+                    const SizedBox(height: 24),
+                  ] else ...[
+                    Text(
+                      'Selecciona un socio del padrón (personas marcadas provenientes del módulo Socios aparecen como verificado).',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                      ),
                     ),
-                    value: _asistio,
-                    onChanged: (v) => setState(() => _asistio = v),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                    const SizedBox(height: 16),
+                  ],
+                  // Campos según el tipo de registro
+                  if (_usarNueva) ...[
+                    _buildSectionTitle(context, 'Datos de la Persona'),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _nombresController,
+                      decoration: InputDecoration(
+                        labelText: 'Nombres *',
+                        hintText: 'Ingrese los nombres completos',
+                        prefixIcon: const Icon(Icons.badge),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      textCapitalization: TextCapitalization.words,
                     ),
-                    isThreeLine: true,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                // Justificación
-                _buildSectionTitle(context, 'Justificación'),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _justificacionController,
-                  decoration: InputDecoration(
-                    labelText: 'Justificación o Motivo *',
-                    hintText:
-                        'Describa el motivo del registro (ej: llegó tarde, se retiró temprano, etc.)',
-                    prefixIcon: const Icon(Icons.note_alt),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _apellidosController,
+                      decoration: InputDecoration(
+                        labelText: 'Apellidos *',
+                        hintText: 'Ingrese los apellidos completos',
+                        prefixIcon: const Icon(Icons.badge),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      textCapitalization: TextCapitalization.words,
                     ),
-                    filled: true,
-                    alignLabelWithHint: true,
-                  ),
-                  maxLines: 3,
-                  minLines: 2,
-                  onChanged: (_) => setState(() {}),
-                  textCapitalization: TextCapitalization.sentences,
-                ),
-                const Spacer(),
-                // Botón de guardar
-                FilledButton.icon(
-                  onPressed: _loading || !_puedeGuardar ? null : _guardar,
-                  icon: _loading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.save_alt),
-                  label: Text(
-                    _loading
-                        ? 'Guardando...'
-                        : 'Guardar Registro de Asistencia',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _identificadorController,
+                      decoration: InputDecoration(
+                        labelText: 'Número de Trabajador *',
+                        hintText:
+                            'Ej: 12345 (obligatorio para evitar duplicados)',
+                        prefixIcon: const Icon(Icons.qr_code),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        filled: true,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                      textCapitalization: TextCapitalization.characters,
                     ),
-                  ),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ] else
+                    // Mostrar lista combinada de Members y Personas legacy
+                    StreamBuilder<List<Map<String, dynamic>>>(
+                      stream: _buildCombinedMembersStream(),
+                      builder: (context, snap) {
+                        // Manejar errores
+                        if (snap.hasError) {
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 48,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Error al cargar personas',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.error,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'No se pudieron cargar los datos. Intente nuevamente.',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  FilledButton.icon(
+                                    onPressed: () => setState(
+                                      () {},
+                                    ), // Rebuild para reintentar
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text('Reintentar'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        // Estado de carga
+                        if (!snap.hasData) {
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                children: [
+                                  CircularProgressIndicator(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Cargando personas...',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        final personas = snap.data!;
+
+                        // Estado vacío
+                        if (personas.isEmpty) {
+                          return Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.person_off,
+                                    size: 48,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No hay personas registradas',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Agregue personas en la sección "Socios" o use la opción "Nueva Persona"',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        // Si no hay persona seleccionada, seleccionar la primera
+                        if (_personaIdSeleccionada == null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted && personas.isNotEmpty) {
+                              setState(() {
+                                _personaIdSeleccionada =
+                                    personas.first['id'] as String;
+                                _personaObj =
+                                    personas.first['persona']
+                                        as PersonaAsistencia;
+                                _personaSource =
+                                    personas.first['source'] as String? ??
+                                    'member';
+                              });
+                            }
+                          });
+                        }
+
+                        // Asegurar que _personaObj esté sincronizado
+                        if (_personaIdSeleccionada != null) {
+                          final found = personas
+                              .where((p) => p['id'] == _personaIdSeleccionada)
+                              .firstOrNull;
+
+                          if (found != null) {
+                            _personaObj = found['persona'] as PersonaAsistencia;
+                            _personaSource =
+                                found['source'] as String? ?? 'persona';
+                          } else {
+                            // Si no se encuentra, limpiar selección
+                            _personaIdSeleccionada = null;
+                            _personaObj = null;
+                            _personaSource = 'member';
+                          }
+                        }
+
+                        return _selectorPersonaBuscable(context, personas);
+                      },
+                    ),
+                  const SizedBox(height: 24),
+                  // Sección de estado de asistencia
+                  _buildSectionTitle(context, 'Estado de Asistencia'),
+                  const SizedBox(height: 12),
+                  Card(
+                    elevation: 2,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    child: SwitchListTile(
+                      title: Row(
+                        children: [
+                          Icon(
+                            _asistio ? Icons.check_circle : Icons.cancel,
+                            color: _asistio
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _asistio
+                                  ? 'La persona ASISTIÓ al evento'
+                                  : 'La persona NO ASISTIÓ al evento',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: _asistio
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context).colorScheme.error,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Text(
+                        _asistio
+                            ? 'Registrado como presente'
+                            : 'Registrado como ausente',
+                      ),
+                      value: _asistio,
+                      onChanged: (v) => setState(() => _asistio = v),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      isThreeLine: true,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                // Texto de ayuda
-                Text(
-                  '* Los campos marcados con asterisco son obligatorios',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 24),
+                  // Justificación
+                  _buildSectionTitle(context, 'Justificación'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _justificacionController,
+                    decoration: InputDecoration(
+                      labelText: 'Justificación o Motivo *',
+                      hintText:
+                          'Describa el motivo del registro (ej: llegó tarde, se retiró temprano, etc.)',
+                      prefixIcon: const Icon(Icons.note_alt),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      alignLabelWithHint: true,
+                    ),
+                    maxLines: 3,
+                    minLines: 2,
+                    onChanged: (_) => setState(() {}),
+                    textCapitalization: TextCapitalization.sentences,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  PrimaryButton(
+                    onPressed: (_loading || !_puedeGuardar) ? null : _guardar,
+                    isLoading: _loading,
+                    label: _loading ? 'Guardando…' : 'Guardar asistencia',
+                    icon: Icons.save_alt_rounded,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '* Los campos marcados con asterisco son obligatorios',
+                    style: AppDesignTokens.bodyMuted(context),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -676,35 +780,10 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
     return Text(
       title,
       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-        fontWeight: FontWeight.bold,
-        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w800,
+        color: AppDesignTokens.primaryDark,
       ),
     );
-  }
-
-  Widget _infoRow({required String label, required String value}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 14))),
-        ],
-      ),
-    );
-  }
-
-  String _formatDate(int timestamp) {
-    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   String _formatTipoReunion(String tipo) {
@@ -1010,6 +1089,49 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Campo de solo lectura tipo mock `06_asistencia_registro_manual`.
+class _PremiumInfoField extends StatelessWidget {
+  const _PremiumInfoField({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: AppDesignTokens.primaryDark.withValues(alpha: 0.75),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppDesignTokens.primary.withValues(alpha: 0.14),
+            ),
+          ),
+          child: Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: AppDesignTokens.primaryDark,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

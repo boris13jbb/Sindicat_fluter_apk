@@ -1,25 +1,51 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import '../../core/models/asistencia/asistencia.dart';
-import '../../core/models/member.dart';
-import '../../core/widgets/professional_app_bar.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/premium_card.dart';
+import '../../core/models/asistencia/evento.dart';
+import '../../core/models/user_role.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/attendance_service.dart';
-import '../../services/members_service.dart';
+import '../../core/utils/date_time_ms.dart';
+import '../elections/widgets/voto_premium_chrome.dart';
 import 'route_args.dart';
 
-/// Detalle y operaciones para un doc en colección **`attendance_events`**.
-class AttendanceEventDetailScreen extends StatelessWidget {
+String _detailFmt(int ms) {
+  final d = DateTime.fromMillisecondsSinceEpoch(ms);
+  return '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+}
+
+String _detailMetaLine(int fechaMs, String lugar) {
+  final d = DateTime.fromMillisecondsSinceEpoch(fechaMs);
+  final dateStr =
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  final timeStr =
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+  final l = lugar.trim().isEmpty ? 'Sin lugar' : lugar.trim();
+  return '$l · $dateStr · $timeStr';
+}
+
+/// Detalle y operaciones para un doc en colección **`attendance_events`**
+/// (`04_asistencia_detalle_evento` — layout premium).
+class AttendanceEventDetailScreen extends StatefulWidget {
   const AttendanceEventDetailScreen({super.key, required this.eventId});
 
   final String eventId;
 
-  static String _fmt(int ms) {
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-  }
+  @override
+  State<AttendanceEventDetailScreen> createState() =>
+      _AttendanceEventDetailScreenState();
+}
 
+class _AttendanceEventDetailScreenState
+    extends State<AttendanceEventDetailScreen> {
   @override
   Widget build(BuildContext context) {
+    final eventId = widget.eventId;
     final attendanceSvc = AttendanceService();
 
     Future<void> openModalidadesEditor() async {
@@ -51,479 +77,515 @@ class AttendanceEventDetailScreen extends StatelessWidget {
       );
     }
 
+    final auth = context.watch<AuthProvider>();
+    final role = auth.user?.role ?? UserRole.user;
+
     return Scaffold(
-      appBar: ProfessionalAppBar(
-        title: 'Evento de asistencia',
-        onNavigateBack: () => Navigator.pop(context),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.filter_alt_outlined),
-            tooltip: 'Editar modalidades no convocadas',
-            onPressed: openModalidadesEditor,
+      backgroundColor: AppDesignTokens.background,
+      bottomNavigationBar: VotoModuleBottomNavigation(
+        role: role,
+        selection: VotoNavSlot.asistencia,
+      ),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('attendance_events')
+            .doc(eventId)
+            .snapshots(),
+        builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Error: ${snap.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+          if (!snap.hasData || !snap.data!.exists) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                VotoWaveHeader(
+                  title: 'Detalle del evento',
+                  subtitle: 'Cargando…',
+                  onBack: () => Navigator.pop(context),
+                ),
+                const Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 12),
+                        Text('Cargando evento…'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }
+          final map = snap.data!.data() ?? {};
+          final nombre = map['nombre'] as String? ?? '(sin nombre)';
+          final fecha = (map['fecha'] as num?)?.toInt() ?? 0;
+          final fechaFin = (map['fechaFin'] as num?)?.toInt();
+          final lugar = map['lugar'] as String? ?? '';
+          final desc = map['descripcion'] as String?;
+          final activo = map['activo'] as bool? ?? true;
+          final estado = (map['estado'] as String? ?? 'programado')
+              .toLowerCase()
+              .trim();
+          final modalidadesRaw = List<String>.from(
+            map['modalidadesNoConvocadas'] ?? [],
+          );
+          final modalidadesEtiquetas = modalidadesRaw
+              .map(Modalidad.tryParse)
+              .whereType<Modalidad>()
+              .map(JustificacionHelper.etiquetaModalidad)
+              .toList();
+
+          final ahora = DateTime.now().millisecondsSinceEpoch;
+          final finMs = fechaFin ?? endOfLocalDayMs(fecha);
+          final bool operativo =
+              activo && estado != 'finalizado' && finMs >= ahora;
+          final bool badgeActivo = operativo;
+          final bool qrHabilitado = activo && estado != 'finalizado';
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              VotoWaveHeader(
+                title: 'Detalle del evento',
+                subtitle: nombre,
+                onBack: () => Navigator.pop(context),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    VotoCircleIconButton(
+                      icon: Icons.tune_rounded,
+                      onTap: openModalidadesEditor,
+                    ),
+                    const SizedBox(width: 6),
+                    VotoCircleIconButton(
+                      icon: Icons.share_outlined,
+                      onTap: () {
+                        Share.share(
+                          'Evento: $nombre\n'
+                          'Inicio: ${_detailFmt(fecha)}\n'
+                          'ID: $eventId',
+                        );
+                      },
+                    ),
+                    const SizedBox(width: 6),
+                    VotoCircleIconButton(
+                      icon: Icons.more_horiz_rounded,
+                      onTap: () {
+                        showModalBottomSheet<void>(
+                          context: context,
+                          showDragHandle: true,
+                          backgroundColor: AppDesignTokens.background,
+                          builder: (ctx) => SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  leading: const Icon(Icons.home_work_outlined),
+                                  title: const Text(
+                                    'Ir al inicio de asistencia',
+                                  ),
+                                  onTap: () {
+                                    Navigator.pop(ctx);
+                                    Navigator.of(
+                                      context,
+                                    ).pushNamedAndRemoveUntil(
+                                      '/asistencia',
+                                      (route) => route.isFirst,
+                                    );
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.copy_outlined),
+                                  title: const Text('Copiar ID del evento'),
+                                  onTap: () {
+                                    Navigator.pop(ctx);
+                                    Clipboard.setData(
+                                      ClipboardData(text: eventId),
+                                    );
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'ID copiado al portapapeles',
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                if (desc != null && desc.isNotEmpty)
+                                  ListTile(
+                                    leading: const Icon(Icons.notes_outlined),
+                                    title: Text(
+                                      desc,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                if (fechaFin != null)
+                                  ListTile(
+                                    leading: const Icon(Icons.event_outlined),
+                                    title: Text('Fin: ${_detailFmt(fechaFin)}'),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppDesignTokens.horizontalPadding,
+                    12,
+                    AppDesignTokens.horizontalPadding,
+                    24,
+                  ),
+                  children: [
+                    PremiumCard(
+                      margin: EdgeInsets.zero,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            nombre,
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: AppDesignTokens.primaryDark,
+                                ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _detailMetaLine(fecha, lugar),
+                            style: AppDesignTokens.bodyMuted(context),
+                          ),
+                          if (desc != null && desc.trim().isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              desc.trim(),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: AppDesignTokens.primaryDark
+                                        .withValues(alpha: 0.75),
+                                  ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _StatusChip(
+                                label: badgeActivo ? 'Activo' : 'No activo',
+                                fg: badgeActivo
+                                    ? Colors.green.shade900
+                                    : Colors.blueGrey.shade800,
+                                bg: badgeActivo
+                                    ? const Color(0xFFE8F5E9)
+                                    : const Color(0xFFF1F3F8),
+                              ),
+                              _StatusChip(
+                                label: qrHabilitado
+                                    ? 'QR habilitado'
+                                    : 'QR no disponible',
+                                fg: AppDesignTokens.primaryDark,
+                                bg: AppDesignTokens.lavanda,
+                              ),
+                            ],
+                          ),
+                          if (modalidadesEtiquetas.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Text(
+                              'Modalidades no convocadas',
+                              style: Theme.of(context).textTheme.labelLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: AppDesignTokens.primaryDark,
+                                  ),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: modalidadesEtiquetas
+                                  .map(
+                                    (label) => Chip(
+                                      visualDensity: VisualDensity.compact,
+                                      label: Text(label),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FutureBuilder<AttendanceHubDashboardData?>(
+                      future: attendanceSvc.buildHubDashboardData(eventId),
+                      builder: (context, hubSnap) {
+                        final data = hubSnap.data;
+                        final loading =
+                            hubSnap.connectionState ==
+                                ConnectionState.waiting &&
+                            !hubSnap.hasData;
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: _MiniStatCell(
+                                label: 'Presentes',
+                                value: loading
+                                    ? '…'
+                                    : data != null
+                                    ? '${data.presentes}'
+                                    : '—',
+                                valueColor: Colors.green.shade700,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _MiniStatCell(
+                                label: 'Ausentes',
+                                value: loading
+                                    ? '…'
+                                    : data != null
+                                    ? '${data.ausentes}'
+                                    : '—',
+                                valueColor: Colors.red.shade700,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _MiniStatCell(
+                                label: 'Avance',
+                                value: loading
+                                    ? '…'
+                                    : data != null && data.totalConvocados > 0
+                                    ? '${data.porcentajePresentes.round()}%'
+                                    : '—',
+                                valueColor: Colors.blue.shade700,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      'Opciones del evento',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppDesignTokens.primaryDark,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _EventOptionTile(
+                      title: 'Escanear QR',
+                      subtitle: 'Registrar con cámara',
+                      icon: Icons.qr_code_scanner_rounded,
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        '/asistencia/scanner',
+                        arguments: AsistenciaEventRouteArgs.attendance(
+                          eventId,
+                          openScannerDirectly: true,
+                        ),
+                      ),
+                    ),
+                    _EventOptionTile(
+                      title: 'Registro manual',
+                      subtitle: 'Buscar y marcar persona',
+                      icon: Icons.check_circle_outline_rounded,
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        '/asistencia/registro_manual',
+                        arguments: AsistenciaEventRouteArgs.attendance(eventId),
+                      ),
+                    ),
+                    _EventOptionTile(
+                      title: 'Ver asistencias',
+                      subtitle: 'Listado del evento',
+                      icon: Icons.format_list_bulleted_rounded,
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        '/asistencia/evento_registros',
+                        arguments: eventId,
+                      ),
+                    ),
+                    _EventOptionTile(
+                      title: 'Reporte',
+                      subtitle: 'Estadísticas y exportación',
+                      icon: Icons.bar_chart_rounded,
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        '/attendance/report',
+                        arguments: eventId,
+                      ),
+                    ),
+                    _EventOptionTile(
+                      title: 'Códigos QR',
+                      subtitle: 'Credenciales del evento',
+                      icon: Icons.qr_code_2_outlined,
+                      onTap: () =>
+                          Navigator.pushNamed(context, '/asistencia/qr_codes'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label, required this.fg, required this.bg});
+
+  final String label;
+  final Color fg;
+  final Color bg;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: fg,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniStatCell extends StatelessWidget {
+  const _MiniStatCell({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return PremiumCard(
+      margin: EdgeInsets.zero,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: valueColor,
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.view_list_rounded),
-            tooltip: 'Ir al listado de asistencia',
-            onPressed: () {
-              // Siempre muestra `/asistencia` aunque el detalle se abriera sin esa
-              // ruta en la pila (p. ej. deep link futuro): se conserva la raíz (`isFirst`)
-              // y se apila el hub de asistencia encima.
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                '/asistencia',
-                (route) => route.isFirst,
-              );
-            },
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: AppDesignTokens.bodyMuted(context),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('attendance_events')
-                .doc(eventId)
-                .snapshots(),
-            builder: (context, snap) {
-              if (snap.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text('Error: ${snap.error}'),
-                );
-              }
-              if (!snap.hasData || !snap.data!.exists) {
-                return const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Column(
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 12),
-                      Text('Cargando evento…'),
-                    ],
+    );
+  }
+}
+
+class _EventOptionTile extends StatelessWidget {
+  const _EventOptionTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.white,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: AppDesignTokens.primary.withValues(alpha: 0.12),
+          ),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppDesignTokens.lavanda,
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                );
-              }
-              final map = snap.data!.data() ?? {};
-              final nombre = map['nombre'] as String? ?? '(sin nombre)';
-              final fecha = (map['fecha'] as num?)?.toInt() ?? 0;
-              final fechaFin = (map['fechaFin'] as num?)?.toInt();
-              final lugar = map['lugar'] as String? ?? '';
-              final tipo = map['tipo'] as String? ?? '';
-              final desc = map['descripcion'] as String?;
-              final modalidadesRaw = List<String>.from(
-                map['modalidadesNoConvocadas'] ?? [],
-              );
-              final modalidadesEtiquetas = modalidadesRaw
-                  .map(Modalidad.tryParse)
-                  .whereType<Modalidad>()
-                  .map(JustificacionHelper.etiquetaModalidad)
-                  .toList();
-              return Card(
-                margin: const EdgeInsets.all(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  child: Icon(
+                    icon,
+                    color: AppDesignTokens.primaryDark,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        nombre,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
+                        title,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppDesignTokens.primaryDark,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text('Inicio: ${_fmt(fecha)}'),
-                      if (fechaFin != null)
-                        Text('Fin: ${_fmt(fechaFin)}')
-                      else
-                        Text(
-                          'Fin: fin del día del inicio (documento sin fechaFin)',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                        ),
-                      if (lugar.isNotEmpty) Text('Lugar: $lugar'),
-                      if (tipo.isNotEmpty) Chip(label: Text(tipo)),
-                      if (desc != null && desc.isNotEmpty) Text(desc),
-                      const SizedBox(height: 12),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Modalidades no convocadas',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: openModalidadesEditor,
-                            icon: const Icon(Icons.edit_outlined, size: 18),
-                            label: const Text('Editar'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      if (modalidadesEtiquetas.isEmpty)
-                        Text(
-                          'Ninguna modalidad excluida; todas pueden entrar en la convocatoria según la lista de socios.',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
-                        )
-                      else
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: modalidadesEtiquetas
-                              .map(
-                                (label) => Chip(
-                                  visualDensity: VisualDensity.compact,
-                                  label: Text(label),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                      const Divider(height: 24),
-                      Text(
-                        'ID interno Firestore:',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      SelectableText(
-                        eventId,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                        ),
-                      ),
+                      const SizedBox(height: 2),
+                      Text(subtitle, style: AppDesignTokens.bodyMuted(context)),
                     ],
                   ),
                 ),
-              );
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Registros de asistencia',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Estos registros se usan para calcular presentes y faltantes.',
-                  style: Theme.of(context).textTheme.bodySmall,
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppDesignTokens.primary.withValues(alpha: 0.6),
                 ),
               ],
             ),
           ),
-          Expanded(
-            child: _AttendanceEventRecordsList(
-              eventId: eventId,
-              attendanceSvc: attendanceSvc,
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'att_ev_report',
-            tooltip: 'Ver reporte calculado',
-            onPressed: () => Navigator.pushNamed(
-              context,
-              '/attendance/report',
-              arguments: eventId,
-            ),
-            child: const Icon(Icons.bar_chart),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton.small(
-            heroTag: 'att_ev_manual',
-            tooltip: 'Registro manual (modelo nuevo)',
-            onPressed: () => Navigator.pushNamed(
-              context,
-              '/asistencia/registro_manual',
-              arguments: AsistenciaEventRouteArgs.attendance(eventId),
-            ),
-            child: const Icon(Icons.person_add),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton(
-            heroTag: 'att_ev_scan',
-            tooltip: 'Escanear (modelo nuevo)',
-            onPressed: () => Navigator.pushNamed(
-              context,
-              '/asistencia/scanner',
-              arguments: AsistenciaEventRouteArgs.attendance(
-                eventId,
-                openScannerDirectly: true,
-              ),
-            ),
-            child: const Icon(Icons.qr_code_scanner),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Lista de asistencias del evento con datos del padrón `members` (nombre, N°, cédula, modalidad).
-class _AttendanceEventRecordsList extends StatefulWidget {
-  const _AttendanceEventRecordsList({
-    required this.eventId,
-    required this.attendanceSvc,
-  });
-
-  final String eventId;
-  final AttendanceService attendanceSvc;
-
-  @override
-  State<_AttendanceEventRecordsList> createState() =>
-      _AttendanceEventRecordsListState();
-}
-
-class _AttendanceEventRecordsListState extends State<_AttendanceEventRecordsList> {
-  final MembersService _membersService = MembersService();
-  final Map<String, Member?> _memberByPersonaId = {};
-  final Set<String> _loadingPersonaIds = {};
-
-  static String _fmtRegistro(int? ms) {
-    if (ms == null || ms <= 0) return '—';
-    final d = DateTime.fromMillisecondsSinceEpoch(ms);
-    return '${d.day}/${d.month}/${d.year} '
-        '${d.hour.toString().padLeft(2, '0')}:'
-        '${d.minute.toString().padLeft(2, '0')}';
-  }
-
-  Future<Member?> _resolveMember(String personaId) async {
-    if (personaId.isEmpty) return null;
-    var m = await _membersService.getMemberById(personaId);
-    m ??= await _membersService.getMemberByWorkerCode(personaId);
-    m ??= await _membersService.getMemberByNumber(personaId);
-    m ??= await _membersService.getMemberByDocument(personaId);
-    return m;
-  }
-
-  void _scheduleLoadsFor(List<AsistenciaRegistro> list) {
-    final ids = list.map((r) => r.personaId).where((s) => s.isNotEmpty).toSet();
-    for (final id in ids) {
-      if (_memberByPersonaId.containsKey(id) || _loadingPersonaIds.contains(id)) {
-        continue;
-      }
-      _loadingPersonaIds.add(id);
-      _resolveMember(id).then((m) {
-        if (!mounted) return;
-        setState(() {
-          _loadingPersonaIds.remove(id);
-          _memberByPersonaId[id] = m;
-        });
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
-    return StreamBuilder<List<AsistenciaRegistro>>(
-      stream: widget.attendanceSvc.getEventAttendances(widget.eventId),
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return Center(child: Text('Error: ${snap.error}'));
-        }
-        final list = snap.data;
-        if (list == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (list.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'Sin registros.\n\n'
-                'Usa el botón QR (abajo) o Registro manual para añadir asistencias.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-          );
-        }
-
-        _scheduleLoadsFor(list);
-
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 88),
-          itemCount: list.length,
-          itemBuilder: (context, i) {
-            final r = list[i];
-            final pid = r.personaId;
-            final loading = pid.isNotEmpty && _loadingPersonaIds.contains(pid);
-            final member = pid.isEmpty ? null : _memberByPersonaId[pid];
-            final resuelto = pid.isEmpty || _memberByPersonaId.containsKey(pid);
-            final noEnPadron =
-                pid.isNotEmpty && resuelto && member == null && !loading;
-
-            final nombreMostrado = pid.isEmpty
-                ? 'Sin identificador de socio'
-                : (member?.fullName.trim().isNotEmpty == true
-                    ? member!.fullName
-                    : (loading
-                        ? 'Cargando datos del socio…'
-                        : 'Socio no encontrado'));
-
-            final estadoTxt =
-                r.asistio ? 'Asistió' : 'No asistió';
-
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 1,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          r.asistio ? Icons.check_circle : Icons.cancel,
-                          color:
-                              r.asistio ? Colors.green.shade700 : cs.error,
-                          size: 28,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                nombreMostrado,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '$estadoTxt • ${_fmtRegistro(r.fechaRegistro)}'
-                                '${r.metodoRegistro == MetodoRegistro.manual ? '' : ' · ${r.metodoRegistro.value}'}',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
-                              ),
-                              if (r.justificacion?.trim().isNotEmpty == true) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  r.justificacion!.trim(),
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (!loading && member != null) ...[
-                      const SizedBox(height: 12),
-                      _metaRow(
-                        context,
-                        Icons.badge_outlined,
-                        'N° Socio',
-                        member.memberNumber,
-                      ),
-                      if (member.documentId?.trim().isNotEmpty == true)
-                        _metaRow(
-                          context,
-                          Icons.credit_card_outlined,
-                          'Cédula',
-                          member.documentId!,
-                        ),
-                      _metaRow(
-                        context,
-                        Icons.schedule_outlined,
-                        'Modalidad',
-                        member.modalidad != null
-                            ? JustificacionHelper.etiquetaModalidad(
-                                member.modalidad!,
-                              )
-                            : 'Sin asignar',
-                      ),
-                    ] else if (pid.isEmpty) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        'El registro no tiene personaId. Revise el guardado en Firestore.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: cs.error,
-                        ),
-                      ),
-                    ] else if (noEnPadron) ...[
-                      const SizedBox(height: 10),
-                      Text(
-                        'Referencia en registro: $pid\n'
-                        'No hay coincidencia en el padrón por id de documento, '
-                        'código trabajador o número de socio.',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: cs.error,
-                        ),
-                      ),
-                    ] else if (loading) ...[
-                      const SizedBox(height: 10),
-                      LinearProgressIndicator(
-                        borderRadius: BorderRadius.circular(4),
-                        minHeight: 4,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _metaRow(
-    BuildContext context,
-    IconData icon,
-    String label,
-    String value,
-  ) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: theme.colorScheme.outline),
-          const SizedBox(width: 8),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                ),
-                children: [
-                  TextSpan(
-                    text: '$label: ',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  TextSpan(text: value),
-                ],
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -562,22 +624,19 @@ class _EditModalidadesNoConvocadasDialogState
     try {
       await widget.attendanceSvc.updateEvent(
         widget.event.copyWith(
-          modalidadesNoConvocadas:
-              _selected.map((m) => m.value).toList(),
+          modalidadesNoConvocadas: _selected.map((m) => m.value).toList(),
         ),
       );
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Modalidades no convocadas actualizadas'),
-        ),
+        const SnackBar(content: Text('Modalidades no convocadas actualizadas')),
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al guardar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error al guardar: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -604,14 +663,13 @@ class _EditModalidadesNoConvocadasDialogState
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children:
-                  Modalidad.valoresParaJustificacionAsistencia.map((modalidad) {
+              children: Modalidad.valoresParaJustificacionAsistencia.map((
+                modalidad,
+              ) {
                 final on = _selected.contains(modalidad);
                 return FilterChip(
                   selected: on,
-                  label: Text(
-                    JustificacionHelper.etiquetaModalidad(modalidad),
-                  ),
+                  label: Text(JustificacionHelper.etiquetaModalidad(modalidad)),
                   onSelected: _saving
                       ? null
                       : (checked) {

@@ -143,24 +143,4 @@ class AuditService {
               .toList(),
         );
   }
-
-  /// Limpiar logs antiguos (solo superadmin)
-  Future<void> cleanOldLogs({required DateTime olderThan}) async {
-    try {
-      final snapshot = await _firestore
-          .collection('audit_logs')
-          .where('timestamp', isLessThan: olderThan.millisecondsSinceEpoch)
-          .get();
-
-      final batch = _firestore.batch();
-      for (final doc in snapshot.docs) {
-        batch.delete(doc.reference);
-      }
-
-      await batch.commit();
-    } catch (e) {
-      debugPrint('Error limpiando logs antiguos: $e');
-      rethrow;
-    }
-  }
 }

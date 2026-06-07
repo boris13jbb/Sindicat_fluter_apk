@@ -54,8 +54,8 @@ enum Modalidad {
     return null;
   }
 
-  /// Turnos válidos para **eventos legacy** y justificación operativa de asistencia (mañana/tarde/noche).
-  /// No incluye X, Y, Z (solo selector de modalidad para convocatorias).
+  /// Todas las modalidades mostradas en selectores de convocatoria / “modalidades no
+  /// convocadas” y en flujos de justificación que usan esta lista compartida.
   static const List<Modalidad> valoresParaJustificacionAsistencia = [
     Modalidad.A,
     Modalidad.B,
@@ -65,6 +65,9 @@ enum Modalidad {
     Modalidad.N,
     Modalidad.N1,
     Modalidad.N2,
+    Modalidad.X,
+    Modalidad.Y,
+    Modalidad.Z,
   ];
 }
 
@@ -148,8 +151,10 @@ class EventoAsistencia {
   final String id;
   final String nombre;
   final int fecha;
+
   /// Fin de vigencia (ms). Si es null, en filtros se usa fin del día de [fecha].
   final int? fechaFin;
+
   /// Si el evento sigue vigente para convocatorias / vínculos (colección `eventos`).
   final bool activo;
   final TipoReunion tipoReunion;

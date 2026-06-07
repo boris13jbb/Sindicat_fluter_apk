@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#6847be">
+  <meta
+    name="description"
+    content="Restablecimiento seguro de contraseña — Sistema Integrado Sindicato"
+  >
+  <title>Restablecer contraseña | Sistema Integrado Sindicato</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  >
+  <style>
+    :root {
+      color-scheme: light;
+      --primary: #6847be;
+      --primary-dark: #2b2265;
+      --lavender: #eee5ff;
+      --background: #fcf9ff;
+      --background-end: #e8def8;
+      --muted: #6d6680;
+      --border: #d9d2e6;
+      --success: #218739;
+      --success-bg: #e7f6ea;
+      --error: #b3261e;
+      --error-bg: #ffedea;
+      --warning: #7a5c00;
+      --warning-bg: #fff8e1;
+      --radius-lg: 20px;
+      --radius-xl: 28px;
+      --shadow-card: 0 24px 70px rgb(43 34 101 / 14%);
+      --shadow-btn: 0 10px 24px rgb(104 71 190 / 22%);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 24px 16px 32px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary-dark);
+      background:
+        radial-gradient(circle at 8% 12%, #eee5ff 0, transparent 34%),
+        radial-gradient(circle at 92% 88%, #e7dcff 0, transparent 32%),
+        linear-gradient(180deg, var(--background) 0%, var(--background-end) 100%);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page {
+      width: min(100%, 480px);
+      animation: fadeUp 0.45s ease-out both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .brand {
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+    }
+
+    .brand-mark {
+      width: 52px;
+      height: 52px;
+      display: grid;
+      place-items: center;
+      color: white;
+      background: linear-gradient(145deg, var(--primary-dark), var(--primary));
+      border-radius: 16px;
+      box-shadow: 0 12px 28px rgb(104 71 190 / 28%);
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand-name {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .brand-tagline {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .card {
+      overflow: hidden;
+      background: rgb(255 255 255 / 97%);
+      border: 1px solid rgb(104 71 190 / 10%);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-card);
+    }
+
+    .card-hero {
+      padding: 28px 28px 24px;
+      color: white;
+      background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card-hero::after {
+      content: "";
+      position: absolute;
+      top: -40px;
+      right: -40px;
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: rgb(255 255 255 / 8%);
+      pointer-events: none;
+    }
+
+    .hero-icon {
+      width: 44px;
+      height: 44px;
+      margin-bottom: 14px;
+      display: grid;
+      place-items: center;
+      background: rgb(255 255 255 / 14%);
+      border-radius: 14px;
+    }
+
+    .hero-icon svg { width: 24px; height: 24px; }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(22px, 5.5vw, 28px);
+      font-weight: 800;
+      line-height: 1.2;
+      letter-spacing: -0.03em;
+    }
+
+    .hero-lead {
+      margin: 8px 0 0;
+      font-size: 14px;
+      line-height: 1.55;
+      color: rgb(255 255 255 / 88%);
+      font-weight: 400;
+    }
+
+    .steps {
+      margin-top: 20px;
+      display: flex;
+      gap: 6px;
+    }
+
+    .step {
+      flex: 1;
+      height: 4px;
+      border-radius: 99px;
+      background: rgb(255 255 255 / 22%);
+      transition: background 0.3s;
+    }
+
+    .step.active { background: rgb(255 255 255 / 90%); }
+    .step.done { background: rgb(255 255 255 / 55%); }
+
+    .card-body { padding: 26px 28px 28px; }
+
+    .status {
+      margin-bottom: 20px;
+      padding: 14px 16px;
+      display: none;
+      align-items: flex-start;
+      gap: 12px;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.5;
+    }
+
+    .status.visible {
+      display: flex;
+    }
+
+    .status-icon {
+      width: 20px;
+      height: 20px;
+      min-width: 20px;
+      margin-top: 1px;
+    }
+
+    .status.info {
+      color: var(--primary-dark);
+      background: var(--lavender);
+    }
+
+    .status.error {
+      color: var(--error);
+      background: var(--error-bg);
+    }
+
+    .status.success {
+      color: var(--success);
+      background: var(--success-bg);
+    }
+
+    .loader-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 0 8px;
+      text-align: center;
+    }
+
+    .loader-wrap.hidden { display: none; }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--lavender);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loader-text {
+      margin: 0;
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .account-chip {
+      margin-bottom: 22px;
+      padding: 12px 14px;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: var(--lavender);
+      border-radius: 14px;
+      border: 1px solid rgb(104 71 190 / 12%);
+    }
+
+    .account-chip.visible { display: flex; }
+
+    .account-avatar {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--primary);
+      background: white;
+      border-radius: 12px;
+      text-transform: uppercase;
+    }
+
+    .account-info { flex: 1; min-width: 0; }
+
+    .account-label {
+      margin: 0;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    .account-email {
+      margin: 2px 0 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--primary-dark);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .field { margin-bottom: 18px; }
+
+    label {
+      margin-bottom: 8px;
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary-dark);
+    }
+
+    .input-wrap {
+      position: relative;
+    }
+
+    input {
+      width: 100%;
+      min-height: 52px;
+      padding: 13px 48px 13px 14px;
+      color: var(--primary-dark);
+      background: white;
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      outline: none;
+      font: inherit;
+      font-size: 15px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgb(104 71 190 / 12%);
+    }
+
+    .toggle-pw {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      transform: translateY(-50%);
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      background: transparent;
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .toggle-pw:hover {
+      color: var(--primary);
+      background: var(--lavender);
+    }
+
+    .strength {
+      margin-top: 8px;
+      display: none;
+    }
+
+    .strength.visible { display: block; }
+
+    .strength-bar {
+      height: 4px;
+      border-radius: 99px;
+      background: #ece6f4;
+      overflow: hidden;
+    }
+
+    .strength-fill {
+      height: 100%;
+      width: 0;
+      border-radius: 99px;
+      transition: width 0.25s, background 0.25s;
+    }
+
+    .strength-label {
+      margin: 6px 0 0;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .hint {
+      margin: -4px 0 22px;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+
+    .btn-primary {
+      width: 100%;
+      min-height: 52px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: white;
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      border: 0;
+      border-radius: 14px;
+      box-shadow: var(--shadow-btn);
+      cursor: pointer;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 13px 28px rgb(104 71 190 / 30%);
+    }
+
+    .btn-primary:disabled {
+      cursor: wait;
+      opacity: 0.65;
+      transform: none;
+    }
+
+    .btn-secondary {
+      width: 100%;
+      min-height: 48px;
+      margin-top: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--primary);
+      background: white;
+      border: 1.5px solid rgb(104 71 190 / 22%);
+      border-radius: 14px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn-secondary:hover {
+      background: var(--lavender);
+      border-color: rgb(104 71 190 / 35%);
+    }
+
+    .success-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 8px 0 4px;
+    }
+
+    .success-panel.visible { display: flex; }
+
+    .success-circle {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      display: grid;
+      place-items: center;
+      color: var(--success);
+      background: var(--success-bg);
+      border-radius: 50%;
+      animation: popIn 0.4s ease-out both;
+    }
+
+    @keyframes popIn {
+      from { transform: scale(0.7); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .success-title {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--primary-dark);
+    }
+
+    .success-text {
+      margin: 0 0 22px;
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--muted);
+      max-width: 320px;
+    }
+
+    .footer-note {
+      margin: 22px 0 0;
+      padding-top: 18px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      border-top: 1px solid #eee9f4;
+      font-size: 12px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+
+    .footer-note svg {
+      width: 18px;
+      min-width: 18px;
+      margin-top: 1px;
+      color: var(--primary);
+    }
+
+    .page-footer {
+      margin-top: 24px;
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 480px) {
+      body { padding: 16px 12px 24px; }
+      .card-hero, .card-body { padding-left: 22px; padding-right: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true">
+          <path
+            d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8-1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM3.5 18.5c0-3 2-5 4.5-5s4.5 2 4.5 5M13 18.5c.1-2.3 1.5-4 3.5-4 2.1 0 3.5 1.7 3.5 4"
+            stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+          />
+        </svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-name">Sistema Integrado Sindicato</span>
+        <span class="brand-tagline">Acceso seguro · Votación · Asistencia</span>
+      </div>
+    </header>
+
+    <section class="card" aria-labelledby="page-title">
+      <header class="card-hero">
+        <div class="hero-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path
+              d="M7 10V8a5 5 0 0 1 10 0v2m-9 0h8a2 2 0 0 1 2 2v7H6v-7a2 2 0 0 1 2-2Zm4 3v3"
+              stroke="currentColor" stroke-width="1.8"
+              stroke-linecap="round" stroke-linejoin="round"
+            />
+          </svg>
+        </div>
+        <h1 id="page-title">Restablece tu contraseña</h1>
+        <p class="hero-lead">
+          Crea una contraseña segura para recuperar el acceso a tu cuenta.
+        </p>
+        <div class="steps" aria-hidden="true">
+          <div class="step active" id="step-1"></div>
+          <div class="step" id="step-2"></div>
+          <div class="step" id="step-3"></div>
+        </div>
+      </header>
+
+      <div class="card-body">
+        <div id="loader" class="loader-wrap">
+          <div class="spinner" role="progressbar" aria-label="Validando enlace"></div>
+          <p class="loader-text">Validando enlace de recuperación…</p>
+        </div>
+
+        <div id="status" class="status hidden" role="status" aria-live="polite"></div>
+
+        <div id="account-chip" class="account-chip">
+          <div class="account-avatar" id="account-initial" aria-hidden="true">?</div>
+          <div class="account-info">
+            <p class="account-label">Cuenta verificada</p>
+            <p class="account-email" id="account-email"></p>
+          </div>
+        </div>
+
+        <form id="reset-form" class="hidden" novalidate>
+          <div class="field">
+            <label for="password">Nueva contraseña</label>
+            <div class="input-wrap">
+              <input
+                id="password" name="password" type="password"
+                autocomplete="new-password" minlength="8" required
+                placeholder="Mínimo 8 caracteres"
+              >
+              <button type="button" class="toggle-pw" data-target="password" aria-label="Mostrar contraseña">
+                <svg class="icon-show" viewBox="0 0 24 24" width="20" height="20" fill="none">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" stroke="currentColor" stroke-width="1.8"/>
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+                </svg>
+              </button>
+            </div>
+            <div class="strength" id="strength">
+              <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+              <p class="strength-label" id="strength-label"></p>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="confirm-password">Confirmar contraseña</label>
+            <div class="input-wrap">
+              <input
+                id="confirm-password" name="confirm-password" type="password"
+                autocomplete="new-password" minlength="8" required
+                placeholder="Repite la contraseña"
+              >
+              <button type="button" class="toggle-pw" data-target="confirm-password" aria-label="Mostrar contraseña">
+                <svg class="icon-show" viewBox="0 0 24 24" width="20" height="20" fill="none">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" stroke="currentColor" stroke-width="1.8"/>
+                  <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <p class="hint">
+            Usa letras, números y símbolos. Evita contraseñas que hayas usado antes.
+          </p>
+          <button id="submit-button" class="btn-primary" type="submit">
+            Guardar nueva contraseña
+          </button>
+        </form>
+
+        <div id="success-panel" class="success-panel">
+          <div class="success-circle" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none">
+              <path d="M5 12.5 9.5 17 19 7" stroke="currentColor" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h2 class="success-title">¡Contraseña actualizada!</h2>
+          <p class="success-text">
+            Tu acceso fue restablecido correctamente. Ya puedes iniciar sesión con tu nueva contraseña.
+          </p>
+          <a id="return-button-success" class="btn-primary" href="/">Ir al inicio de sesión</a>
+        </div>
+
+        <a id="return-button" class="btn-secondary hidden" href="/">Volver al inicio de sesión</a>
+
+        <p class="footer-note" id="security-note">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3 5 6v5c0 4.7 2.8 8.2 7 10 4.2-1.8 7-5.3 7-10V6l-7-3Zm-3 9 2 2 4-4"
+              stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Enlace personal de un solo uso. No compartas tu contraseña ni este enlace con nadie.
+        </p>
+      </div>
+    </section>
+
+    <p class="page-footer">© Sistema Integrado Sindicato · Acceso protegido</p>
+  </div>
+
+  <script>
+    const API_KEY = "AIzaSyDiKl-oJ4joC1baziADpZrEE_VBsIswmnw";
+    const BACKEND_RESET_ENDPOINT = "/api/confirm-password-reset";
+    const params = new URLSearchParams(window.location.search);
+    const backendToken = params.get("token");
+    const sourceLink = params.get("source");
+    let sourceParams = null;
+
+    if (sourceLink) {
+      try {
+        sourceParams = new URL(sourceLink).searchParams;
+      } catch (_) {
+        sourceParams = new URLSearchParams(sourceLink.split("?")[1] || "");
+      }
+    }
+
+    const actionCode = params.get("oobCode") || sourceParams?.get("oobCode");
+    const mode = params.get("mode") || sourceParams?.get("mode");
+
+    const loader = document.getElementById("loader");
+    const statusBox = document.getElementById("status");
+    const resetForm = document.getElementById("reset-form");
+    const submitButton = document.getElementById("submit-button");
+    const returnButton = document.getElementById("return-button");
+    const successPanel = document.getElementById("success-panel");
+    const accountChip = document.getElementById("account-chip");
+    const accountEmail = document.getElementById("account-email");
+    const accountInitial = document.getElementById("account-initial");
+    const passwordInput = document.getElementById("password");
+    const confirmInput = document.getElementById("confirm-password");
+    const strengthBox = document.getElementById("strength");
+    const strengthFill = document.getElementById("strength-fill");
+    const strengthLabel = document.getElementById("strength-label");
+    const step1 = document.getElementById("step-1");
+    const step2 = document.getElementById("step-2");
+    const step3 = document.getElementById("step-3");
+    const securityNote = document.getElementById("security-note");
+
+    function setStep(n) {
+      [step1, step2, step3].forEach((el, i) => {
+        el.classList.remove("active", "done");
+        if (i + 1 < n) el.classList.add("done");
+        else if (i + 1 === n) el.classList.add("active");
+      });
+    }
+
+    function showStatus(message, type) {
+      const icons = {
+        info: '<svg class="status-icon" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 10v5M12 7h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+        error: '<svg class="status-icon" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+        success: '<svg class="status-icon" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M8 12.5 10.5 15 16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      };
+      statusBox.innerHTML = (icons[type] || icons.info) + "<span>" + message + "</span>";
+      statusBox.className = "status " + type + " visible";
+    }
+
+    function hideStatus() {
+      statusBox.className = "status hidden";
+      statusBox.innerHTML = "";
+    }
+
+    function errorMessage(code) {
+      const messages = {
+        EXPIRED_OOB_CODE: "El enlace venció. Solicita un nuevo correo de recuperación.",
+        INVALID_OOB_CODE: "El enlace no es válido o ya fue utilizado. Solicita uno nuevo.",
+        USER_DISABLED: "La cuenta está deshabilitada. Contacta al administrador.",
+        WEAK_PASSWORD: "La contraseña es demasiado débil. Elige una más segura."
+      };
+      return messages[code] || "No se pudo completar la solicitud. Inténtalo nuevamente.";
+    }
+
+    async function resetPasswordRequest(body) {
+      const response = await fetch(
+        "https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key=" + API_KEY,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error?.message || "UNKNOWN_ERROR");
+      }
+      return data;
+    }
+
+    async function backendResetRequest(body) {
+      const response = await fetch(BACKEND_RESET_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || "No se pudo completar la solicitud.");
+      }
+      return data;
+    }
+
+    function scorePassword(value) {
+      let score = 0;
+      if (value.length >= 8) score++;
+      if (value.length >= 12) score++;
+      if (/[a-z]/.test(value) && /[A-Z]/.test(value)) score++;
+      if (/\d/.test(value)) score++;
+      if (/[^A-Za-z0-9]/.test(value)) score++;
+      return Math.min(score, 4);
+    }
+
+    function updateStrength(value) {
+      if (!value) {
+        strengthBox.classList.remove("visible");
+        return;
+      }
+      strengthBox.classList.add("visible");
+      const score = scorePassword(value);
+      const pct = [0, 25, 50, 75, 100][score];
+      const labels = ["", "Débil", "Regular", "Buena", "Fuerte"];
+      const colors = ["#ece6f4", "#e53935", "#fb8c00", "#43a047", "#2e7d32"];
+      strengthFill.style.width = pct + "%";
+      strengthFill.style.background = colors[score];
+      strengthLabel.textContent = labels[score] ? "Seguridad: " + labels[score] : "";
+    }
+
+    document.querySelectorAll(".toggle-pw").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const input = document.getElementById(btn.dataset.target);
+        const isHidden = input.type === "password";
+        input.type = isHidden ? "text" : "password";
+        btn.setAttribute("aria-label", isHidden ? "Ocultar contraseña" : "Mostrar contraseña");
+      });
+    });
+
+    passwordInput.addEventListener("input", () => updateStrength(passwordInput.value));
+
+    async function validateLink() {
+      setStep(1);
+      if (!backendToken && (mode !== "resetPassword" || !actionCode)) {
+        loader.classList.add("hidden");
+        setStep(1);
+        showStatus("Este enlace de recuperación está incompleto o no es válido.", "error");
+        returnButton.classList.remove("hidden");
+        return;
+      }
+
+      try {
+        const data = backendToken
+          ? await backendResetRequest({ action: "validate", token: backendToken })
+          : await resetPasswordRequest({ oobCode: actionCode });
+        loader.classList.add("hidden");
+        setStep(2);
+
+        if (data.email) {
+          accountEmail.textContent = data.email;
+          accountInitial.textContent = data.email.charAt(0).toUpperCase();
+          accountChip.classList.add("visible");
+        }
+
+        resetForm.classList.remove("hidden");
+        passwordInput.focus();
+      } catch (error) {
+        loader.classList.add("hidden");
+        showStatus(backendToken ? error.message : errorMessage(error.message), "error");
+        returnButton.classList.remove("hidden");
+      }
+    }
+
+    resetForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const password = passwordInput.value;
+      const confirmation = confirmInput.value;
+
+      if (password.length < 8) {
+        showStatus("La contraseña debe tener al menos 8 caracteres.", "error");
+        passwordInput.focus();
+        return;
+      }
+      if (password !== confirmation) {
+        showStatus("Las contraseñas no coinciden.", "error");
+        confirmInput.focus();
+        return;
+      }
+
+      hideStatus();
+      submitButton.disabled = true;
+      submitButton.textContent = "Guardando…";
+      try {
+        if (backendToken) {
+          await backendResetRequest({
+            action: "confirm",
+            token: backendToken,
+            newPassword: password
+          });
+        } else {
+          await resetPasswordRequest({ oobCode: actionCode, newPassword: password });
+        }
+        setStep(3);
+        resetForm.classList.add("hidden");
+        accountChip.classList.add("hidden");
+        securityNote.classList.add("hidden");
+        returnButton.classList.add("hidden");
+        successPanel.classList.add("visible");
+      } catch (error) {
+        showStatus(backendToken ? error.message : errorMessage(error.message), "error");
+        submitButton.disabled = false;
+        submitButton.textContent = "Guardar nueva contraseña";
+      }
+    });
+
+    validateLink();
+  </script>
+</body>
+</html>

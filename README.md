@@ -51,7 +51,7 @@ See [Architecture Overview](docs/architecture/project-overview.md) for detailed 
 ## 📱 Supported Platforms
 
 - ✅ **Android** (API 23+) - Production Ready
-- ✅ **iOS** (iOS 12+) - Production Ready  
+- ✅ **iOS** (iOS 12+) - Production Ready
 - ✅ **Web** (Modern browsers) - Production Ready
 - ✅ **Windows** (10/11) - Production Ready
 
@@ -79,14 +79,14 @@ See [Architecture Overview](docs/architecture/project-overview.md) for detailed 
    ```
 
 3. **Configure Firebase**
-   
+
    Follow the complete guide: [Firebase Setup](docs/setup/firebase-setup.md)
-   
+
    Quick steps:
    ```bash
    # Login to Firebase
    npx firebase-tools login
-   
+
    # Configure FlutterFire
    flutterfire configure --platforms=android,ios,web,windows
    ```
@@ -127,25 +127,30 @@ Comprehensive documentation is available in the [`docs/`](docs/) directory:
 ### Running Tests
 
 ```bash
-# Run static analysis
-flutter analyze
+# Puerta completa de calidad: formato, análisis, pruebas, reglas y Emulator
+./tool/verify.ps1
 
-# Run unit tests (when available)
-flutter test
+# Sin Emulator, para una comprobación rápida
+./tool/verify.ps1 -SkipRules
 ```
+
+> Con Flutter 3.44.0, el runner de pruebas necesita temporalmente
+> `--enable-experiment=dot-shorthands`. El script ya lo aplica.
 
 ### Building for Production
 
 ```bash
-# Android APK
-flutter build apk --release
+# Todos los artefactos disponibles en Windows
+./tool/build_release.ps1
 
-# Web
-flutter build web --release
-
-# Windows
-flutter build windows --release
+# Sólo plataformas seleccionadas
+./tool/build_release.ps1 -Android -Web
 ```
+
+Android exige `android/key.properties` y una clave de firma real. Para generar
+artefactos de QA firmados explícitamente con la clave debug se permite
+`./tool/build_release.ps1 -Android -AllowDebugAndroidSigning`; no deben
+distribuirse como producción.
 
 See [Deployment Guide](docs/deployment/deployment-guide.md) for detailed instructions.
 
@@ -325,6 +330,6 @@ For more issues, see [Troubleshooting Guide](docs/troubleshooting/common-issues.
 
 ---
 
-**Last Updated**: March 28, 2026  
-**Current Version**: 1.0.0  
+**Last Updated**: March 28, 2026
+**Current Version**: 1.0.0
 **Maintained By**: [Your Name/Organization]

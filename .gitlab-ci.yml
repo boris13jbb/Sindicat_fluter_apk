@@ -6,7 +6,20 @@
 # Note that environment variables can be set in several places
 # See https://docs.gitlab.com/ci/variables/#cicd-variable-precedence
 stages:
+- quality
 - test
+
+flutter_quality:
+  stage: quality
+  image: ghcr.io/cirruslabs/flutter:stable
+  script:
+  - flutter pub get
+  - BASE_SHA="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-HEAD~1}"
+  - CHANGED_DART="$(git diff --name-only "$BASE_SHA" HEAD -- '*.dart')"
+  - if [ -n "$CHANGED_DART" ]; then dart format --output=none --set-exit-if-changed $CHANGED_DART; fi
+  - dart analyze lib test
+  - flutter test --no-pub --enable-experiment=dot-shorthands --reporter compact
+
 sast:
   stage: test
 include:

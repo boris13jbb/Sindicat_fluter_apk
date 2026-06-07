@@ -45,7 +45,10 @@ class _LoginScreenState extends State<LoginScreen> {
       enabledBorder: border,
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesignTokens.radiusMedium),
-        borderSide: const BorderSide(color: AppDesignTokens.primary, width: 1.5),
+        borderSide: const BorderSide(
+          color: AppDesignTokens.primary,
+          width: 1.5,
+        ),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesignTokens.radiusMedium),
@@ -166,17 +169,16 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         Text(
                           'Iniciar sesión',
-                          style: AppDesignTokens.titleLarge(context).copyWith(
-                            fontSize: 24,
-                          ),
+                          style: AppDesignTokens.titleLarge(
+                            context,
+                          ).copyWith(fontSize: 24),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Accede de forma segura a tu panel sindical.',
-                          style: AppDesignTokens.bodyMuted(context).copyWith(
-                            fontSize: 14,
-                            height: 1.35,
-                          ),
+                          style: AppDesignTokens.bodyMuted(
+                            context,
+                          ).copyWith(fontSize: 14, height: 1.35),
                         ),
                         const SizedBox(height: 24),
                         TextFormField(
@@ -269,7 +271,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               isLoading: auth.isLoading,
                               onPressed: () {
                                 auth.clearMessages();
-                                if (_formKey.currentState?.validate() ?? false) {
+                                if (_formKey.currentState?.validate() ??
+                                    false) {
                                   auth.signIn(
                                     _emailController.text.trim(),
                                     _passwordController.text,
@@ -365,7 +368,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           ? null
                           : () async {
                               await auth.sendPasswordResetEmail(email);
-                              if (context.mounted) Navigator.pop(context);
+                              if (context.mounted &&
+                                  auth.errorMessage == null) {
+                                Navigator.pop(context);
+                              }
                             },
                       child: auth.isLoading
                           ? const SizedBox(
