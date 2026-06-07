@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/design/app_design_tokens.dart';
+import '../../core/design/widgets/app_brand_logo.dart';
 import '../../core/design/widgets/premium_card.dart';
 import '../../core/design/widgets/primary_button.dart';
 import '../../providers/auth_provider.dart';
@@ -126,7 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const _LoginHeaderLogo(),
+                              const AppBrandLogo(),
                               const SizedBox(height: 18),
                               Text(
                                 'Sistema Integrado Sindicato',
@@ -388,37 +389,6 @@ class _LoginScreenState extends State<LoginScreen> {
           },
         );
       },
-    );
-  }
-}
-
-/// Marca visual del login (misma línea que splash, tamaño compacto).
-class _LoginHeaderLogo extends StatelessWidget {
-  const _LoginHeaderLogo();
-
-  @override
-  Widget build(BuildContext context) {
-    const size = 88.0;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: AppDesignTokens.cardShadow,
-      ),
-      padding: const EdgeInsets.all(14),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: AppDesignTokens.lavanda,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: const Icon(
-          Icons.groups_rounded,
-          size: 40,
-          color: AppDesignTokens.primary,
-        ),
-      ),
     );
   }
 }

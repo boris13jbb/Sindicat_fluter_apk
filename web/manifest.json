@@ -1,11 +1,11 @@
 {
-    "name": "VotaSind",
-    "short_name": "VotaSind",
+    "name": "Sistema Integrado Sindicato",
+    "short_name": "Sindicato",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "Sistema de votacion",
+    "background_color": "#fcf9ff",
+    "theme_color": "#6847be",
+    "description": "Sistema Integrado Sindicato — votación, asistencia y gestión sindical",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

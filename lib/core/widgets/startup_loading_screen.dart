@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../design/app_design_tokens.dart';
-import '../design/widgets/premium_card.dart';
+import '../design/widgets/app_brand_logo.dart';
 
 /// Pantalla 01: carga inicial mientras se inicializa Firebase (solo UI premium).
 class StartupLoadingScreen extends StatelessWidget {
   const StartupLoadingScreen({super.key});
-
-  static const double _logoOuter = 132;
 
   @override
   Widget build(BuildContext context) {
@@ -47,28 +45,7 @@ class StartupLoadingScreen extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          SizedBox(
-                            width: _logoOuter,
-                            height: _logoOuter,
-                            child: PremiumCard(
-                              margin: EdgeInsets.zero,
-                              borderRadius: AppDesignTokens.radiusLogo,
-                              padding: const EdgeInsets.all(18),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: AppDesignTokens.lavanda,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.groups_rounded,
-                                    size: 52,
-                                    color: AppDesignTokens.primary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
+                          const AppBrandLogo(size: 132, padding: 14),
                           const SizedBox(height: 32),
                           Text(
                             'Sistema Integrado\nSindicato',
