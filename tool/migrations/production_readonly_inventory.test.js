@@ -9,43 +9,87 @@ const path = require('path');
 const { mergeLegacyAsistenciaSources } = require('./lib/production-reader');
 const { createReadonlyFirestore, resetAudit, getAudit } = require('./lib/readonly-firestore');
 const {
-  resolveReadonlyCredentials,
+  EXPECTED_READONLY_SERVICE_ACCOUNT,
+  resolveReadonlyAdc,
   assertProjectMatch,
   assertNotEmulator,
+  assertNoLegacyCredentialEnv,
+  assertLegacyNotProductionLive,
 } = require('./lib/credential-guard');
+const { initializeReadonlyAdmin } = require('./lib/production-admin');
 const { buildProductionMetrics, compareRuns } = require('./lib/production-metrics');
 const { loadFixtures } = require('./lib/firestore-reader');
 const { writeProductionReport, maskEmail } = require('./lib/production-report');
 
 const fixturePath = path.join(__dirname, 'fixtures', 'emulator-fixtures.json');
 
-describe('production read-only gates', () => {
-  it('rejects missing credentials', () => {
+const VALID_ADC = {
+  type: 'impersonated_service_account',
+  service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${EXPECTED_READONLY_SERVICE_ACCOUNT}:generateAccessToken`,
+  source_credentials: { type: 'authorized_user' },
+};
+
+function writeAdcFixture(dir, payload = VALID_ADC) {
+  const file = path.join(dir, 'application_default_credentials.json');
+  fs.writeFileSync(file, JSON.stringify(payload), 'utf8');
+  return file;
+}
+
+describe('production read-only ADC gates', () => {
+  it('rejects PRODUCTION_READONLY_CREDENTIALS env', () => {
     const prev = process.env.PRODUCTION_READONLY_CREDENTIALS;
-    delete process.env.PRODUCTION_READONLY_CREDENTIALS;
-    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    assert.throws(
-      () => resolveReadonlyCredentials({ repoRoot: path.join(__dirname, '..', '..') }),
-      /Missing read-only credentials/,
-    );
-    if (prev) process.env.PRODUCTION_READONLY_CREDENTIALS = prev;
+    process.env.PRODUCTION_READONLY_CREDENTIALS = 'C:\\outside\\key.json';
+    try {
+      assert.throws(() => assertNoLegacyCredentialEnv(), /PRODUCTION_READONLY_CREDENTIALS/);
+    } finally {
+      if (prev) process.env.PRODUCTION_READONLY_CREDENTIALS = prev;
+      else delete process.env.PRODUCTION_READONLY_CREDENTIALS;
+    }
   });
 
-  it('rejects credentials inside repository', () => {
-    const inside = path.join(__dirname, 'fixtures', 'temp-cred.json');
-    fs.writeFileSync(inside, '{"type":"service_account","client_email":"a@b.com","project_id":"x"}');
+  it('rejects GOOGLE_APPLICATION_CREDENTIALS env', () => {
+    const prev = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = 'C:\\outside\\key.json';
     try {
-      assert.throws(
-        () =>
-          resolveReadonlyCredentials({
-            repoRoot: path.join(__dirname, '..', '..'),
-            credentialsPath: inside,
-          }),
-        /inside the repository/,
-      );
+      assert.throws(() => assertNoLegacyCredentialEnv(), /GOOGLE_APPLICATION_CREDENTIALS/);
     } finally {
-      fs.unlinkSync(inside);
+      if (prev) process.env.GOOGLE_APPLICATION_CREDENTIALS = prev;
+      else delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
     }
+  });
+
+  it('accepts impersonated_service_account ADC fixture', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'adc-ok-'));
+    const adcFile = writeAdcFixture(tmp);
+    const info = resolveReadonlyAdc({ adcFilePath: adcFile });
+    assert.equal(info.authMethod, 'application_default_credentials');
+    assert.equal(info.serviceAccountEmail, EXPECTED_READONLY_SERVICE_ACCOUNT);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('rejects ADC type service_account (JSON key)', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'adc-sa-'));
+    const adcFile = writeAdcFixture(tmp, {
+      type: 'service_account',
+      client_email: 'firebase-adminsdk@test.iam.gserviceaccount.com',
+      private_key: 'hidden',
+    });
+    assert.throws(
+      () => resolveReadonlyAdc({ adcFilePath: adcFile }),
+      /service_account \(JSON key\) is not allowed/,
+    );
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('rejects wrong impersonated service account', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'adc-bad-'));
+    const adcFile = writeAdcFixture(tmp, {
+      type: 'impersonated_service_account',
+      service_account_impersonation_url:
+        'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/wrong@example.iam.gserviceaccount.com:generateAccessToken',
+    });
+    assert.throws(() => resolveReadonlyAdc({ adcFilePath: adcFile }), /must target/);
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 
   it('blocks --apply via CLI parser', () => {
@@ -57,6 +101,21 @@ describe('production read-only gates', () => {
     );
     assert.notEqual(result.status, 0);
     assert.match(result.stderr + result.stdout, /--apply is PROHIBITED/);
+  });
+
+  it('rejects --credentials flag', () => {
+    const { spawnSync } = require('node:child_process');
+    const result = spawnSync(
+      process.execPath,
+      [
+        path.join(__dirname, 'production_readonly_inventory.js'),
+        '--credentials',
+        'C:\\temp\\key.json',
+      ],
+      { encoding: 'utf8' },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr + result.stdout, /--credentials is not supported/);
   });
 
   it('requires production readonly flags', () => {
@@ -72,6 +131,68 @@ describe('production read-only gates', () => {
     );
     assert.notEqual(result.status, 0);
     assert.match(result.stderr + result.stdout, /Missing --production-readonly/);
+  });
+});
+
+describe('production admin initialization (mocked)', () => {
+  it('uses applicationDefault and never credential.cert', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'adc-init-'));
+    const adcFile = writeAdcFixture(tmp);
+
+    let certCalls = 0;
+    let adcCalls = 0;
+    const mockCredential = { kind: 'adc-mock' };
+    const mockAdmin = {
+      apps: [],
+      credential: {
+        cert: () => {
+          certCalls += 1;
+          return {};
+        },
+        applicationDefault: () => {
+          adcCalls += 1;
+          return mockCredential;
+        },
+      },
+      initializeApp: (cfg) => {
+        assert.equal(cfg.projectId, 'sistema-integrado-sindicato');
+        assert.equal(cfg.credential, mockCredential);
+      },
+    };
+
+    const { credentialInfo } = await initializeReadonlyAdmin('sistema-integrado-sindicato', {
+      adcFilePath: adcFile,
+      admin: mockAdmin,
+    });
+
+    assert.equal(certCalls, 0);
+    assert.equal(adcCalls, 1);
+    assert.equal(credentialInfo.serviceAccountEmail, EXPECTED_READONLY_SERVICE_ACCOUNT);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+describe('legacy production guard', () => {
+  it('blocks legacy script from reading production without fixtures', () => {
+    assert.throws(
+      () =>
+        assertLegacyNotProductionLive({
+          useFixtures: false,
+          emulator: false,
+          projectId: 'sistema-integrado-sindicato',
+        }),
+      /Legacy dry-run cannot read production/,
+    );
+  });
+
+  it('allows legacy script with fixtures', () => {
+    assert.doesNotThrow(() =>
+      assertLegacyNotProductionLive({
+        useFixtures: true,
+        emulator: false,
+        projectId: 'sistema-integrado-sindicato',
+      }),
+    );
   });
 });
 
@@ -164,8 +285,8 @@ describe('sanitized production report', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'prod-report-'));
     const report = {
       identity: {
-        type: 'service_account',
-        serviceAccountEmail: 'readonly@sistema-integrado-sindicato.iam.gserviceaccount.com',
+        type: 'impersonated_service_account',
+        serviceAccountEmail: EXPECTED_READONLY_SERVICE_ACCOUNT,
         projectId: 'sistema-integrado-sindicato',
         canRead: true,
         canWrite: false,
@@ -176,7 +297,7 @@ describe('sanitized production report', () => {
     const paths = writeProductionReport(report, { outputDir: tmp });
     assert.ok(fs.existsSync(paths.jsonPath));
     const raw = fs.readFileSync(paths.jsonPath, 'utf8');
-    assert.ok(!raw.includes('readonly@sistema-integrado-sindicato'));
+    assert.ok(!raw.includes('sindicat-migration-readonly@'));
     assert.equal(maskEmail('readonly@test.com').includes('***'), true);
     fs.rmSync(tmp, { recursive: true, force: true });
   });
@@ -184,10 +305,7 @@ describe('sanitized production report', () => {
 
 describe('project and emulator guards', () => {
   it('asserts project match', () => {
-    assert.throws(
-      () => assertProjectMatch('a', 'b'),
-      /Project mismatch/,
-    );
+    assert.throws(() => assertProjectMatch('a', 'b'), /Project mismatch/);
   });
 
   it('blocks emulator host in production mode', () => {

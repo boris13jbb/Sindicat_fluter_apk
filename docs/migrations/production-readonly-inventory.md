@@ -1,6 +1,6 @@
 # Fase 4.1B — Inventario read-only de Firestore producción
 
-**Checkpoint previo:** `v1.4.2-preproduction-ready` (`2014457`)  
+**Checkpoint previo:** `v1.4.3-readonly-tooling` (`7e5fadd`)
 **Proyecto Firebase:** `sistema-integrado-sindicato`  
 **Versión análisis:** `production-readonly-v1`
 
@@ -11,7 +11,7 @@
 Primera fase autorizada a **leer** Firestore producción para inventario y dry-run real, sin escrituras ni `--apply`.
 
 ```text
-Credencial read-only → script dedicado → inventario → métricas → reporte sanitizado → plan 4.1C
+ADC + impersonación read-only → script dedicado → inventario → métricas → reporte → plan 4.1C
 ```
 
 ---
@@ -20,7 +20,7 @@ Credencial read-only → script dedicado → inventario → métricas → report
 
 | Capa | Control |
 |------|---------|
-| 1 | Service account con `roles/datastore.viewer` (solo lectura) |
+| 1 | ADC con impersonación de SA `roles/datastore.viewer` |
 | 2 | Script separado: `production_readonly_inventory.js` |
 | 3 | Proxy Firestore bloquea `set/update/delete/batch/bulkWriter/runTransaction` |
 | 4 | `--apply` rechazado explícitamente |
@@ -29,43 +29,54 @@ Credencial read-only → script dedicado → inventario → métricas → report
 
 **NO usar** credenciales Owner/Editor/Firebase Admin para inventario.
 
-**NO guardar** JSON de service account dentro del repositorio.
+**NO crear ni usar** claves JSON permanentes de service account.
 
 ---
 
-## Identidad read-only (inventario)
+## Autenticación (ADC + impersonación)
 
-### Rol IAM requerido
+### Service Account requerida
+
+```text
+sindicat-migration-readonly@sistema-integrado-sindicato.iam.gserviceaccount.com
+```
+
+### Rol IAM requerido (en la SA impersonada)
 
 ```text
 roles/datastore.viewer
 ```
 
-Permisos efectivos: `get`, `list`, `read` sobre documentos Firestore. **Sin escritura.**
-
-### Crear service account (decisión administrativa — GCP Console o gcloud)
-
-1. Crear SA dedicada, p. ej. `migration-readonly-inventory@sistema-integrado-sindicato.iam.gserviceaccount.com`
-2. Asignar **solo** `roles/datastore.viewer` a nivel proyecto
-3. Descargar clave JSON **fuera del repositorio**, p. ej.:
+### Permisos del usuario que impersona
 
 ```text
-%USERPROFILE%\.secrets\sindicat-migration-readonly.json
+roles/iam.serviceAccountTokenCreator
 ```
 
-4. Verificar que **no** tiene roles `Editor`, `Owner`, `datastore.user`, `firebase.admin`
+### API requerida
 
-### Variable de entorno
+```text
+IAM Service Account Credentials API (iamcredentials.googleapis.com)
+```
+
+### Preparación local (Windows / gcloud)
 
 ```powershell
-$env:PRODUCTION_READONLY_CREDENTIALS = "$env:USERPROFILE\.secrets\sindicat-migration-readonly.json"
+gcloud auth application-default login `
+  --impersonate-service-account=sindicat-migration-readonly@sistema-integrado-sindicato.iam.gserviceaccount.com
 ```
 
-Alternativa estándar (misma ruta externa):
+Verificar que ADC es de tipo `impersonated_service_account` (sin imprimir secretos).
 
-```powershell
-$env:GOOGLE_APPLICATION_CREDENTIALS = "$env:USERPROFILE\.secrets\sindicat-migration-readonly.json"
+### Variables que deben estar DESACTIVADAS para inventario
+
+```text
+GOOGLE_APPLICATION_CREDENTIALS        (debe estar sin definir)
+PRODUCTION_READONLY_CREDENTIALS       (no soportada)
+FIRESTORE_EMULATOR_HOST               (debe estar sin definir)
 ```
+
+El tooling valida localmente (sin red) que el archivo ADC contiene impersonación hacia la SA read-only esperada.
 
 ---
 
@@ -87,39 +98,43 @@ gcloud firestore export gs://<BUCKET>/backups/pre-legacy-migration-YYYYMMDD \
   --collection-ids=personas,eventos,asistencias,members,users,attendance_events
 ```
 
-Restauración (solo emergencia, entorno controlado):
-
-```bash
-gcloud firestore import gs://<BUCKET>/backups/pre-legacy-migration-YYYYMMDD \
-  --project=sistema-integrado-sindicato
-```
-
 **Estado actual:** backup debe verificarse manualmente antes de 4.1C. Sin backup verificado → **4.1C BLOQUEADA**.
 
 ---
 
-## Ejecución del inventario
+## Pre-flight obligatorio
+
+Antes del primer inventario real:
+
+1. ADC configurado con impersonación read-only.
+2. `GOOGLE_APPLICATION_CREDENTIALS` sin definir.
+3. Tests locales en verde (`npm test` en `tool/migrations`).
+4. Autorización explícita para lectura de producción.
+
+---
+
+## Ejecución del inventario (solo tras autorización)
 
 ### Requisitos
 
 - Node.js 20+
 - `npm ci` en `tool/migrations`
-- `FIRESTORE_EMULATOR_HOST` **desactivado**
-- Credencial read-only configurada
+- ADC impersonado configurado
+- Pre-flight aprobado
 
 ### Comando
 
 ```powershell
 cd D:\Sindicat_fluter_apk\tool\migrations
 
-$env:PRODUCTION_READONLY_CREDENTIALS = "$env:USERPROFILE\.secrets\sindicat-migration-readonly.json"
-
-node production_readonly_inventory.js `
+npm run inventory:production-readonly -- `
   --production-readonly `
   --project sistema-integrado-sindicato `
   --confirm-readonly-analysis `
   --double-run
 ```
+
+**NO usar** `--credentials` ni rutas JSON.
 
 ### Salida
 
@@ -145,15 +160,19 @@ tool/migrations/migration-reports/production-readonly-inventory-YYYYMMDD-HHMM.cs
 
 ---
 
+## Script legacy
+
+`legacy_attendance_migration.js` **no puede** leer producción directamente. Usar `--use-fixtures` o el inventario oficial ADC.
+
+---
+
 ## CI / GitHub Actions
 
-El inventario de producción **NO** se ejecuta en CI. Los tests usan fixtures locales.
+El inventario de producción **NO** se ejecuta en CI. Los tests usan fixtures/mocks locales.
 
 ---
 
 ## Verificación post-ejecución
-
-Confirmar en consola:
 
 ```text
 writesAttempted: 0
@@ -163,23 +182,9 @@ deletesAttempted: 0
 
 ---
 
-## Plan 4.1C (informativo)
-
-Tras inventario real, el reporte incluye:
-
-```text
-autoMigrables
-revisionManual
-noMigrar
-blockedUntilBackupVerified: true
-```
-
-**NO ejecutar migración** hasta backup verificado y aprobación explícita.
-
----
-
 ## Referencias
 
 - `tool/migrations/production_readonly_inventory.js`
+- `tool/migrations/lib/credential-guard.js`
+- `tool/migrations/lib/production-admin.js`
 - `docs/migrations/legacy-attendance-migration-plan.md`
-- `docs/architecture/attendance-consolidation.md`

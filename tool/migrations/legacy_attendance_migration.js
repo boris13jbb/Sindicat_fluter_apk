@@ -17,6 +17,7 @@ const {
   loadFromFirestore,
   defaultFixturePath,
 } = require('./lib/firestore-reader');
+const { assertLegacyNotProductionLive } = require('./lib/credential-guard');
 
 function parseArgs(argv) {
   const args = {
@@ -106,6 +107,7 @@ function validateApplyGate(args) {
 async function main() {
   const args = parseArgs(process.argv);
   validateApplyGate(args);
+  assertLegacyNotProductionLive(args);
 
   /** @type {import('./lib/firestore-reader').normalizeSnapshots extends never ? any : ReturnType<typeof loadFixtures>} */
   let snapshots;
