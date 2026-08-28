@@ -97,6 +97,30 @@ jobs:
       - name: Run rules unit tests in emulator
         run: bash tool/test_firebase_rules.sh
 
+  migration-tests:
+    name: Migration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tool/migrations
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tool/migrations/package-lock.json
+
+      - name: Install migration tooling dependencies
+        run: npm ci
+
+      - name: Run migration tests (fixtures only, no production)
+        run: npm test
+
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
@@ -104,6 +128,7 @@ jobs:
       - flutter
       - functions
       - firestore-rules
+      - migration-tests
     if: always()
     steps:
       - name: Require all checks green
@@ -111,9 +136,11 @@ jobs:
           echo "Flutter Analyze & Tests: ${{ needs.flutter.result }}"
           echo "Cloud Functions: ${{ needs.functions.result }}"
           echo "Security Rules: ${{ needs.firestore-rules.result }}"
+          echo "Migration Tests: ${{ needs.migration-tests.result }}"
           if [ "${{ needs.flutter.result }}" != "success" ] || \
              [ "${{ needs.functions.result }}" != "success" ] || \
-             [ "${{ needs.firestore-rules.result }}" != "success" ]; then
+             [ "${{ needs.firestore-rules.result }}" != "success" ] || \
+             [ "${{ needs.migration-tests.result }}" != "success" ]; then
             echo "CI no aprobado: corrige los jobs fallidos antes de merge a main."
             exit 1
           fi

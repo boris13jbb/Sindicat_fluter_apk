@@ -16,6 +16,7 @@ Pull Request → main
 │  • Flutter Analyze & Tests  ✅  │
 │  • Cloud Functions          ✅  │
 │  • Security Rules           ✅  │
+│  • Migration Tests          ✅  │
 │  • CI Gate                  ✅  │
 └─────────────────────────────────┘
         ↓
@@ -65,12 +66,13 @@ O desde GitHub: **Compare & pull request** → base: `main`.
 
 ## 5. Esperar CI (obligatorio)
 
-El workflow `.github/workflows/ci.yml` debe mostrar **4 checks verdes**:
+El workflow `.github/workflows/ci.yml` debe mostrar **5 checks verdes**:
 
 1. **Flutter Analyze & Tests** — analyze + tests Flutter
 2. **Cloud Functions** — `npm run check` en `functions/`
 3. **Security Rules** — emulador + `firebase_rules_test`
-4. **CI Gate** — confirma que los 3 anteriores pasaron
+4. **Migration Tests** — `npm test` en `tool/migrations/` (fixtures, sin producción)
+5. **CI Gate** — confirma que los 4 anteriores pasaron
 
 **No hacer merge** si alguno está rojo o pendiente.
 
@@ -96,6 +98,32 @@ Solo cuando **CI Gate** esté en verde:
 ```
 
 Requisito: el workflow CI debe haber corrido al menos una vez en el repo para que GitHub reconozca el check **CI Gate**.
+
+## PowerShell y referencias Git (`^{commit}`)
+
+En **PowerShell**, no ejecutar sin comillas:
+
+```powershell
+git rev-parse v1.4.1-migration-dry-run^{commit}
+```
+
+El carácter `^` y las llaves pueden fragmentar el argumento; Git puede recibir solo `commit` y fallar con:
+
+```text
+fatal: ambiguous argument 'YwBvAG0AbQBpAHQA': unknown revision or path
+```
+
+(`YwBvAG0AbQBpAHQA` es la cadena `commit` en Base64 UTF-16, típico de invocaciones con `-EncodedCommand`.)
+
+**Forma segura:**
+
+```powershell
+git rev-parse "v1.4.1-migration-dry-run^{commit}"
+# o
+.\tool\git_resolve_ref.ps1 -Ref v1.4.1-migration-dry-run
+```
+
+En Bash no aplica este problema; use comillas si el shell lo requiere.
 
 ## Qué NO hacer
 

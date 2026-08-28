@@ -49,6 +49,8 @@ if [[ "$SKIP_RULES" -eq 0 ]]; then
   run_step "Pruebas Firebase Emulator" bash tool/test_firebase_rules.sh
 fi
 
+run_step "Migration tests (fixtures)" bash -c 'cd tool/migrations && npm ci && npm test'
+
 if [[ "$BUILD_WEB" -eq 1 ]]; then
   run_step "Build Web release" flutter build web --release
 fi

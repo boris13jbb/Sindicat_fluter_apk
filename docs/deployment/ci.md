@@ -17,7 +17,8 @@ feature/... → Pull Request → CI Gate ✅ → merge a main
 | **Flutter Analyze & Tests** | `dart format`, `dart analyze`, `flutter test` |
 | **Cloud Functions** | `cd functions && npm run check` |
 | **Security Rules** | emulador Firestore + `npm run test:rules` |
-| **CI Gate** | Los 3 anteriores deben estar en verde (requerido para merge) |
+| **Migration Tests** | `cd tool/migrations && npm ci && npm test` (fixtures, sin producción) |
+| **CI Gate** | Los 4 anteriores deben estar en verde (requerido para merge) |
 
 ## GitHub Actions
 
@@ -87,6 +88,7 @@ No fusionar ni desplegar a producción si falla cualquiera de:
 2. `flutter test`
 3. `npm test` (functions)
 4. `npm run test:rules` (emulador)
+5. `npm test` en `tool/migrations` (fixtures, sin `--apply` ni credenciales de producción)
 
 ## Deploy (manual, fuera del CI)
 
