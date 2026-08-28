@@ -1,7 +1,9 @@
 import 'evento.dart';
 import 'persona.dart';
 
+export 'attendance_event.dart';
 export 'evento.dart';
+export 'member_attendance_summary.dart';
 export 'persona.dart';
 
 /// Método de registro de asistencia.

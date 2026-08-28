@@ -223,6 +223,14 @@ class AsistenciaService implements AsistenciaRegistroApi {
         );
   }
 
+  /// Lectura puntual de personas legacy (`personas`) para listados combinados.
+  Future<List<PersonaAsistencia>> fetchAllLegacyPersonas() async {
+    final snap = await _firestore.collection(_personas).get();
+    return snap.docs
+        .map((d) => PersonaAsistencia.fromMap(d.data(), d.id))
+        .toList();
+  }
+
   Future<PersonaAsistencia?> getPersonaById(String id) async {
     if (id.isEmpty) return null;
     final doc = await _firestore.collection(_personas).doc(id).get();
@@ -1090,17 +1098,6 @@ class AsistenciaService implements AsistenciaRegistroApi {
       debugPrint('❌ Error en sincronización: $e');
       rethrow;
     }
-  }
-
-  /// Escucha cambios en la colección 'members' y sincroniza automáticamente
-  /// con 'personas' en tiempo real.
-  Stream<Map<String, int>> watchAndSyncMembers() {
-    return _firestore.collection('members').snapshots().asyncMap((
-      snapshot,
-    ) async {
-      debugPrint('🔄 Cambio detectado en members, sincronizando...');
-      return await sincronizarMiembrosConPersonas();
-    });
   }
 
   static PersonaData? parseQRCode(String codigo) {

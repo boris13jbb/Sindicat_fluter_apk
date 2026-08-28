@@ -174,38 +174,30 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
 
       // 2. Agregar Personas legacy que NO estén ya en members
       try {
-        final personasSnapshot = await _service.firestore
-            .collection('personas')
-            .get();
+        final legacyPersonas = await _service.fetchAllLegacyPersonas();
 
         debugPrint(
-          '   📊 Encontradas ${personasSnapshot.docs.length} personas legacy',
+          '   📊 Encontradas ${legacyPersonas.length} personas legacy',
         );
 
         int personasAgregadas = 0;
-        for (final doc in personasSnapshot.docs) {
-          try {
-            final persona = PersonaAsistencia.fromMap(doc.data(), doc.id);
-
-            // Solo agregar si no tiene identificador o si el identificador no está en members
-            final identificador = persona.identificador;
-            if (identificador != null && identificador.isNotEmpty) {
-              if (identificadoresVistos.contains(identificador)) {
-                debugPrint('   ⏭️ Saltando persona duplicada: $identificador');
-                continue; // Ya existe en members, saltar
-              }
-              identificadoresVistos.add(identificador);
+        for (final persona in legacyPersonas) {
+          // Solo agregar si no tiene identificador o si el identificador no está en members
+          final identificador = persona.identificador;
+          if (identificador != null && identificador.isNotEmpty) {
+            if (identificadoresVistos.contains(identificador)) {
+              debugPrint('   ⏭️ Saltando persona duplicada: $identificador');
+              continue; // Ya existe en members, saltar
             }
-
-            result.add({
-              'id': persona.id,
-              'persona': persona,
-              'source': 'persona',
-            });
-            personasAgregadas++;
-          } catch (e) {
-            debugPrint('   ❌ Error procesando persona ${doc.id}: $e');
+            identificadoresVistos.add(identificador);
           }
+
+          result.add({
+            'id': persona.id,
+            'persona': persona,
+            'source': 'persona',
+          });
+          personasAgregadas++;
         }
 
         debugPrint('   ✅ Agregadas $personasAgregadas personas legacy');

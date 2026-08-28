@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -86,24 +85,21 @@ class _AttendanceEventDetailScreenState
         role: role,
         selection: VotoNavSlot.asistencia,
       ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('attendance_events')
-            .doc(eventId)
-            .snapshots(),
+      body: StreamBuilder<AttendanceEvent?>(
+        stream: attendanceSvc.watchEventById(eventId),
         builder: (context, snap) {
           if (snap.hasError) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Error: ${snap.error}',
+                  'No se pudo cargar el evento.',
                   textAlign: TextAlign.center,
                 ),
               ),
             );
           }
-          if (!snap.hasData || !snap.data!.exists) {
+          if (!snap.hasData || snap.data == null) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -127,20 +123,15 @@ class _AttendanceEventDetailScreenState
               ],
             );
           }
-          final map = snap.data!.data() ?? {};
-          final nombre = map['nombre'] as String? ?? '(sin nombre)';
-          final fecha = (map['fecha'] as num?)?.toInt() ?? 0;
-          final fechaFin = (map['fechaFin'] as num?)?.toInt();
-          final lugar = map['lugar'] as String? ?? '';
-          final desc = map['descripcion'] as String?;
-          final activo = map['activo'] as bool? ?? true;
-          final estado = (map['estado'] as String? ?? 'programado')
-              .toLowerCase()
-              .trim();
-          final modalidadesRaw = List<String>.from(
-            map['modalidadesNoConvocadas'] ?? [],
-          );
-          final modalidadesEtiquetas = modalidadesRaw
+          final ev = snap.data!;
+          final nombre = ev.nombre.isEmpty ? '(sin nombre)' : ev.nombre;
+          final fecha = ev.fecha;
+          final fechaFin = ev.fechaFin;
+          final lugar = ev.lugar;
+          final desc = ev.descripcion.isEmpty ? null : ev.descripcion;
+          final activo = ev.activo;
+          final estado = ev.estado.toLowerCase().trim();
+          final modalidadesEtiquetas = ev.modalidadesNoConvocadas
               .map(Modalidad.tryParse)
               .whereType<Modalidad>()
               .map(JustificacionHelper.etiquetaModalidad)

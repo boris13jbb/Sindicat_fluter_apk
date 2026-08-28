@@ -5,165 +5,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../core/models/asistencia/asistencia.dart';
+import '../core/models/asistencia/attendance_report_models.dart';
 import '../core/models/member.dart';
-import '../core/utils/date_time_ms.dart';
 import '../core/models/audit_log.dart';
 import 'audit_service.dart';
 
-/// Modelo para evento de asistencia
-class AttendanceEvent {
-  final String id;
-  final String nombre;
-  final String descripcion;
-  final int fecha; // Inicio (ms)
-  /// Fin de vigencia del evento (ms). Si es null en Firestore, en filtros se usa fin del día de [fecha].
-  final int? fechaFin;
-  final String lugar;
-  final String tipo; // reunion, asamblea, capacitacion, etc.
-  final bool activo;
-  final List<String> miembrosConvocados; // IDs de socios convocados
-  final List<String> modalidadesNoConvocadas;
-  final String creadoPor;
-  final int createdAt;
-  final String estado; // programado, en_curso, finalizado
-
-  AttendanceEvent({
-    required this.id,
-    required this.nombre,
-    required this.descripcion,
-    required this.fecha,
-    this.fechaFin,
-    required this.lugar,
-    required this.tipo,
-    required this.activo,
-    required this.miembrosConvocados,
-    this.modalidadesNoConvocadas = const [],
-    required this.creadoPor,
-    required this.createdAt,
-    this.estado = 'programado',
-  });
-
-  factory AttendanceEvent.fromMap(Map<String, dynamic> map, String id) {
-    return AttendanceEvent(
-      id: id,
-      nombre: map['nombre'] ?? '',
-      descripcion: map['descripcion'] ?? '',
-      fecha: (map['fecha'] as num?)?.toInt() ?? 0,
-      fechaFin: (map['fechaFin'] as num?)?.toInt(),
-      lugar: map['lugar'] ?? '',
-      tipo: map['tipo'] ?? 'reunion',
-      activo: map['activo'] ?? true,
-      miembrosConvocados: List<String>.from(map['miembrosConvocados'] ?? []),
-      modalidadesNoConvocadas: List<String>.from(
-        map['modalidadesNoConvocadas'] ?? [],
-      ),
-      creadoPor: map['creadoPor'] ?? '',
-      createdAt: (map['createdAt'] as num?)?.toInt() ?? 0,
-      estado: map['estado'] ?? 'programado',
-    );
-  }
-
-  /// Límite superior para filtros de vigencia cuando [fechaFin] no está en Firestore.
-  int get fechaFinVigenciaMs => fechaFin ?? endOfLocalDayMs(fecha);
-
-  Map<String, dynamic> toMap() {
-    return {
-      'nombre': nombre,
-      'descripcion': descripcion,
-      'fecha': fecha,
-      if (fechaFin != null) 'fechaFin': fechaFin,
-      'lugar': lugar,
-      'tipo': tipo,
-      'activo': activo,
-      'miembrosConvocados': miembrosConvocados,
-      'modalidadesNoConvocadas': modalidadesNoConvocadas,
-      'creadoPor': creadoPor,
-      'createdAt': createdAt,
-      'estado': estado,
-    };
-  }
-
-  AttendanceEvent copyWith({
-    String? id,
-    String? nombre,
-    String? descripcion,
-    int? fecha,
-    int? fechaFin,
-    String? lugar,
-    String? tipo,
-    bool? activo,
-    List<String>? miembrosConvocados,
-    List<String>? modalidadesNoConvocadas,
-    String? creadoPor,
-    int? createdAt,
-    String? estado,
-  }) {
-    return AttendanceEvent(
-      id: id ?? this.id,
-      nombre: nombre ?? this.nombre,
-      descripcion: descripcion ?? this.descripcion,
-      fecha: fecha ?? this.fecha,
-      fechaFin: fechaFin ?? this.fechaFin,
-      lugar: lugar ?? this.lugar,
-      tipo: tipo ?? this.tipo,
-      activo: activo ?? this.activo,
-      miembrosConvocados: miembrosConvocados ?? this.miembrosConvocados,
-      modalidadesNoConvocadas:
-          modalidadesNoConvocadas ?? this.modalidadesNoConvocadas,
-      creadoPor: creadoPor ?? this.creadoPor,
-      createdAt: createdAt ?? this.createdAt,
-      estado: estado ?? this.estado,
-    );
-  }
-}
+export '../core/models/asistencia/attendance_event.dart';
+export '../core/models/asistencia/attendance_report_models.dart';
+export '../core/models/asistencia/member_attendance_summary.dart';
 
 class _AttendanceReportEvent {
   const _AttendanceReportEvent({required this.event, required this.isLegacy});
 
   final AttendanceEvent event;
   final bool isLegacy;
-}
-
-/// Estado resumido de un socio frente a un evento de asistencia.
-class AsistenciaDetalle {
-  const AsistenciaDetalle({
-    required this.eventId,
-    required this.eventName,
-    required this.fecha,
-    required this.estado,
-    this.justificacion,
-    this.isLegacy = false,
-  });
-
-  final String eventId;
-  final String eventName;
-  final int fecha;
-  final String estado;
-  final String? justificacion;
-  final bool isLegacy;
-}
-
-/// Resumen global de asistencia del socio autenticado o consultado por admin.
-class MemberAttendanceSummary {
-  const MemberAttendanceSummary({
-    required this.totalConvocados,
-    required this.totalAsistencias,
-    required this.totalFaltas,
-    this.totalNoConvocado = 0,
-    this.detalles = const [],
-  });
-
-  final int totalConvocados;
-  final int totalAsistencias;
-  final int totalFaltas;
-  final int totalNoConvocado;
-  final List<AsistenciaDetalle> detalles;
-
-  static const empty = MemberAttendanceSummary(
-    totalConvocados: 0,
-    totalAsistencias: 0,
-    totalFaltas: 0,
-  );
 }
 
 /// Servicio para gestión de asistencia con cálculo automático de faltas
@@ -193,6 +48,21 @@ class AttendanceService {
               .map((doc) => AttendanceEvent.fromMap(doc.data(), doc.id))
               .toList(),
         );
+  }
+
+  /// Stream reactivo de un evento operativo por ID.
+  Stream<AttendanceEvent?> watchEventById(String eventId) {
+    if (eventId.isEmpty) {
+      return Stream.value(null);
+    }
+    return _firestore
+        .collection('attendance_events')
+        .doc(eventId)
+        .snapshots()
+        .map((doc) {
+          if (!doc.exists || doc.data() == null) return null;
+          return AttendanceEvent.fromMap(doc.data()!, doc.id);
+        });
   }
 
   /// Obtener evento por ID
@@ -1304,78 +1174,4 @@ class AttendanceService {
     });
     return rows;
   }
-}
-
-/// Resumen numérico para tarjeta de dashboard del hub de asistencia.
-class AttendanceHubDashboardData {
-  const AttendanceHubDashboardData({
-    required this.eventId,
-    required this.nombre,
-    required this.fechaMillis,
-    required this.lugar,
-    required this.totalConvocados,
-    required this.presentes,
-    required this.ausentes,
-    required this.noConvocadosModalidad,
-    required this.porcentajePresentes,
-    required this.totalRegistrosSubcoleccion,
-  });
-
-  final String eventId;
-  final String nombre;
-  final int fechaMillis;
-  final String lugar;
-  final int totalConvocados;
-  final int presentes;
-  final int ausentes;
-  final int noConvocadosModalidad;
-  final double porcentajePresentes;
-  final int totalRegistrosSubcoleccion;
-
-  factory AttendanceHubDashboardData.fromReport(
-    AttendanceReport report,
-    AttendanceEvent ev,
-  ) {
-    return AttendanceHubDashboardData(
-      eventId: ev.id,
-      nombre: ev.nombre,
-      fechaMillis: ev.fecha,
-      lugar: ev.lugar,
-      totalConvocados: report.totalConvoked,
-      presentes: report.totalPresent,
-      ausentes: report.totalAbsent,
-      noConvocadosModalidad: report.totalNotConvoked,
-      porcentajePresentes: report.attendanceRate,
-      totalRegistrosSubcoleccion: report.attendances.length,
-    );
-  }
-}
-
-/// Reporte de asistencia con cálculo de faltas
-class AttendanceReport {
-  final AttendanceEvent event;
-  final int totalConvoked;
-  final int totalPresent;
-  final int totalAbsent;
-  final int totalNotConvoked;
-  final double attendanceRate;
-  final List<Member> presentMembers;
-  final List<Member> absentMembers;
-  final List<Member> notConvokedMembers;
-  final List<AsistenciaRegistro> attendances;
-
-  AttendanceReport({
-    required this.event,
-    required this.totalConvoked,
-    required this.totalPresent,
-    required this.totalAbsent,
-    required this.totalNotConvoked,
-    required this.attendanceRate,
-    required this.presentMembers,
-    required this.absentMembers,
-    required this.notConvokedMembers,
-    required this.attendances,
-  });
-
-  double get absenceRate => totalConvoked == 0 ? 0 : 100 - attendanceRate;
 }
