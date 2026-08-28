@@ -51,4 +51,5 @@ app.*.map.json
 /android/app/release
 /informe_brecha_cumplimiento_sindicat.md
 /migration-reports/
+tool/migrations/migration-reports/
 tool/migrations/node_modules/

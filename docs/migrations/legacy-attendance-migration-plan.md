@@ -238,5 +238,7 @@ Ver también: `docs/architecture/attendance-consolidation.md`
 - [x] Tests (13/13) incl. 0 escrituras en dry-run
 - [x] Fixtures emulador
 - [x] Backup plan documentado
-- [ ] Migración real (4.1B)
+- [x] CI Gate con Migration Tests (4.1B-0)
+- [ ] Inventario read-only producción (4.1B — requiere SA `roles/datastore.viewer`)
+- [ ] Migración real (4.1C)
 - [ ] Retiro legacy (fase posterior)
