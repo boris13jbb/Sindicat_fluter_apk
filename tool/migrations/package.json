@@ -8,7 +8,8 @@
   "scripts": {
     "dry-run": "node legacy_attendance_migration.js",
     "dry-run:fixtures": "node legacy_attendance_migration.js --use-fixtures",
-    "test": "node --test legacy_attendance_migration.test.js lib/*.test.js"
+    "inventory:production-readonly": "node production_readonly_inventory.js",
+    "test": "node --test legacy_attendance_migration.test.js production_readonly_inventory.test.js lib/*.test.js"
   },
   "dependencies": {
     "firebase-admin": "^13.5.0"
