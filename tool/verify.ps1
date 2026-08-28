@@ -49,6 +49,20 @@ if (-not $SkipRules) {
     Invoke-Step 'Pruebas Firebase Emulator' { & .\tool\test_firebase_rules.ps1 }
 }
 
+Invoke-Step 'Migration tests (fixtures)' {
+    Push-Location (Join-Path $PSScriptRoot 'migrations')
+    try {
+        if (Test-Path 'package-lock.json') {
+            npm ci
+        } else {
+            npm install
+        }
+        npm test
+    } finally {
+        Pop-Location
+    }
+}
+
 if ($BuildWeb) {
     Invoke-Step 'Build Web release' { flutter build web --release }
 }
