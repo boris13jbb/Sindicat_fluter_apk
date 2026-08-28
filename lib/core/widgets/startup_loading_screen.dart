@@ -9,13 +9,12 @@ class StartupLoadingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleStyle = AppDesignTokens.titleLarge(context).copyWith(
-      fontSize: 24,
-      letterSpacing: -0.3,
-    );
-    final subtitleStyle = AppDesignTokens.bodyMuted(context).copyWith(
-      fontSize: 15,
-    );
+    final titleStyle = AppDesignTokens.titleLarge(
+      context,
+    ).copyWith(fontSize: 24, letterSpacing: -0.3);
+    final subtitleStyle = AppDesignTokens.bodyMuted(
+      context,
+    ).copyWith(fontSize: 15);
 
     return Scaffold(
       body: DecoratedBox(

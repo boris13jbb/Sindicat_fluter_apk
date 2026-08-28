@@ -6,7 +6,8 @@ import '../../core/design/app_design_tokens.dart';
 import '../../core/models/candidate.dart';
 import 'widgets/voto_premium_chrome.dart';
 
-import 'candidate_image_local_exists_io.dart' if (dart.library.html) 'candidate_image_local_exists_web.dart';
+import 'candidate_image_local_exists_io.dart'
+    if (dart.library.html) 'candidate_image_local_exists_web.dart';
 
 /// Campo URL de imagen + selección opcional desde galería/cámara (**sin subida inmediata**).
 ///
@@ -84,7 +85,9 @@ class _CandidateImageUploadSectionState
             'CandidateImageUploadSection: el fichero seleccionado no existe: ${x.path}',
           );
           if (mounted) {
-            _showSnack('El archivo seleccionado no existe o no está accesible.');
+            _showSnack(
+              'El archivo seleccionado no existe o no está accesible.',
+            );
           }
           return;
         }
@@ -102,9 +105,9 @@ class _CandidateImageUploadSectionState
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _openSourceSheet() {
@@ -259,7 +262,9 @@ class _CandidateImageUploadSectionState
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppDesignTokens.primaryDark.withValues(alpha: 0.5),
+                          color: AppDesignTokens.primaryDark.withValues(
+                            alpha: 0.5,
+                          ),
                         ),
                       ),
                     ),
@@ -298,14 +303,16 @@ class _CandidateImageUploadSectionState
             title: Text(
               'URL manual (opcional)',
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: AppDesignTokens.primaryDark.withValues(alpha: 0.65),
-                    fontWeight: FontWeight.w700,
-                  ),
+                color: AppDesignTokens.primaryDark.withValues(alpha: 0.65),
+                fontWeight: FontWeight.w700,
+              ),
             ),
             children: [
               TextFormField(
                 controller: widget.urlController,
-                decoration: votoPremiumInputDecoration('URL https de la imagen'),
+                decoration: votoPremiumInputDecoration(
+                  'URL https de la imagen',
+                ),
                 keyboardType: TextInputType.url,
                 validator: validateCandidateImageUrl,
               ),

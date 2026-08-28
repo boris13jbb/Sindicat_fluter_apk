@@ -141,6 +141,13 @@ class HomeScreen extends StatelessWidget {
         ),
       if (role == UserRole.superadmin)
         _HomeModule(
+          title: 'Administración de usuarios',
+          subtitle: 'Roles, estado y\nvinculación al padrón',
+          icon: Icons.admin_panel_settings_outlined,
+          onTap: () => Navigator.pushNamed(context, '/admin/users'),
+        ),
+      if (role == UserRole.superadmin)
+        _HomeModule(
           title: 'Marca en reportes',
           subtitle: 'Logo en PDF de\nresultados electorales',
           icon: Icons.picture_as_pdf_outlined,
@@ -526,7 +533,9 @@ class _WelcomeAvatarBlock extends StatelessWidget {
                           child: SizedBox(
                             width: compact ? 28 : 36,
                             height: compact ? 28 : 36,
-                            child: const CircularProgressIndicator(strokeWidth: 2),
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
                           ),
                         ),
                       ),
@@ -546,7 +555,9 @@ class _WelcomeAvatarBlock extends StatelessWidget {
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: user == null ? null : () => _showDashboardAvatarSheet(context),
+              onTap: user == null
+                  ? null
+                  : () => _showDashboardAvatarSheet(context),
               child: Padding(
                 padding: EdgeInsets.all(compact ? 5 : 7),
                 child: Icon(
@@ -591,7 +602,9 @@ Future<void> _showDashboardAvatarSheet(BuildContext context) async {
                 await auth.saveDefaultAvatar(UserAvatarMode.defaultMale);
                 if (context.mounted && auth.errorMessage == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Preferencia de avatar guardada')),
+                    const SnackBar(
+                      content: Text('Preferencia de avatar guardada'),
+                    ),
                   );
                 }
               },
@@ -604,7 +617,9 @@ Future<void> _showDashboardAvatarSheet(BuildContext context) async {
                 await auth.saveDefaultAvatar(UserAvatarMode.defaultFemale);
                 if (context.mounted && auth.errorMessage == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Preferencia de avatar guardada')),
+                    const SnackBar(
+                      content: Text('Preferencia de avatar guardada'),
+                    ),
                   );
                 }
               },
@@ -617,7 +632,9 @@ Future<void> _showDashboardAvatarSheet(BuildContext context) async {
                 await auth.saveDefaultAvatar(UserAvatarMode.defaultNeutral);
                 if (context.mounted && auth.errorMessage == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Preferencia de avatar guardada')),
+                    const SnackBar(
+                      content: Text('Preferencia de avatar guardada'),
+                    ),
                   );
                 }
               },

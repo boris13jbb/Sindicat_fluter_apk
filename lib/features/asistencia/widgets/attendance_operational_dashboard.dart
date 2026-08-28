@@ -43,7 +43,9 @@ class AttendanceOperationalDashboard extends StatelessWidget {
             );
           }
           final events = evSnap.data ?? [];
-          final id = AttendanceService.pickHighlightedOperationalEventId(events);
+          final id = AttendanceService.pickHighlightedOperationalEventId(
+            events,
+          );
           if (id == null) {
             return Card(
               child: Padding(
@@ -84,8 +86,8 @@ class AttendanceOperationalDashboard extends StatelessWidget {
             builder: (context, attSnap) {
               final sig = attSnap.hasData
                   ? attSnap.data!
-                      .map((a) => '${a.id}_${a.asistio}_${a.fechaRegistro}')
-                      .join('|')
+                        .map((a) => '${a.id}_${a.asistio}_${a.fechaRegistro}')
+                        .join('|')
                   : '';
               return FutureBuilder<AttendanceHubDashboardData?>(
                 key: ValueKey('$id|$sig'),
@@ -143,8 +145,11 @@ class AttendanceOperationalDashboard extends StatelessWidget {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Icon(Icons.dashboard_customize_outlined,
-                                    color: cs.primary, size: 26),
+                                Icon(
+                                  Icons.dashboard_customize_outlined,
+                                  color: cs.primary,
+                                  size: 26,
+                                ),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
@@ -155,16 +160,16 @@ class AttendanceOperationalDashboard extends StatelessWidget {
                                         'Evento en curso',
                                         style: theme.textTheme.labelMedium
                                             ?.copyWith(
-                                          color: cs.primary,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                              color: cs.primary,
+                                              fontWeight: FontWeight.w600,
+                                            ),
                                       ),
                                       Text(
                                         data.nombre,
                                         style: theme.textTheme.titleMedium
                                             ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                              fontWeight: FontWeight.bold,
+                                            ),
                                       ),
                                       Text(
                                         _fmtFecha(data.fechaMillis) +
@@ -173,8 +178,8 @@ class AttendanceOperationalDashboard extends StatelessWidget {
                                                 : ' · ${data.lugar}'),
                                         style: theme.textTheme.bodySmall
                                             ?.copyWith(
-                                          color: cs.onSurfaceVariant,
-                                        ),
+                                              color: cs.onSurfaceVariant,
+                                            ),
                                       ),
                                     ],
                                   ),
@@ -187,9 +192,9 @@ class AttendanceOperationalDashboard extends StatelessWidget {
                               conv > 0
                                   ? '${data.presentes} de $conv socios convocados'
                                   : data.presentes > 0
-                                      ? '${data.presentes} presentes '
-                                          '(sin convocatoria numérica)'
-                                      : 'Sin socios en convocatoria obligatoria',
+                                  ? '${data.presentes} presentes '
+                                        '(sin convocatoria numérica)'
+                                  : 'Sin socios en convocatoria obligatoria',
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
                               ),
@@ -200,9 +205,8 @@ class AttendanceOperationalDashboard extends StatelessWidget {
                               child: LinearProgressIndicator(
                                 value: prog.clamp(0.0, 1.0),
                                 minHeight: 10,
-                                backgroundColor:
-                                    cs.surfaceContainerHighest.withValues(
-                                        alpha: 0.85),
+                                backgroundColor: cs.surfaceContainerHighest
+                                    .withValues(alpha: 0.85),
                                 color: cs.primary,
                               ),
                             ),

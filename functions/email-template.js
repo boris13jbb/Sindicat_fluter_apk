@@ -95,9 +95,64 @@ function buildPasswordResetEmail({email, resetUrl}) {
   return {subject, text, html};
 }
 
+function buildWelcomeUserEmail({email, displayName, temporaryPassword, appUrl}) {
+  const safeEmail = escapeHtml(email);
+  const safeName = escapeHtml(displayName || email);
+  const safePassword = escapeHtml(temporaryPassword);
+  const safeAppUrl = escapeHtml(appUrl);
+
+  const subject = "Acceso al Sistema Integrado Sindicato";
+  const text = [
+    "Sistema Integrado Sindicato",
+    "",
+    `Hola ${displayName || email},`,
+    "",
+    "Se creó tu cuenta en el sistema sindical.",
+    `Correo: ${email}`,
+    `Contraseña temporal: ${temporaryPassword}`,
+    "",
+    "Ingresa en:",
+    appUrl,
+    "",
+    "Por seguridad, cambia tu contraseña después del primer acceso.",
+  ].join("\n");
+
+  const html = `<!doctype html>
+<html lang="es">
+<body style="margin:0;padding:0;background:#f5f1fb;font-family:Arial,Helvetica,sans-serif;color:#2b2265;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f1fb;padding:28px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 12px 36px rgba(43,34,101,.12);">
+          <tr>
+            <td style="padding:30px 34px;background:#47328d;color:#ffffff;">
+              <div style="font-size:12px;font-weight:bold;letter-spacing:.8px;color:#ddd2ff;">SISTEMA INTEGRADO SINDICATO</div>
+              <h1 style="margin:14px 0 8px;font-size:27px;line-height:1.2;">Tu cuenta está lista</h1>
+              <p style="margin:0;font-size:15px;line-height:1.5;color:#ece6ff;">Hola ${safeName}, ya puedes acceder al sistema.</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 34px;">
+              <p style="margin:0 0 12px;font-size:15px;line-height:1.6;">Correo: <strong>${safeEmail}</strong></p>
+              <p style="margin:0 0 18px;font-size:15px;line-height:1.6;">Contraseña temporal: <strong>${safePassword}</strong></p>
+              <a href="${safeAppUrl}" style="display:inline-block;background:#6f49d8;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:12px;font-weight:bold;">Abrir aplicación</a>
+              <p style="margin:22px 0 0;font-size:13px;line-height:1.5;color:#6d6e8d;">Cambia tu contraseña después del primer ingreso.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  return {subject, text, html};
+}
+
 module.exports = {
   PUBLIC_APP_URL,
   buildBackendResetUrl,
   buildBrandedResetUrl,
   buildPasswordResetEmail,
+  buildWelcomeUserEmail,
 };

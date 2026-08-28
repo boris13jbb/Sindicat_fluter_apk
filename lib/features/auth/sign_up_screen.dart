@@ -47,7 +47,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
       enabledBorder: border,
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesignTokens.radiusMedium),
-        borderSide: const BorderSide(color: AppDesignTokens.primary, width: 1.5),
+        borderSide: const BorderSide(
+          color: AppDesignTokens.primary,
+          width: 1.5,
+        ),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppDesignTokens.radiusMedium),
@@ -154,17 +157,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                   children: [
                                     Text(
                                       'Crear cuenta',
-                                      style: theme.textTheme.titleLarge?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                      style: theme.textTheme.titleLarge
+                                          ?.copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
+                                          ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       'Registro seguro de usuario',
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        color: Colors.white.withValues(alpha: 0.88),
-                                      ),
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.88,
+                                            ),
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -199,17 +206,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       children: [
                         Text(
                           'Datos del socio',
-                          style: AppDesignTokens.titleLarge(context).copyWith(
-                            fontSize: 22,
-                          ),
+                          style: AppDesignTokens.titleLarge(
+                            context,
+                          ).copyWith(fontSize: 22),
                         ),
                         const SizedBox(height: 8),
                         Text(
                           'Complete la información para solicitar acceso.',
-                          style: AppDesignTokens.bodyMuted(context).copyWith(
-                            fontSize: 14,
-                            height: 1.35,
-                          ),
+                          style: AppDesignTokens.bodyMuted(
+                            context,
+                          ).copyWith(fontSize: 14, height: 1.35),
                         ),
                         const SizedBox(height: 22),
                         TextFormField(
@@ -325,8 +331,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             child: Text(
                               'La contraseña debe tener al menos 6 caracteres',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: AppDesignTokens.primaryDark
-                                    .withValues(alpha: 0.55),
+                                color: AppDesignTokens.primaryDark.withValues(
+                                  alpha: 0.55,
+                                ),
                               ),
                             ),
                           ),
@@ -354,7 +361,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             final canSubmit =
                                 email.isNotEmpty &&
                                 _isValidEmail(email) &&
-                                _employeeNumberController.text.trim().isNotEmpty &&
+                                _employeeNumberController.text
+                                    .trim()
+                                    .isNotEmpty &&
                                 _passwordController.text.isNotEmpty &&
                                 _passwordController.text ==
                                     _confirmPasswordController.text &&
@@ -380,7 +389,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                                   .isEmpty
                                               ? null
                                               : _displayNameController.text
-                                                  .trim(),
+                                                    .trim(),
                                         );
                                       }
                                     },

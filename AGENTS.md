@@ -26,9 +26,12 @@
 - Windows usa config Firebase de Web (`DefaultFirebaseOptions.windows`), importante para evitar timeouts/permisos inconsistentes.
 
 ## Developer workflows (prefer these)
+- **Flujo Git:** `feature/*` → PR → **CI Gate** verde → `main` (`docs/deployment/git-workflow.md`).
 - Dependencias: `flutter pub get`.
 - Analisis: `flutter analyze`.
 - Tests: `flutter test` (hoy hay base minima en `test/widget_test.dart`).
+- CI local completa: `./tool/verify.ps1` (Windows) o `bash tool/verify.sh` (Linux/macOS).
+- CI remota: GitHub Actions `.github/workflows/ci.yml` (Flutter + Functions + reglas Firestore).
 - Ejecutar Windows de forma estable: `./run_windows.ps1` (agrega Git al PATH y limpia `build/windows` antes de `flutter run -d windows`).
 - Ejecutar Web sin abrir multiples pestañas: `./run_web.ps1` (usa `web-server` puerto `8080`).
 - Diagnostico Windows: `diagnose_windows.bat` (doctor, devices, clean, pub get).

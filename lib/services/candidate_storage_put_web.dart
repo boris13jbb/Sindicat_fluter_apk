@@ -12,8 +12,6 @@ Future<TaskSnapshot> storagePutCandidateImage(
     'CandidateStorage: web putData path=${ref.fullPath} (${bytes.length} bytes)',
   );
   final snapshot = await ref.putData(bytes, metadata);
-  debugPrint(
-    'CandidateStorage: putData OK (${snapshot.totalBytes} bytes)',
-  );
+  debugPrint('CandidateStorage: putData OK (${snapshot.totalBytes} bytes)');
   return snapshot;
 }

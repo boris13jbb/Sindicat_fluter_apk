@@ -57,7 +57,10 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
             trailing: Padding(
               padding: const EdgeInsets.only(right: 4, top: 2),
               child: IconButton(
-                icon: const Icon(Icons.filter_list_rounded, color: Colors.white),
+                icon: const Icon(
+                  Icons.filter_list_rounded,
+                  color: Colors.white,
+                ),
                 tooltip: 'Filtrar por tipo',
                 onPressed: () => _showFilterDialog(context),
               ),
@@ -65,94 +68,94 @@ class _EventHistoryScreenState extends State<EventHistoryScreen> {
           ),
           Expanded(
             child: StreamBuilder<List<VotoEvent>>(
-        stream: _filter == null
-            ? _service.getAllEvents()
-            : _service.getEventsByEntityType(_filter!),
-        builder: (context, snap) {
-          if (snap.hasError) {
-            debugPrint('❌ Error en historial de eventos: ${snap.error}');
-            debugPrint('StackTrace: ${StackTrace.current}');
+              stream: _filter == null
+                  ? _service.getAllEvents()
+                  : _service.getEventsByEntityType(_filter!),
+              builder: (context, snap) {
+                if (snap.hasError) {
+                  debugPrint('❌ Error en historial de eventos: ${snap.error}');
+                  debugPrint('StackTrace: ${StackTrace.current}');
 
-            final errorMessage = _getFriendlyErrorMessage(snap.error);
-            final isOffline = _isOfflineError(snap.error);
+                  final errorMessage = _getFriendlyErrorMessage(snap.error);
+                  final isOffline = _isOfflineError(snap.error);
 
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      errorMessage,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    if (isOffline) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Verifica tu conexión e intenta nuevamente',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        textAlign: TextAlign.center,
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 64,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            errorMessage,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                          if (isOffline) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Verifica tu conexión e intenta nuevamente',
+                              style: Theme.of(context).textTheme.bodySmall,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: () => setState(() {}), // Reintentar
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Reintentar'),
+                          ),
+                        ],
                       ),
-                    ],
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () => setState(() {}), // Reintentar
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Reintentar'),
                     ),
-                  ],
-                ),
-              ),
-            );
-          }
-          if (snap.connectionState == ConnectionState.waiting &&
-              !snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final events = snap.data ?? [];
-          if (events.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.history,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.outline,
+                  );
+                }
+                if (snap.connectionState == ConnectionState.waiting &&
+                    !snap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final events = snap.data ?? [];
+                if (events.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.history,
+                          size: 64,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          _filter == null
+                              ? 'No hay eventos registrados'
+                              : 'No hay eventos de este tipo',
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppDesignTokens.horizontalPadding,
+                    12,
+                    AppDesignTokens.horizontalPadding,
+                    24,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _filter == null
-                        ? 'No hay eventos registrados'
-                        : 'No hay eventos de este tipo',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                ],
-              ),
-            );
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(
-              AppDesignTokens.horizontalPadding,
-              12,
-              AppDesignTokens.horizontalPadding,
-              24,
+                  itemCount: events.length,
+                  itemBuilder: (context, i) {
+                    final e = events[i];
+                    return _EventCard(event: e);
+                  },
+                );
+              },
             ),
-            itemCount: events.length,
-            itemBuilder: (context, i) {
-              final e = events[i];
-              return _EventCard(event: e);
-            },
-          );
-        },
-      ),
           ),
         ],
       ),
@@ -236,8 +239,8 @@ class _EventCard extends StatelessWidget {
     final resultColor = event.result == VotoEventResult.success
         ? _success
         : event.result == VotoEventResult.failure
-            ? _failure
-            : _pending;
+        ? _failure
+        : _pending;
 
     return PremiumCard(
       margin: const EdgeInsets.fromLTRB(0, 0, 0, 10),
@@ -284,9 +287,9 @@ class _EventCard extends StatelessWidget {
                 Text(
                   event.description,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppDesignTokens.primaryDark.withValues(alpha: 0.88),
-                        height: 1.35,
-                      ),
+                    color: AppDesignTokens.primaryDark.withValues(alpha: 0.88),
+                    height: 1.35,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 Row(
@@ -294,15 +297,18 @@ class _EventCard extends StatelessWidget {
                     Icon(
                       Icons.schedule_rounded,
                       size: 15,
-                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.45),
+                      color: AppDesignTokens.primaryDark.withValues(
+                        alpha: 0.45,
+                      ),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       event.formattedDate,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color:
-                                AppDesignTokens.primaryDark.withValues(alpha: 0.48),
-                          ),
+                        color: AppDesignTokens.primaryDark.withValues(
+                          alpha: 0.48,
+                        ),
+                      ),
                     ),
                     if (event.userName != null &&
                         event.userName!.isNotEmpty) ...[
@@ -310,17 +316,20 @@ class _EventCard extends StatelessWidget {
                       Icon(
                         Icons.person_outline_rounded,
                         size: 15,
-                        color:
-                            AppDesignTokens.primaryDark.withValues(alpha: 0.45),
+                        color: AppDesignTokens.primaryDark.withValues(
+                          alpha: 0.45,
+                        ),
                       ),
                       const SizedBox(width: 2),
                       Expanded(
                         child: Text(
                           event.userName!,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: AppDesignTokens.primaryDark
-                                    .withValues(alpha: 0.48),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: AppDesignTokens.primaryDark.withValues(
+                                  alpha: 0.48,
+                                ),
                               ),
                         ),
                       ),
@@ -333,10 +342,9 @@ class _EventCard extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color:
-                          Theme.of(context).colorScheme.errorContainer.withValues(
-                                alpha: 0.45,
-                              ),
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.errorContainer.withValues(alpha: 0.45),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(

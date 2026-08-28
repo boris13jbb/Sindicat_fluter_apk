@@ -44,6 +44,41 @@
         }
       },
       {
+        "source": "/api/admin-invite-user",
+        "function": {
+          "functionId": "adminInviteUser",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/admin-send-password-reset",
+        "function": {
+          "functionId": "adminSendPasswordReset",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/admin-search-users",
+        "function": {
+          "functionId": "adminSearchUsers",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/admin-search-members",
+        "function": {
+          "functionId": "adminSearchMembers",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/lookup-member-by-employee",
+        "function": {
+          "functionId": "lookupMemberByEmployee",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

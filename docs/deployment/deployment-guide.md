@@ -19,6 +19,15 @@ Before deploying, ensure:
 ./tool/verify.ps1
 ```
 
+En Linux/macOS o antes de abrir un PR:
+
+```bash
+bash tool/verify.sh
+```
+
+El pipeline de CI (`.github/workflows/ci.yml`) ejecuta las mismas comprobaciones
+críticas en cada push/PR. Ver `docs/deployment/ci.md`.
+
 La entrega no debe continuar si este comando falla. Para una comprobación
 rápida sin Emulator se permite `./tool/verify.ps1 -SkipRules`, pero no sustituye
 la certificación previa al despliegue.

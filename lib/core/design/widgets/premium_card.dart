@@ -21,7 +21,8 @@ class PremiumCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final r = borderRadius ?? AppDesignTokens.radiusLarge;
     return Container(
-      margin: margin ??
+      margin:
+          margin ??
           const EdgeInsets.symmetric(
             horizontal: AppDesignTokens.horizontalPadding,
             vertical: 8,
@@ -31,10 +32,7 @@ class PremiumCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(r),
         boxShadow: AppDesignTokens.cardShadow,
       ),
-      child: Padding(
-        padding: padding,
-        child: child,
-      ),
+      child: Padding(padding: padding, child: child),
     );
   }
 }

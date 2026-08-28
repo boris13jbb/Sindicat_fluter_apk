@@ -120,224 +120,233 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
       body: FutureBuilder<ResultsBootstrap>(
         future: _bootstrap,
         builder: (context, bootSnap) {
-          final subtitle = bootSnap.connectionState == ConnectionState.waiting &&
+          final subtitle =
+              bootSnap.connectionState == ConnectionState.waiting &&
                   !bootSnap.hasData
               ? 'Cargando…'
               : (bootSnap.hasData &&
-                      (bootSnap.data!.election?.title.trim().isNotEmpty == true))
-                  ? bootSnap.data!.election!.title.trim()
-                  : 'Resultados electorales';
+                    (bootSnap.data!.election?.title.trim().isNotEmpty == true))
+              ? bootSnap.data!.election!.title.trim()
+              : 'Resultados electorales';
 
           Widget inner() {
-          if (bootSnap.hasError) {
-            return _LoadError(
-              message: '${bootSnap.error}',
-              onRetry: _retryLoad,
-            );
-          }
-          if (bootSnap.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    'Cargando resultados...',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Obteniendo datos de la elección',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          final boot = bootSnap.data!;
-          if (boot.election == null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
-                child: PremiumCard(
-                  margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.event_busy_rounded,
-                        size: 56,
-                        color: AppDesignTokens.primary.withValues(alpha: 0.55),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Elección no encontrada',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: AppDesignTokens.primaryDark,
-                            ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'La elección no existe o fue eliminada.\nVerifica el enlace o vuelve al listado.',
-                        style: AppDesignTokens.bodyMuted(context),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          }
-
-          return StreamBuilder<ElectionLiveState>(
-            stream: _electionService.watchElectionLive(widget.electionId),
-            initialData: ElectionLiveState(
-              election: boot.election,
-              isSyncing: true,
-            ),
-            builder: (context, electionSnap) {
-              if (electionSnap.hasError) {
-                return _LoadError(
-                  message: '${electionSnap.error}',
-                  onRetry: _retryLoad,
-                );
-              }
-              final liveElection = electionSnap.data!;
-              final election = liveElection.election;
-              if (election == null) {
-                return const Center(child: Text('Elección no encontrada'));
-              }
-              if (!canViewElectionResults(
-                election: election,
-                viewerRole: userRole,
-              )) {
-                return _ResultsLockedCard(election: election);
-              }
-
-              return StreamBuilder<CandidatesLiveState>(
-                stream: _electionService.watchCandidatesLive(widget.electionId),
-                initialData: CandidatesLiveState(
-                  candidates: boot.candidates,
-                  isSyncing: true,
-                ),
-                builder: (context, candidatesSnap) {
-                  if (candidatesSnap.hasError) {
-                    return _LoadError(
-                      message: '${candidatesSnap.error}',
-                      onRetry: _retryLoad,
-                    );
-                  }
-
-                  final candidatesState = candidatesSnap.data!;
-                  final candidates = candidatesState.candidates;
-                  final syncing =
-                      liveElection.isSyncing || candidatesState.isSyncing;
-
-                  final sortedCandidates = List<Candidate>.from(candidates)
-                    ..sort((a, b) => b.voteCount.compareTo(a.voteCount));
-
-                  final totalVotes = sortedCandidates.fold<int>(
-                    0,
-                    (sum, c) => sum + c.voteCount,
-                  );
-
-                  return Column(
-                    children: [
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppDesignTokens.horizontalPadding,
-                            12,
-                            AppDesignTokens.horizontalPadding,
-                            16,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              if (syncing) const _SyncRibbon(),
-                              if (syncing) const SizedBox(height: 12),
-                              FutureBuilder<int>(
-                                future: _activeMembersCountFuture,
-                                builder: (context, membersSnap) {
-                                  final members = math.max(
-                                    1,
-                                    membersSnap.data ?? 1,
-                                  );
-                                  final participationPct = totalVotes == 0
-                                      ? 0
-                                      : math.min(
-                                          100,
-                                          (100 * totalVotes / members).round(),
-                                        );
-                                  return _ResultsKpiRow(
-                                    totalVotes: totalVotes,
-                                    participationPct: participationPct,
-                                    candidatesCount: sortedCandidates.length,
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 18),
-                              if (sortedCandidates.isEmpty)
-                                const _EmptyResultsCard()
-                              else
-                                _LiveResultsSection(
-                                  candidates: sortedCandidates,
-                                  totalVotes: totalVotes,
-                                ),
-                              const SizedBox(height: 14),
-                              const _ObservacionesCard(),
-                            ],
-                          ),
-                        ),
-                      ),
-                      // Exportación (solo admin) — mismo lenguaje visual que el resto del módulo
-                      if (isAdmin)
-                        SafeArea(
-                          minimum: const EdgeInsets.fromLTRB(0, 10, 0, 14),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppDesignTokens.horizontalPadding,
-                            ),
-                            child: SizedBox(
-                              width: double.infinity,
-                              height: 52,
-                              child: FilledButton(
-                                onPressed: () =>
-                                    _showExportReportSheet(context),
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: AppDesignTokens.primary,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Exportar reporte',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
+            if (bootSnap.hasError) {
+              return _LoadError(
+                message: '${bootSnap.error}',
+                onRetry: _retryLoad,
               );
-            },
-          );
+            }
+            if (bootSnap.connectionState == ConnectionState.waiting) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Cargando resultados...',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Obteniendo datos de la elección',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+            final boot = bootSnap.data!;
+            if (boot.election == null) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(
+                    AppDesignTokens.horizontalPadding,
+                  ),
+                  child: PremiumCard(
+                    margin: EdgeInsets.zero,
+                    padding: const EdgeInsets.fromLTRB(28, 36, 28, 32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.event_busy_rounded,
+                          size: 56,
+                          color: AppDesignTokens.primary.withValues(
+                            alpha: 0.55,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Elección no encontrada',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: AppDesignTokens.primaryDark,
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'La elección no existe o fue eliminada.\nVerifica el enlace o vuelve al listado.',
+                          style: AppDesignTokens.bodyMuted(context),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return StreamBuilder<ElectionLiveState>(
+              stream: _electionService.watchElectionLive(widget.electionId),
+              initialData: ElectionLiveState(
+                election: boot.election,
+                isSyncing: true,
+              ),
+              builder: (context, electionSnap) {
+                if (electionSnap.hasError) {
+                  return _LoadError(
+                    message: '${electionSnap.error}',
+                    onRetry: _retryLoad,
+                  );
+                }
+                final liveElection = electionSnap.data!;
+                final election = liveElection.election;
+                if (election == null) {
+                  return const Center(child: Text('Elección no encontrada'));
+                }
+                if (!canViewElectionResults(
+                  election: election,
+                  viewerRole: userRole,
+                )) {
+                  return _ResultsLockedCard(election: election);
+                }
+
+                return StreamBuilder<CandidatesLiveState>(
+                  stream: _electionService.watchCandidatesLive(
+                    widget.electionId,
+                  ),
+                  initialData: CandidatesLiveState(
+                    candidates: boot.candidates,
+                    isSyncing: true,
+                  ),
+                  builder: (context, candidatesSnap) {
+                    if (candidatesSnap.hasError) {
+                      return _LoadError(
+                        message: '${candidatesSnap.error}',
+                        onRetry: _retryLoad,
+                      );
+                    }
+
+                    final candidatesState = candidatesSnap.data!;
+                    final candidates = candidatesState.candidates;
+                    final syncing =
+                        liveElection.isSyncing || candidatesState.isSyncing;
+
+                    final sortedCandidates = List<Candidate>.from(candidates)
+                      ..sort((a, b) => b.voteCount.compareTo(a.voteCount));
+
+                    final totalVotes = sortedCandidates.fold<int>(
+                      0,
+                      (sum, c) => sum + c.voteCount,
+                    );
+
+                    return Column(
+                      children: [
+                        Expanded(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(
+                              AppDesignTokens.horizontalPadding,
+                              12,
+                              AppDesignTokens.horizontalPadding,
+                              16,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (syncing) const _SyncRibbon(),
+                                if (syncing) const SizedBox(height: 12),
+                                FutureBuilder<int>(
+                                  future: _activeMembersCountFuture,
+                                  builder: (context, membersSnap) {
+                                    final members = math.max(
+                                      1,
+                                      membersSnap.data ?? 1,
+                                    );
+                                    final participationPct = totalVotes == 0
+                                        ? 0
+                                        : math.min(
+                                            100,
+                                            (100 * totalVotes / members)
+                                                .round(),
+                                          );
+                                    return _ResultsKpiRow(
+                                      totalVotes: totalVotes,
+                                      participationPct: participationPct,
+                                      candidatesCount: sortedCandidates.length,
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 18),
+                                if (sortedCandidates.isEmpty)
+                                  const _EmptyResultsCard()
+                                else
+                                  _LiveResultsSection(
+                                    candidates: sortedCandidates,
+                                    totalVotes: totalVotes,
+                                  ),
+                                const SizedBox(height: 14),
+                                const _ObservacionesCard(),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // Exportación (solo admin) — mismo lenguaje visual que el resto del módulo
+                        if (isAdmin)
+                          SafeArea(
+                            minimum: const EdgeInsets.fromLTRB(0, 10, 0, 14),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppDesignTokens.horizontalPadding,
+                              ),
+                              child: SizedBox(
+                                width: double.infinity,
+                                height: 52,
+                                child: FilledButton(
+                                  onPressed: () =>
+                                      _showExportReportSheet(context),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppDesignTokens.primary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Exportar reporte',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
           }
 
           return Column(
@@ -351,11 +360,15 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
                     ? Padding(
                         padding: const EdgeInsets.only(right: 4, top: 2),
                         child: IconButton(
-                          icon: const Icon(Icons.history_rounded,
-                              color: Colors.white),
+                          icon: const Icon(
+                            Icons.history_rounded,
+                            color: Colors.white,
+                          ),
                           tooltip: 'Historial de eventos',
-                          onPressed: () =>
-                              Navigator.pushNamed(context, '/voto/event_history'),
+                          onPressed: () => Navigator.pushNamed(
+                            context,
+                            '/voto/event_history',
+                          ),
                         ),
                       )
                     : null,
@@ -436,8 +449,9 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
 
       if (type == 'pdf') {
         final branding = await AppBrandingService().getReportBrandingOnce();
-        final logoBytes =
-            await AppBrandingService.loadReportLogoBytes(branding?.reportLogoUrl);
+        final logoBytes = await AppBrandingService.loadReportLogoBytes(
+          branding?.reportLogoUrl,
+        );
         final generator = ElectionReportGenerator(
           election: election,
           candidates: sortedCandidates,
@@ -476,7 +490,9 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
 
       if (!context.mounted) return;
 
-      debugPrint('$type generado correctamente, abriendo panel de compartir...');
+      debugPrint(
+        '$type generado correctamente, abriendo panel de compartir...',
+      );
 
       // Cerrar loading inmediatamente
       Navigator.of(context).pop();
@@ -485,8 +501,9 @@ class _ElectionResultsScreenState extends State<ElectionResultsScreen> {
           .replaceAll(RegExp(r'[<>:"/\\|?*\n\r]'), '_')
           .replaceAll(RegExp(r'\s+'), '_')
           .trim();
-      final nameBase =
-          safeTitle.isEmpty ? 'resultados' : 'resultados_$safeTitle';
+      final nameBase = safeTitle.isEmpty
+          ? 'resultados'
+          : 'resultados_$safeTitle';
       final stamp = DateTime.now().millisecondsSinceEpoch;
 
       if (type == 'pdf') {
@@ -619,9 +636,9 @@ class _LoadError extends StatelessWidget {
               Text(
                 'Error de conexión',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: AppDesignTokens.primaryDark,
-                    ),
+                  fontWeight: FontWeight.w800,
+                  color: AppDesignTokens.primaryDark,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
@@ -723,10 +740,10 @@ class _KpiMiniCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: valueColor,
-                  fontSize: 20,
-                ),
+              fontWeight: FontWeight.w900,
+              color: valueColor,
+              fontSize: 20,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
@@ -734,10 +751,10 @@ class _KpiMiniCard extends StatelessWidget {
             textAlign: TextAlign.center,
             maxLines: 2,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: AppDesignTokens.primaryDark.withValues(alpha: 0.5),
-                  fontWeight: FontWeight.w600,
-                  height: 1.15,
-                ),
+              color: AppDesignTokens.primaryDark.withValues(alpha: 0.5),
+              fontWeight: FontWeight.w600,
+              height: 1.15,
+            ),
           ),
         ],
       ),
@@ -776,9 +793,9 @@ class _LiveResultsSection extends StatelessWidget {
           Text(
             'Resultados en vivo',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: AppDesignTokens.primaryDark,
-                ),
+              fontWeight: FontWeight.w800,
+              color: AppDesignTokens.primaryDark,
+            ),
           ),
           const SizedBox(height: 16),
           ...candidates.asMap().entries.expand((e) {
@@ -818,10 +835,12 @@ class _LiveCandidateRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double ratio =
-        totalVotes > 0 ? candidate.voteCount / totalVotes : 0.0;
-    final int pctRounded =
-        totalVotes > 0 ? (candidate.voteCount * 100 / totalVotes).round() : 0;
+    final double ratio = totalVotes > 0
+        ? candidate.voteCount / totalVotes
+        : 0.0;
+    final int pctRounded = totalVotes > 0
+        ? (candidate.voteCount * 100 / totalVotes).round()
+        : 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -857,8 +876,9 @@ class _LiveCandidateRow extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: ratio.clamp(0.0, 1.0),
                   minHeight: 8,
-                  backgroundColor:
-                      AppDesignTokens.primaryDark.withValues(alpha: 0.08),
+                  backgroundColor: AppDesignTokens.primaryDark.withValues(
+                    alpha: 0.08,
+                  ),
                   color: barColor,
                 ),
               ),
@@ -893,9 +913,9 @@ class _ObservacionesCard extends StatelessWidget {
           Text(
             'Observaciones',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: AppDesignTokens.primaryDark,
-                ),
+              fontWeight: FontWeight.w800,
+              color: AppDesignTokens.primaryDark,
+            ),
           ),
           const SizedBox(height: 12),
           Text(
@@ -935,9 +955,9 @@ class _SyncRibbon extends StatelessWidget {
               child: Text(
                 'Sincronizando con el servidor…',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.8),
-                      fontWeight: FontWeight.w600,
-                    ),
+                  color: AppDesignTokens.primaryDark.withValues(alpha: 0.8),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -966,9 +986,9 @@ class _EmptyResultsCard extends StatelessWidget {
           Text(
             'Sin votos registrados',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: AppDesignTokens.primaryDark,
-                ),
+              fontWeight: FontWeight.w800,
+              color: AppDesignTokens.primaryDark,
+            ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),
@@ -1019,9 +1039,9 @@ class _ResultsLockedCard extends StatelessWidget {
                 Text(
                   'Resultados no disponibles',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: AppDesignTokens.primaryDark,
-                      ),
+                    fontWeight: FontWeight.w800,
+                    color: AppDesignTokens.primaryDark,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),

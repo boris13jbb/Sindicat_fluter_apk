@@ -44,10 +44,7 @@ class ActionTile extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (leading != null) ...[
-                leading!,
-                const SizedBox(width: 12),
-              ],
+              if (leading != null) ...[leading!, const SizedBox(width: 12)],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -65,7 +62,9 @@ class ActionTile extends StatelessWidget {
                       Text(
                         subtitle!,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: AppDesignTokens.primaryDark.withValues(alpha: 0.55),
+                          color: AppDesignTokens.primaryDark.withValues(
+                            alpha: 0.55,
+                          ),
                         ),
                       ),
                     ],

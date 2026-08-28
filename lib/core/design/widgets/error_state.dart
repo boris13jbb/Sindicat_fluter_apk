@@ -46,10 +46,7 @@ class ErrorState extends StatelessWidget {
                 style: AppDesignTokens.bodyMuted(context),
               ),
             ],
-            if (action != null) ...[
-              const SizedBox(height: 24),
-              action!,
-            ],
+            if (action != null) ...[const SizedBox(height: 24), action!],
           ],
         ),
       ),

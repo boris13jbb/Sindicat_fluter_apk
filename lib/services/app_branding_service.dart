@@ -10,11 +10,9 @@ import '../core/models/report_branding.dart';
 
 /// Configuración de marca para PDFs (solo superadmin escribe en Firestore/Storage).
 class AppBrandingService {
-  AppBrandingService({
-    FirebaseFirestore? firestore,
-    FirebaseStorage? storage,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _storage = storage ?? FirebaseStorage.instance;
+  AppBrandingService({FirebaseFirestore? firestore, FirebaseStorage? storage})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _storage = storage ?? FirebaseStorage.instance;
 
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
@@ -73,21 +71,19 @@ class AppBrandingService {
     final oldUrl = previous?.reportLogoUrl;
 
     final ext = _extensionFor(file);
-    final path = 'app_branding/report_logo_${DateTime.now().millisecondsSinceEpoch}.$ext';
+    final path =
+        'app_branding/report_logo_${DateTime.now().millisecondsSinceEpoch}.$ext';
     final ref = _storage.ref(path);
     final metadata = SettableMetadata(contentType: _mimeForExtension(ext));
 
     final snapshot = await ref.putData(bytes, metadata);
     final downloadUrl = await snapshot.ref.getDownloadURL();
 
-    await _doc.set(
-      <String, dynamic>{
-        'reportLogoUrl': downloadUrl,
-        'updatedAt': DateTime.now().millisecondsSinceEpoch,
-        'updatedBy': uid,
-      },
-      SetOptions(merge: true),
-    );
+    await _doc.set(<String, dynamic>{
+      'reportLogoUrl': downloadUrl,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      'updatedBy': uid,
+    }, SetOptions(merge: true));
 
     if (oldUrl != null && oldUrl.isNotEmpty && oldUrl != downloadUrl) {
       unawaited(_tryDeleteStorageByUrl(oldUrl));
@@ -103,14 +99,11 @@ class AppBrandingService {
     final previous = await getReportBrandingOnce();
     final oldUrl = previous?.reportLogoUrl;
 
-    await _doc.set(
-      <String, dynamic>{
-        'reportLogoUrl': '',
-        'updatedAt': DateTime.now().millisecondsSinceEpoch,
-        'updatedBy': uid,
-      },
-      SetOptions(merge: true),
-    );
+    await _doc.set(<String, dynamic>{
+      'reportLogoUrl': '',
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      'updatedBy': uid,
+    }, SetOptions(merge: true));
 
     if (oldUrl != null && oldUrl.isNotEmpty) {
       unawaited(_tryDeleteStorageByUrl(oldUrl));
@@ -147,4 +140,3 @@ class AppBrandingService {
     }
   }
 }
-

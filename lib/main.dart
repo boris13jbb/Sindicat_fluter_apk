@@ -43,6 +43,9 @@ import 'features/attendance/attendance_report_screen.dart';
 import 'features/audit/audit_logs_screen.dart';
 import 'features/profile/user_profile_screen.dart';
 import 'features/settings/report_branding_settings_screen.dart';
+import 'features/admin/invite_user_screen.dart';
+import 'features/admin/users_admin_screen.dart';
+import 'features/admin/user_edit_screen.dart';
 import 'core/models/asistencia/evento.dart';
 import 'core/models/user_role.dart';
 import 'core/security/route_access.dart';
@@ -487,6 +490,21 @@ class MyApp extends StatelessWidget {
             const ReportBrandingSettingsScreen(),
             superAdminRouteRoles,
           ),
+          '/admin/users': (_) =>
+              _roleGuard(const UsersAdminScreen(), superAdminRouteRoles),
+          '/admin/users/invite': (_) =>
+              _roleGuard(const InviteUserScreen(), superAdminRouteRoles),
+          '/admin/users/edit': (ctx) {
+            final userId =
+                ModalRoute.of(ctx)?.settings.arguments as String? ?? '';
+            if (userId.isEmpty) {
+              return _roleGuard(const UsersAdminScreen(), superAdminRouteRoles);
+            }
+            return _roleGuard(
+              UserEditScreen(userId: userId),
+              superAdminRouteRoles,
+            );
+          },
           '/profile': (_) => _authGuard(const UserProfileScreen()),
         },
       ),

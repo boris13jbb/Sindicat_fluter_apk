@@ -27,7 +27,11 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 56, color: AppDesignTokens.primary.withValues(alpha: 0.45)),
+            Icon(
+              icon,
+              size: 56,
+              color: AppDesignTokens.primary.withValues(alpha: 0.45),
+            ),
             const SizedBox(height: 16),
             Text(
               title,
@@ -45,10 +49,7 @@ class EmptyState extends StatelessWidget {
                 style: AppDesignTokens.bodyMuted(context),
               ),
             ],
-            if (action != null) ...[
-              const SizedBox(height: 24),
-              action!,
-            ],
+            if (action != null) ...[const SizedBox(height: 24), action!],
           ],
         ),
       ),

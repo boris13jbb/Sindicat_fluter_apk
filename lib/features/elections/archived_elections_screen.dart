@@ -38,10 +38,7 @@ class _ArchivedElectionsScreenState extends State<ArchivedElectionsScreen> {
         .toList();
   }
 
-  Future<void> _confirmRestore(
-    BuildContext context,
-    Election election,
-  ) async {
+  Future<void> _confirmRestore(BuildContext context, Election election) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -74,17 +71,14 @@ class _ArchivedElectionsScreenState extends State<ArchivedElectionsScreen> {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo restaurar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo restaurar: $e')));
       }
     }
   }
 
-  Future<void> _confirmDelete(
-    BuildContext context,
-    Election election,
-  ) async {
+  Future<void> _confirmDelete(BuildContext context, Election election) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -111,15 +105,15 @@ class _ArchivedElectionsScreenState extends State<ArchivedElectionsScreen> {
     try {
       await _electionService.deleteElection(election.id);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Elección eliminada')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Elección eliminada')));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo eliminar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo eliminar: $e')));
       }
     }
   }
@@ -172,7 +166,9 @@ class _ArchivedElectionsScreenState extends State<ArchivedElectionsScreen> {
                             Icon(
                               Icons.archive_outlined,
                               size: 52,
-                              color: AppDesignTokens.primary.withValues(alpha: 0.4),
+                              color: AppDesignTokens.primary.withValues(
+                                alpha: 0.4,
+                              ),
                             ),
                             const SizedBox(height: 14),
                             Text(
@@ -250,41 +246,41 @@ class _ArchivedElectionsScreenState extends State<ArchivedElectionsScreen> {
                       SliverPadding(
                         padding: const EdgeInsets.only(bottom: 48),
                         sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final election = filtered[index];
-                              return ElectionCard(
-                                election: election,
-                                isAdmin: true,
-                                listIsArchived: true,
-                                onVote: () {},
-                                onDashboard: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/results',
-                                  arguments: election.id,
-                                ),
-                                onEdit: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/edit_election',
-                                  arguments: election.id,
-                                ),
-                                onAddCandidate: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/add_candidate',
-                                  arguments: election.id,
-                                ),
-                                onViewResults: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/results',
-                                  arguments: election.id,
-                                ),
-                                onRestore: () =>
-                                    _confirmRestore(context, election),
-                                onDelete: () => _confirmDelete(context, election),
-                              );
-                            },
-                            childCount: filtered.length,
-                          ),
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final election = filtered[index];
+                            return ElectionCard(
+                              election: election,
+                              isAdmin: true,
+                              listIsArchived: true,
+                              onVote: () {},
+                              onDashboard: () => Navigator.pushNamed(
+                                context,
+                                '/voto/results',
+                                arguments: election.id,
+                              ),
+                              onEdit: () => Navigator.pushNamed(
+                                context,
+                                '/voto/edit_election',
+                                arguments: election.id,
+                              ),
+                              onAddCandidate: () => Navigator.pushNamed(
+                                context,
+                                '/voto/add_candidate',
+                                arguments: election.id,
+                              ),
+                              onViewResults: () => Navigator.pushNamed(
+                                context,
+                                '/voto/results',
+                                arguments: election.id,
+                              ),
+                              onRestore: () =>
+                                  _confirmRestore(context, election),
+                              onDelete: () => _confirmDelete(context, election),
+                            );
+                          }, childCount: filtered.length),
                         ),
                       ),
                   ],

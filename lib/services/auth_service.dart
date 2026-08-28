@@ -9,7 +9,10 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../core/models/user.dart' as app;
+import '../core/models/member.dart';
 import '../core/models/user_role.dart';
+import '../core/security/account_status.dart';
+import 'member_lookup_service.dart';
 
 class AuthService {
   AuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
@@ -51,9 +54,17 @@ class AuthService {
           _currentUser = null;
           return null;
         }
-        final user = await _getUserFromFirestore(u.uid);
-        _currentUser = user;
-        return user;
+        try {
+          final user = await _getUserFromFirestore(
+            u.uid,
+            signOutIfInactive: true,
+          );
+          _currentUser = user;
+          return user;
+        } on AccountInactiveException {
+          _currentUser = null;
+          return null;
+        }
       });
     } catch (e) {
       return Stream.value(null);
@@ -64,46 +75,85 @@ class AuthService {
     try {
       final fb = _auth.currentUser;
       if (fb == null) return null;
-      _currentUser = await _getUserFromFirestore(fb.uid);
+      _currentUser = await _getUserFromFirestore(
+        fb.uid,
+        signOutIfInactive: true,
+      );
       return _currentUser;
+    } on AccountInactiveException {
+      _currentUser = null;
+      return null;
     } catch (e) {
       return null;
     }
   }
 
-  Future<app.AppUser?> _getUserFromFirestore(String uid) async {
+  /// Escucha el documento `users/{uid}` y refleja cambios de rol/estado en la app.
+  Stream<app.AppUser?> watchUserProfile(String uid) {
+    return _firestore
+        .collection(_usersCollection)
+        .doc(uid)
+        .snapshots()
+        .asyncMap((doc) async {
+          if (!doc.exists || doc.data() == null) {
+            await _auth.signOut();
+            _currentUser = null;
+            return null;
+          }
+
+          final linked = await _ensureUserMemberLink(
+            app.AppUser.fromMap(doc.data()!, doc.id),
+          );
+
+          if (!linked.isActive) {
+            await _auth.signOut();
+            _currentUser = null;
+            throw AccountInactiveException();
+          }
+
+          _currentUser = linked;
+          return linked;
+        });
+  }
+
+  Future<app.AppUser?> _getUserFromFirestore(
+    String uid, {
+    bool signOutIfInactive = false,
+  }) async {
     try {
       final doc = await _firestore.collection(_usersCollection).doc(uid).get();
       if (doc.exists && doc.data() != null) {
         final user = app.AppUser.fromMap(doc.data()!, doc.id);
-        return _ensureUserMemberLink(user);
+        final linked = await _ensureUserMemberLink(user);
+        if (!linked.isActive) {
+          if (signOutIfInactive) {
+            await _auth.signOut();
+            _currentUser = null;
+          }
+          throw AccountInactiveException();
+        }
+        return linked;
       }
       return null;
+    } on AccountInactiveException {
+      rethrow;
     } catch (_) {
       return null;
     }
   }
 
-  Future<QueryDocumentSnapshot<Map<String, dynamic>>?>
-  _getMemberByEmployeeNumber(String employeeNumber) async {
-    final value = employeeNumber.trim();
-    if (value.isEmpty) return null;
-
-    final byWorkerCode = await _firestore
-        .collection('members')
-        .where('workerCode', isEqualTo: value)
-        .limit(1)
-        .get();
-    if (byWorkerCode.docs.isNotEmpty) return byWorkerCode.docs.first;
-
-    final byMemberNumber = await _firestore
-        .collection('members')
-        .where('memberNumber', isEqualTo: value)
-        .limit(1)
-        .get();
-    if (byMemberNumber.docs.isNotEmpty) return byMemberNumber.docs.first;
-
-    return null;
+  Future<MemberLookupResult?> _getMemberByEmployeeNumber(
+    String employeeNumber,
+  ) async {
+    try {
+      return await MemberLookupService(
+        auth: _auth,
+      ).lookupByEmployeeNumber(employeeNumber);
+    } on MemberLookupException {
+      rethrow;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<app.AppUser> _ensureUserMemberLink(app.AppUser user) async {
@@ -117,24 +167,19 @@ class AuthService {
     }
 
     try {
-      final member = await _getMemberByEmployeeNumber(employeeNumber);
-      if (member == null || !_memberIsActive(member.data())) {
+      final lookup = await _getMemberByEmployeeNumber(employeeNumber);
+      if (lookup == null) {
         return user;
       }
 
       await _firestore.collection(_usersCollection).doc(user.id).update({
-        'memberId': member.id,
+        'memberId': lookup.memberId,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       });
-      return user.copyWith(memberId: member.id);
+      return user.copyWith(memberId: lookup.memberId);
     } catch (_) {
       return user;
     }
-  }
-
-  bool _memberIsActive(Map<String, dynamic> data) {
-    final status = (data['status'] as String? ?? 'active').toLowerCase();
-    return status == 'active' || status == 'activo';
   }
 
   Future<void> _rollbackCreatedFirebaseUser(User user) async {
@@ -157,7 +202,7 @@ class AuthService {
         throw Exception('No se pudo identificar el usuario autenticado');
       }
 
-      final user = await _getUserFromFirestore(uid);
+      final user = await _getUserFromFirestore(uid, signOutIfInactive: true);
       if (user == null) {
         await _auth.signOut();
         _currentUser = null;
@@ -166,6 +211,8 @@ class AuthService {
         );
       }
       _currentUser = user;
+    } on AccountInactiveException catch (e) {
+      throw Exception(e.message);
     } on FirebaseAuthException catch (e) {
       throw Exception(_firebaseErrorMessage(e.code));
     } catch (e) {
@@ -195,25 +242,29 @@ class AuthService {
         throw Exception('El número de trabajador es obligatorio');
       }
 
-      final QueryDocumentSnapshot<Map<String, dynamic>>? member;
+      MemberLookupResult lookup;
       try {
-        member = await _getMemberByEmployeeNumber(trimmedEmployeeNumber);
-      } catch (_) {
+        final result = await _getMemberByEmployeeNumber(trimmedEmployeeNumber);
+        if (result == null) {
+          await _rollbackCreatedFirebaseUser(fbUser);
+          throw Exception(
+            'Número de trabajador no registrado en el padrón de socios.',
+          );
+        }
+        if (result.member.status != MemberStatus.active) {
+          await _rollbackCreatedFirebaseUser(fbUser);
+          throw Exception('El socio asociado no se encuentra activo.');
+        }
+        lookup = result;
+      } on MemberLookupException catch (e) {
+        await _rollbackCreatedFirebaseUser(fbUser);
+        throw Exception(e.message);
+      } catch (e) {
+        if (e is Exception && e.toString().contains('padrón')) rethrow;
         await _rollbackCreatedFirebaseUser(fbUser);
         throw Exception(
           'No se pudo validar el número de trabajador en el padrón.',
         );
-      }
-
-      if (member == null) {
-        await _rollbackCreatedFirebaseUser(fbUser);
-        throw Exception(
-          'Número de trabajador no registrado en el padrón de socios.',
-        );
-      }
-      if (!_memberIsActive(member.data())) {
-        await _rollbackCreatedFirebaseUser(fbUser);
-        throw Exception('El socio asociado no se encuentra activo.');
       }
 
       final user = app.AppUser(
@@ -222,7 +273,7 @@ class AuthService {
         displayName: displayName ?? fbUser.displayName,
         role: UserRole.fromString(role),
         employeeNumber: trimmedEmployeeNumber,
-        memberId: member.id,
+        memberId: lookup.memberId,
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
       try {

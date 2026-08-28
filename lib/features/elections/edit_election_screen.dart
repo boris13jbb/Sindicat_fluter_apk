@@ -41,8 +41,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
   final ElectionService _electionService = ElectionService();
   final AsistenciaService _asistenciaService = AsistenciaService();
   late final Stream<List<EventoAsistenciaVinculoEleccion>>
-      _eventosVinculoStream =
-      _asistenciaService.watchEventosParaVinculoEleccion();
+  _eventosVinculoStream = _asistenciaService.watchEventosParaVinculoEleccion();
 
   @override
   void initState() {
@@ -183,16 +182,18 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
             Expanded(
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+                  padding: const EdgeInsets.all(
+                    AppDesignTokens.horizontalPadding,
+                  ),
                   child: PremiumCard(
                     margin: EdgeInsets.zero,
                     child: Text(
                       'Acceso denegado',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: AppDesignTokens.primaryDark,
-                            fontWeight: FontWeight.w700,
-                          ),
+                        color: AppDesignTokens.primaryDark,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -215,17 +216,16 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
               subtitle: 'Cargando datos…',
               onBack: () => Navigator.pop(context),
             ),
-            const Expanded(
-              child: Center(child: CircularProgressIndicator()),
-            ),
+            const Expanded(child: Center(child: CircularProgressIndicator())),
           ],
         ),
       );
     }
 
     final electionTitle = _election?.title.trim() ?? '';
-    final headerSubtitle =
-        electionTitle.isEmpty ? 'Datos y candidatos' : electionTitle;
+    final headerSubtitle = electionTitle.isEmpty
+        ? 'Datos y candidatos'
+        : electionTitle;
 
     return Scaffold(
       backgroundColor: AppDesignTokens.background,
@@ -259,9 +259,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                         children: [
                           Text(
                             'Datos principales',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: AppDesignTokens.primaryDark,
@@ -274,23 +272,29 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                             decoration: votoPremiumInputDecoration(
                               'Título de la elección *',
                             ),
-                            validator: (v) =>
-                                (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Requerido'
+                                : null,
                           ),
                           const SizedBox(height: 12),
                           TextFormField(
                             controller: _descriptionController,
-                            decoration: votoPremiumInputDecoration('Descripción *'),
+                            decoration: votoPremiumInputDecoration(
+                              'Descripción *',
+                            ),
                             maxLines: 3,
-                            validator: (v) =>
-                                (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Requerido'
+                                : null,
                           ),
                           const SizedBox(height: 12),
                           InkWell(
                             onTap: () => _pickDate(true),
                             borderRadius: BorderRadius.circular(14),
                             child: InputDecorator(
-                              decoration: votoPremiumInputDecoration('Fecha inicio'),
+                              decoration: votoPremiumInputDecoration(
+                                'Fecha inicio',
+                              ),
                               child: Row(
                                 children: [
                                   Expanded(
@@ -316,7 +320,9 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                             onTap: () => _pickDate(false),
                             borderRadius: BorderRadius.circular(14),
                             child: InputDecorator(
-                              decoration: votoPremiumInputDecoration('Fecha fin'),
+                              decoration: votoPremiumInputDecoration(
+                                'Fecha fin',
+                              ),
                               child: Row(
                                 children: [
                                   Expanded(
@@ -349,9 +355,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                         children: [
                           Text(
                             'Reglas y visibilidad',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: AppDesignTokens.primaryDark,
@@ -367,9 +371,11 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                           ),
                           _premiumSwitchTile(
                             title: 'Visible para votantes',
-                            subtitle: 'Si está desactivada, no aparece en el listado público.',
+                            subtitle:
+                                'Si está desactivada, no aparece en el listado público.',
                             value: _isVisibleToVoters,
-                            onChanged: (v) => setState(() => _isVisibleToVoters = v),
+                            onChanged: (v) =>
+                                setState(() => _isVisibleToVoters = v),
                           ),
                           _premiumSwitchTile(
                             title: 'Mostrar resultados automáticamente',
@@ -391,27 +397,34 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                           ),
                           if (_requireAttendance) ...[
                             const SizedBox(height: 6),
-                            StreamBuilder<List<EventoAsistenciaVinculoEleccion>>(
+                            StreamBuilder<
+                              List<EventoAsistenciaVinculoEleccion>
+                            >(
                               stream: _eventosVinculoStream,
                               builder: (context, snap) {
-                                if (snap.connectionState == ConnectionState.waiting &&
+                                if (snap.connectionState ==
+                                        ConnectionState.waiting &&
                                     !snap.hasData) {
                                   return const Padding(
                                     padding: EdgeInsets.all(24),
-                                    child: Center(child: CircularProgressIndicator()),
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
                                   );
                                 }
                                 final eventos = snap.data ?? [];
                                 final isValidValue =
                                     _eventoAsistenciaId == null ||
-                                    eventos.any((e) => e.id == _eventoAsistenciaId);
+                                    eventos.any(
+                                      (e) => e.id == _eventoAsistenciaId,
+                                    );
 
                                 return DropdownButtonFormField<String?>(
                                   isExpanded: true,
-                                  initialValue:
-                                      isValidValue ? _eventoAsistenciaId : null,
-                                  decoration:
-                                      votoPremiumInputDecoration(
+                                  initialValue: isValidValue
+                                      ? _eventoAsistenciaId
+                                      : null,
+                                  decoration: votoPremiumInputDecoration(
                                     'Evento de asistencia vinculado',
                                   ),
                                   items: [
@@ -445,9 +458,7 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                           const Divider(height: 32),
                           Text(
                             'Candidatos',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: AppDesignTokens.primaryDark,
@@ -455,14 +466,19 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                           ),
                           const SizedBox(height: 10),
                           StreamBuilder<List<Candidate>>(
-                            stream: _electionService.getCandidates(widget.electionId),
+                            stream: _electionService.getCandidates(
+                              widget.electionId,
+                            ),
                             initialData: _initialCandidates,
                             builder: (context, snap) {
-                              if (snap.connectionState == ConnectionState.waiting &&
+                              if (snap.connectionState ==
+                                      ConnectionState.waiting &&
                                   !snap.hasData) {
                                 return const Padding(
                                   padding: EdgeInsets.all(24),
-                                  child: Center(child: CircularProgressIndicator()),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
                                 );
                               }
 
@@ -472,7 +488,9 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                                   child: Text(
                                     'Error al cargar candidatos: ${snap.error}',
                                     style: TextStyle(
-                                      color: Theme.of(context).colorScheme.error,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
                                     ),
                                   ),
                                 );
@@ -486,8 +504,9 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                                     Icon(
                                       Icons.groups_2_outlined,
                                       size: 44,
-                                      color: AppDesignTokens.primary
-                                          .withValues(alpha: 0.35),
+                                      color: AppDesignTokens.primary.withValues(
+                                        alpha: 0.35,
+                                      ),
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
@@ -502,10 +521,13 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                                         '/voto/add_candidate',
                                         arguments: widget.electionId,
                                       ),
-                                      icon: const Icon(Icons.person_add_rounded),
+                                      icon: const Icon(
+                                        Icons.person_add_rounded,
+                                      ),
                                       label: const Text('Agregar candidato'),
                                       style: OutlinedButton.styleFrom(
-                                        foregroundColor: AppDesignTokens.primary,
+                                        foregroundColor:
+                                            AppDesignTokens.primary,
                                         side: BorderSide(
                                           color: AppDesignTokens.primary
                                               .withValues(alpha: 0.55),
@@ -570,7 +592,9 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
                               style: FilledButton.styleFrom(
                                 backgroundColor: AppDesignTokens.primary,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -665,163 +689,163 @@ class _EditElectionScreenState extends State<EditElectionScreen> {
       await showDialog<void>(
         context: context,
         builder: (dialogCtx) {
-        var saving = false;
+          var saving = false;
 
-        Future<void> doSave(StateSetter setModal) async {
-          if (formKey.currentState?.validate() != true) return;
-          if (saving) return;
+          Future<void> doSave(StateSetter setModal) async {
+            if (formKey.currentState?.validate() != true) return;
+            if (saving) return;
 
-          final selectedImageFile = stagedPickNotifier.value;
-          final trimmedManual = imageUrlController.text.trim();
-          final oldImageUrl = baselineImageUrl;
+            final selectedImageFile = stagedPickNotifier.value;
+            final trimmedManual = imageUrlController.text.trim();
+            final oldImageUrl = baselineImageUrl;
 
-          debugPrint('===== GUARDAR CANDIDATO =====');
-          debugPrint('modo: editar');
-          debugPrint('electionId: ${c.electionId}');
-          debugPrint('candidateId: ${c.id}');
-          debugPrint(
-            'selectedImageFile: ${selectedImageFile?.path}',
-          );
-          debugPrint('manualUrl: ${imageUrlController.text}');
-          debugPrint('oldImageUrl: $oldImageUrl');
+            debugPrint('===== GUARDAR CANDIDATO =====');
+            debugPrint('modo: editar');
+            debugPrint('electionId: ${c.electionId}');
+            debugPrint('candidateId: ${c.id}');
+            debugPrint('selectedImageFile: ${selectedImageFile?.path}');
+            debugPrint('manualUrl: ${imageUrlController.text}');
+            debugPrint('oldImageUrl: $oldImageUrl');
 
-          setModal(() => saving = true);
-          try {
-            final photo = CandidatePhotoStorage();
-            String? imageUrlToPersist;
+            setModal(() => saving = true);
+            try {
+              final photo = CandidatePhotoStorage();
+              String? imageUrlToPersist;
 
-            if (selectedImageFile != null) {
-              imageUrlToPersist = await photo.uploadCandidateImage(
-                electionId: c.electionId,
-                candidateId: c.id,
-                imageFile: selectedImageFile,
-              );
-            } else {
-              debugPrint(
-                'Sin archivo nuevo: no se usa Storage (ni getDownloadURL ni refFromURL).',
-              );
-              imageUrlToPersist =
-                  trimmedManual.isEmpty ? null : trimmedManual;
-            }
-
-            await _electionService.updateCandidate(
-              Candidate(
-                id: c.id,
-                electionId: c.electionId,
-                name: nameController.text.trim(),
-                description: descController.text.trim().isEmpty
-                    ? null
-                    : descController.text.trim(),
-                imageUrl: imageUrlToPersist,
-                order: parseCandidateOrder(orderController.text),
-                voteCount: c.voteCount,
-              ),
-            );
-
-            if (selectedImageFile != null) {
-              // No limpiar el notifier antes del pop: dispara listeners/setState en
-              // CandidateImageUploadSection durante el cierre de la ruta.
-              final prev = oldImageUrl.trim();
-              final next = (imageUrlToPersist ?? '').trim();
-              if (prev.startsWith('https://') &&
-                  prev.isNotEmpty &&
-                  prev != next) {
-                await CandidatePhotoStorage.tryDeleteOldCandidateImage(
-                  oldImageUrl,
+              if (selectedImageFile != null) {
+                imageUrlToPersist = await photo.uploadCandidateImage(
+                  electionId: c.electionId,
+                  candidateId: c.id,
+                  imageFile: selectedImageFile,
                 );
+              } else {
+                debugPrint(
+                  'Sin archivo nuevo: no se usa Storage (ni getDownloadURL ni refFromURL).',
+                );
+                imageUrlToPersist = trimmedManual.isEmpty
+                    ? null
+                    : trimmedManual;
+              }
+
+              await _electionService.updateCandidate(
+                Candidate(
+                  id: c.id,
+                  electionId: c.electionId,
+                  name: nameController.text.trim(),
+                  description: descController.text.trim().isEmpty
+                      ? null
+                      : descController.text.trim(),
+                  imageUrl: imageUrlToPersist,
+                  order: parseCandidateOrder(orderController.text),
+                  voteCount: c.voteCount,
+                ),
+              );
+
+              if (selectedImageFile != null) {
+                // No limpiar el notifier antes del pop: dispara listeners/setState en
+                // CandidateImageUploadSection durante el cierre de la ruta.
+                final prev = oldImageUrl.trim();
+                final next = (imageUrlToPersist ?? '').trim();
+                if (prev.startsWith('https://') &&
+                    prev.isNotEmpty &&
+                    prev != next) {
+                  await CandidatePhotoStorage.tryDeleteOldCandidateImage(
+                    oldImageUrl,
+                  );
+                }
+              }
+
+              if (!dialogCtx.mounted) return;
+              // No llamar setModal aquí: un rebuild del StatefulBuilder seguido del
+              // pop provoca carreras y el assert _dependents.isEmpty al desmontar.
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Candidato actualizado correctamente'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+              Navigator.pop(dialogCtx);
+            } catch (e, st) {
+              debugPrint('ERROR GUARDANDO CANDIDATO: $e');
+              debugPrint('STACKTRACE: $st');
+              if (dialogCtx.mounted) {
+                setModal(() => saving = false);
+              }
+              if (context.mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('Error al guardar: $e')));
               }
             }
-
-            if (!dialogCtx.mounted) return;
-            // No llamar setModal aquí: un rebuild del StatefulBuilder seguido del
-            // pop provoca carreras y el assert _dependents.isEmpty al desmontar.
-            if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Candidato actualizado correctamente'),
-                backgroundColor: Colors.green,
-              ),
-            );
-            Navigator.pop(dialogCtx);
-          } catch (e, st) {
-            debugPrint('ERROR GUARDANDO CANDIDATO: $e');
-            debugPrint('STACKTRACE: $st');
-            if (dialogCtx.mounted) {
-              setModal(() => saving = false);
-            }
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Error al guardar: $e')),
-              );
-            }
           }
-        }
 
-        return StatefulBuilder(
-          builder: (ctx, setModal) {
-            return AlertDialog(
-              title: const Text('Editar Candidato'),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (saving) ...[
-                        const LinearProgressIndicator(minHeight: 3),
-                        const SizedBox(height: 12),
-                      ],
-                      TextFormField(
-                        controller: nameController,
-                        decoration:
-                            const InputDecoration(labelText: 'Nombre'),
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty)
-                                ? 'Requerido'
-                                : null,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: descController,
-                        decoration:
-                            const InputDecoration(labelText: 'Descripción'),
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 12),
-                      CandidateImageUploadSection(
-                        electionId: c.electionId,
-                        urlController: imageUrlController,
-                        stagedPickNotifier: stagedPickNotifier,
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: orderController,
-                        decoration: const InputDecoration(
-                          labelText: 'Orden en lista',
-                          prefixIcon: Icon(Icons.sort),
+          return StatefulBuilder(
+            builder: (ctx, setModal) {
+              return AlertDialog(
+                title: const Text('Editar Candidato'),
+                content: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (saving) ...[
+                          const LinearProgressIndicator(minHeight: 3),
+                          const SizedBox(height: 12),
+                        ],
+                        TextFormField(
+                          controller: nameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Nombre',
+                          ),
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? 'Requerido'
+                              : null,
                         ),
-                        keyboardType: TextInputType.number,
-                        validator: validateCandidateOrder,
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: descController,
+                          decoration: const InputDecoration(
+                            labelText: 'Descripción',
+                          ),
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 12),
+                        CandidateImageUploadSection(
+                          electionId: c.electionId,
+                          urlController: imageUrlController,
+                          stagedPickNotifier: stagedPickNotifier,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: orderController,
+                          decoration: const InputDecoration(
+                            labelText: 'Orden en lista',
+                            prefixIcon: Icon(Icons.sort),
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: validateCandidateOrder,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: saving ? null : () => Navigator.pop(dialogCtx),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton(
-                  onPressed: saving ? null : () => doSave(setModal),
-                  child: Text(saving ? 'Guardando…' : 'Guardar'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+                actions: [
+                  TextButton(
+                    onPressed: saving ? null : () => Navigator.pop(dialogCtx),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton(
+                    onPressed: saving ? null : () => doSave(setModal),
+                    child: Text(saving ? 'Guardando…' : 'Guardar'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
     } finally {
       nameController.dispose();
       descController.dispose();
@@ -929,15 +953,15 @@ class _CandidateEditTile extends StatelessWidget {
         ),
         subtitle:
             candidate.description != null && candidate.description!.isNotEmpty
-                ? Text(
-                    candidate.description!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.55),
-                    ),
-                  )
-                : null,
+            ? Text(
+                candidate.description!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppDesignTokens.primaryDark.withValues(alpha: 0.55),
+                ),
+              )
+            : null,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

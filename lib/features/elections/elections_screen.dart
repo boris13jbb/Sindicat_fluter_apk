@@ -130,9 +130,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                   child: Text(
                     'Elige una elección',
                     style: Theme.of(sheetCtx).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: AppDesignTokens.primaryDark,
-                        ),
+                      fontWeight: FontWeight.w800,
+                      color: AppDesignTokens.primaryDark,
+                    ),
                   ),
                 ),
                 Padding(
@@ -173,7 +173,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
     );
   }
 
-  Future<void> _openCandidatesQuickAction(List<Election> visibleElections) async {
+  Future<void> _openCandidatesQuickAction(
+    List<Election> visibleElections,
+  ) async {
     final q = _searchController.text.trim();
     if (visibleElections.isEmpty) {
       if (!mounted) return;
@@ -203,7 +205,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
     }
   }
 
-  Future<void> _openResultadosQuickAction(List<Election> visibleElections) async {
+  Future<void> _openResultadosQuickAction(
+    List<Election> visibleElections,
+  ) async {
     final q = _searchController.text.trim();
     if (visibleElections.isEmpty) {
       if (!mounted) return;
@@ -225,11 +229,7 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
           'Verás estadísticas y el detalle de votos para la elección elegida.',
     );
     if (chosen != null && mounted) {
-      await Navigator.pushNamed(
-        context,
-        '/voto/results',
-        arguments: chosen.id,
-      );
+      await Navigator.pushNamed(context, '/voto/results', arguments: chosen.id);
     }
   }
 
@@ -280,7 +280,8 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final isAdmin = auth.user?.role == UserRole.admin ||
+    final isAdmin =
+        auth.user?.role == UserRole.admin ||
         auth.user?.role == UserRole.superadmin;
     final role = auth.user?.role ?? UserRole.voter;
 
@@ -303,8 +304,7 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
               }
             },
             onHistory: isAdmin
-                ? () =>
-                    Navigator.pushNamed(context, '/voto/archived_elections')
+                ? () => Navigator.pushNamed(context, '/voto/archived_elections')
                 : null,
             onLogout: () async {
               await auth.signOut();
@@ -326,7 +326,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+                    padding: const EdgeInsets.all(
+                      AppDesignTokens.horizontalPadding,
+                    ),
                     child: Column(
                       children: [
                         const SizedBox(height: 24),
@@ -377,14 +379,17 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                 }
 
                 final all = snapshot.data ?? [];
-                final nonArchived =
-                    all.where((e) => !e.isArchived).toList();
-                final filtered =
-                    _filterElections(nonArchived, _searchController.text);
+                final nonArchived = all.where((e) => !e.isArchived).toList();
+                final filtered = _filterElections(
+                  nonArchived,
+                  _searchController.text,
+                );
 
                 if (all.isEmpty) {
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+                    padding: const EdgeInsets.all(
+                      AppDesignTokens.horizontalPadding,
+                    ),
                     child: Column(
                       children: [
                         const SizedBox(height: 32),
@@ -395,7 +400,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                               Icon(
                                 Icons.how_to_vote_outlined,
                                 size: 56,
-                                color: AppDesignTokens.primary.withValues(alpha: 0.4),
+                                color: AppDesignTokens.primary.withValues(
+                                  alpha: 0.4,
+                                ),
                               ),
                               const SizedBox(height: 16),
                               Text(
@@ -447,7 +454,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                 if (isAdmin && nonArchived.isEmpty) {
                   return SingleChildScrollView(
                     controller: _scrollController,
-                    padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+                    padding: const EdgeInsets.all(
+                      AppDesignTokens.horizontalPadding,
+                    ),
                     child: Column(
                       children: [
                         const SizedBox(height: 24),
@@ -458,8 +467,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                               Icon(
                                 Icons.archive_outlined,
                                 size: 56,
-                                color:
-                                    AppDesignTokens.primary.withValues(alpha: 0.45),
+                                color: AppDesignTokens.primary.withValues(
+                                  alpha: 0.45,
+                                ),
                               ),
                               const SizedBox(height: 16),
                               Text(
@@ -602,7 +612,9 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                             fillColor: Colors.white,
                             prefixIcon: Icon(
                               Icons.search_rounded,
-                              color: AppDesignTokens.primaryDark.withValues(alpha: 0.45),
+                              color: AppDesignTokens.primaryDark.withValues(
+                                alpha: 0.45,
+                              ),
                             ),
                             suffixIcon: _searchController.text.isEmpty
                                 ? null
@@ -617,13 +629,17 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
                               borderSide: BorderSide(
-                                color: AppDesignTokens.primary.withValues(alpha: 0.14),
+                                color: AppDesignTokens.primary.withValues(
+                                  alpha: 0.14,
+                                ),
                               ),
                             ),
                             enabledBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
                               borderSide: BorderSide(
-                                color: AppDesignTokens.primary.withValues(alpha: 0.14),
+                                color: AppDesignTokens.primary.withValues(
+                                  alpha: 0.14,
+                                ),
                               ),
                             ),
                             focusedBorder: OutlineInputBorder(
@@ -700,53 +716,53 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
                       SliverPadding(
                         padding: const EdgeInsets.only(bottom: 100),
                         sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final election = filtered[index];
-                              return ElectionCard(
-                                election: election,
-                                isAdmin: isAdmin,
-                                onVote: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/voting',
-                                  arguments: election.id,
-                                ),
-                                onDashboard: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/results',
-                                  arguments: election.id,
-                                ),
-                                onEdit: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/edit_election',
-                                  arguments: election.id,
-                                ),
-                                onAddCandidate: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/add_candidate',
-                                  arguments: election.id,
-                                ),
-                                onViewResults: () => Navigator.pushNamed(
-                                  context,
-                                  '/voto/results',
-                                  arguments: election.id,
-                                ),
-                                onDelete: () => _confirmDelete(
-                                  context,
-                                  election,
-                                  _electionService,
-                                ),
-                                onArchive: isAdmin
-                                    ? () => _confirmArchive(
-                                          context,
-                                          election,
-                                          _electionService,
-                                        )
-                                    : null,
-                              );
-                            },
-                            childCount: filtered.length,
-                          ),
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final election = filtered[index];
+                            return ElectionCard(
+                              election: election,
+                              isAdmin: isAdmin,
+                              onVote: () => Navigator.pushNamed(
+                                context,
+                                '/voto/voting',
+                                arguments: election.id,
+                              ),
+                              onDashboard: () => Navigator.pushNamed(
+                                context,
+                                '/voto/results',
+                                arguments: election.id,
+                              ),
+                              onEdit: () => Navigator.pushNamed(
+                                context,
+                                '/voto/edit_election',
+                                arguments: election.id,
+                              ),
+                              onAddCandidate: () => Navigator.pushNamed(
+                                context,
+                                '/voto/add_candidate',
+                                arguments: election.id,
+                              ),
+                              onViewResults: () => Navigator.pushNamed(
+                                context,
+                                '/voto/results',
+                                arguments: election.id,
+                              ),
+                              onDelete: () => _confirmDelete(
+                                context,
+                                election,
+                                _electionService,
+                              ),
+                              onArchive: isAdmin
+                                  ? () => _confirmArchive(
+                                      context,
+                                      election,
+                                      _electionService,
+                                    )
+                                  : null,
+                            );
+                          }, childCount: filtered.length),
                         ),
                       ),
                   ],
@@ -792,15 +808,15 @@ class _ElectionsScreenState extends State<ElectionsScreen> {
         archived: true,
       );
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Archivada: ${election.title}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Archivada: ${election.title}')));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo archivar: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo archivar: $e')));
       }
     }
   }
@@ -898,11 +914,7 @@ class _VoterElectionStatsRow extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _electionStatCell(
-            'Votos',
-            '$votos',
-            AppDesignTokens.primary,
-          ),
+          child: _electionStatCell('Votos', '$votos', AppDesignTokens.primary),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -942,11 +954,7 @@ class _AdminDashboardStatsRow extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: _electionStatCell(
-            'Votos',
-            '$votos',
-            AppDesignTokens.primary,
-          ),
+          child: _electionStatCell('Votos', '$votos', AppDesignTokens.primary),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -1013,9 +1021,9 @@ class _AdminDashboardHub extends StatelessWidget {
               Text(
                 'Panel electoral',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: AppDesignTokens.primaryDark,
-                    ),
+                  fontWeight: FontWeight.w800,
+                  color: AppDesignTokens.primaryDark,
+                ),
               ),
               const SizedBox(height: 6),
               Text(
@@ -1051,9 +1059,9 @@ class _AdminDashboardHub extends StatelessWidget {
         Text(
           'Acciones rápidas',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: AppDesignTokens.primaryDark,
-              ),
+            fontWeight: FontWeight.w800,
+            color: AppDesignTokens.primaryDark,
+          ),
         ),
         const SizedBox(height: 10),
         GridView.count(
@@ -1145,16 +1153,16 @@ class _QuickActionCard extends StatelessWidget {
                   Text(
                     title,
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: AppDesignTokens.primaryDark,
-                        ),
+                      fontWeight: FontWeight.w800,
+                      color: AppDesignTokens.primaryDark,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppDesignTokens.primaryDark.withValues(alpha: 0.5),
-                        ),
+                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.5),
+                    ),
                   ),
                 ],
               ),
@@ -1189,10 +1197,7 @@ class _ElectionsWaveHeader extends StatelessWidget {
         height: 178,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              AppDesignTokens.primaryDark,
-              AppDesignTokens.primary,
-            ],
+            colors: [AppDesignTokens.primaryDark, AppDesignTokens.primary],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -1216,7 +1221,8 @@ class _ElectionsWaveHeader extends StatelessWidget {
                         Text(
                           title,
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -1225,7 +1231,8 @@ class _ElectionsWaveHeader extends StatelessWidget {
                         Text(
                           subtitle,
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
                                 color: Colors.white.withValues(alpha: 0.9),
                               ),
                         ),
@@ -1259,10 +1266,7 @@ class _ElectionsWaveHeader extends StatelessWidget {
 }
 
 class _ElectionsCircleIconButton extends StatelessWidget {
-  const _ElectionsCircleIconButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _ElectionsCircleIconButton({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback onTap;
@@ -1283,11 +1287,7 @@ class _ElectionsCircleIconButton extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: Icon(
-            icon,
-            color: AppDesignTokens.primary,
-            size: 22,
-          ),
+          child: Icon(icon, color: AppDesignTokens.primary, size: 22),
         ),
       ),
     );
@@ -1327,8 +1327,7 @@ class _ElectionsBottomNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = role == UserRole.admin || role == UserRole.superadmin;
-    final canManageAttendance =
-        isAdmin || role == UserRole.operadorAsistencia;
+    final canManageAttendance = isAdmin || role == UserRole.operadorAsistencia;
     final entries = <_ElectionsBottomNavEntry>[
       const _ElectionsBottomNavEntry(
         label: 'Inicio',
@@ -1406,8 +1405,9 @@ class _ElectionsBottomNavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVoto = entry.route == null;
-    final foreground =
-        isVoto ? _ElectionsBottomNavigation._primary : _ElectionsBottomNavigation._muted;
+    final foreground = isVoto
+        ? _ElectionsBottomNavigation._primary
+        : _ElectionsBottomNavigation._muted;
 
     return Expanded(
       child: Tooltip(
@@ -1456,7 +1456,9 @@ class _ElectionsBottomNavItem extends StatelessWidget {
                         style: TextStyle(
                           color: foreground,
                           fontSize: 11,
-                          fontWeight: isVoto ? FontWeight.w900 : FontWeight.w600,
+                          fontWeight: isVoto
+                              ? FontWeight.w900
+                              : FontWeight.w600,
                           height: 1,
                         ),
                       ),

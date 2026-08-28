@@ -47,7 +47,10 @@ class _ReportBrandingSettingsScreenState
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No se pudo guardar: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('No se pudo guardar: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -149,7 +152,8 @@ class _ReportBrandingSettingsScreenState
                           children: [
                             Text(
                               'Logo del reporte electoral',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
                                     fontWeight: FontWeight.w800,
                                     color: AppDesignTokens.primaryDark,
                                   ),
@@ -215,7 +219,9 @@ class _ReportBrandingSettingsScreenState
                                         ),
                                       )
                                     : const Icon(Icons.upload_rounded),
-                                label: Text(_busy ? 'Guardando…' : 'Elegir imagen'),
+                                label: Text(
+                                  _busy ? 'Guardando…' : 'Elegir imagen',
+                                ),
                                 style: FilledButton.styleFrom(
                                   backgroundColor: AppDesignTokens.primary,
                                   foregroundColor: Colors.white,
@@ -232,7 +238,9 @@ class _ReportBrandingSettingsScreenState
                                 height: 48,
                                 child: OutlinedButton.icon(
                                   onPressed: _busy ? null : _clear,
-                                  icon: const Icon(Icons.delete_outline_rounded),
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                  ),
                                   label: const Text('Quitar logo'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.red.shade800,

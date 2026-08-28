@@ -9,6 +9,10 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  collection,
+  query,
+  limit,
   increment,
   serverTimestamp,
   setDoc,
@@ -44,6 +48,7 @@ before(async () => {
 beforeEach(async () => {
   await testEnv.clearFirestore();
   await seed('users/admin', userData('ADMIN'));
+  await seed('users/superadmin', userData('SUPERADMIN'));
   await seed('users/operator', userData('OPERADOR_ASISTENCIA'));
   await seed('users/voter', userData('VOTER'));
   await seed('users/other', userData('VOTER'));
@@ -90,6 +95,53 @@ describe('users', () => {
 
     await assertSucceeds(getDoc(doc(db, 'users/voter')));
     await assertFails(getDoc(doc(db, 'users/other')));
+  });
+
+  test('allows superadmin to read and manage other users', async () => {
+    await seed('members/member-1', {
+      memberNumber: '100',
+      firstName: 'Ana',
+      lastName: 'Perez',
+      fullName: 'Ana Perez',
+      workerCode: 'W-100',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const superDb = testEnv.authenticatedContext('superadmin').firestore();
+
+    await assertSucceeds(getDoc(doc(superDb, 'users/voter')));
+    await assertSucceeds(
+      updateDoc(doc(superDb, 'users/voter'), {
+        role: 'OPERADOR_ASISTENCIA',
+        updatedAt: 2,
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(superDb, 'users/voter'), {
+        memberId: 'member-1',
+        employeeNumber: 'W-100',
+        updatedAt: 3,
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(superDb, 'users/voter'), {
+        isActive: false,
+        updatedAt: 4,
+      }),
+    );
+  });
+
+  test('blocks non-superadmin from changing another user role', async () => {
+    const adminDb = testEnv.authenticatedContext('admin').firestore();
+
+    await assertFails(
+      updateDoc(doc(adminDb, 'users/voter'), {
+        role: 'ADMIN',
+        updatedAt: 2,
+      }),
+    );
   });
 });
 
@@ -196,6 +248,98 @@ describe('votes', () => {
     await assertFails(
       getDoc(doc(otherDb, 'elections/election-1/votes/election-1_voter')),
     );
+  });
+
+  test('blocks inactive voter from casting a vote', async () => {
+    await seed('users/inactive-voter', {
+      ...userData('VOTER'),
+      email: 'inactive@test.local',
+      isActive: false,
+    });
+
+    const db = testEnv.authenticatedContext('inactive-voter').firestore();
+    const voteRef = doc(db, 'elections/election-1/votes/election-1_inactive-voter');
+
+    await assertFails(
+      setDoc(voteRef, {
+        electionId: 'election-1',
+        userId: 'inactive-voter',
+        candidateId: 'candidate-1',
+        votedAt: serverTimestamp(),
+      }),
+    );
+  });
+});
+
+describe('members', () => {
+  const memberData = {
+    memberNumber: '100',
+    firstName: 'Ana',
+    lastName: 'Perez',
+    fullName: 'Ana Perez',
+    workerCode: 'W-100',
+    status: 'active',
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  beforeEach(async () => {
+    await seed('members/member-1', memberData);
+    await seed('members/member-2', {
+      ...memberData,
+      memberNumber: '101',
+      workerCode: 'W-101',
+      fullName: 'Otro Socio',
+    });
+    await seed('users/voter', {
+      ...userData('VOTER'),
+      memberId: 'member-1',
+      employeeNumber: 'W-100',
+    });
+  });
+
+  test('blocks unauthenticated reads', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(db, 'members/member-1')));
+  });
+
+  test('allows voter to get only linked member', async () => {
+    const voterDb = testEnv.authenticatedContext('voter').firestore();
+    await assertSucceeds(getDoc(doc(voterDb, 'members/member-1')));
+    await assertFails(getDoc(doc(voterDb, 'members/member-2')));
+  });
+
+  test('blocks voter from listing members collection', async () => {
+    const voterDb = testEnv.authenticatedContext('voter').firestore();
+    await assertFails(getDocs(collection(voterDb, 'members')));
+    await assertFails(
+      getDocs(query(collection(voterDb, 'members'), limit(400))),
+    );
+  });
+
+  test('allows admin to list members', async () => {
+    const adminDb = testEnv.authenticatedContext('admin').firestore();
+    await assertSucceeds(getDocs(collection(adminDb, 'members')));
+  });
+
+  test('allows operator to list members', async () => {
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertSucceeds(getDocs(collection(operatorDb, 'members')));
+  });
+
+  test('blocks voter from reading another user profile', async () => {
+    const voterDb = testEnv.authenticatedContext('voter').firestore();
+    await assertFails(getDoc(doc(voterDb, 'users/other')));
+  });
+
+  test('blocks admin from listing users collection', async () => {
+    const adminDb = testEnv.authenticatedContext('admin').firestore();
+    await assertFails(getDocs(collection(adminDb, 'users')));
+  });
+
+  test('allows superadmin to list users', async () => {
+    const superDb = testEnv.authenticatedContext('superadmin').firestore();
+    await assertSucceeds(getDocs(collection(superDb, 'users')));
   });
 });
 

@@ -85,6 +85,7 @@ class Election {
   final int startDate;
   final int endDate;
   final bool isActive;
+
   /// Oculta la elección del listado principal; votación bloqueada en reglas y cliente.
   final bool isArchived;
   final int? archivedAt;

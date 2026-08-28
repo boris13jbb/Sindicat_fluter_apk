@@ -260,7 +260,7 @@ class _MemberFormScreenState extends State<MemberFormScreen> {
       final workerCodeValue = _workerCodeController.text.trim().isEmpty
           ? _memberNumberController.text.trim()
           : _workerCodeController.text.trim();
-      
+
       debugPrint('💾 Guardando socio:');
       debugPrint('   workerCode: $workerCodeValue');
       debugPrint('   memberNumber: ${_memberNumberController.text.trim()}');

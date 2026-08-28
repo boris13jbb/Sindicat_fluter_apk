@@ -63,10 +63,7 @@ class PremiumHeader extends StatelessWidget {
                 ),
               ),
               if (actions != null && actions!.isNotEmpty)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: actions!,
-                ),
+                Row(mainAxisSize: MainAxisSize.min, children: actions!),
             ],
           ),
         ),

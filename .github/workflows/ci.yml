@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+      - "feature/**"
+      - "fix/**"
+      - "hotfix/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: Flutter Analyze & Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check Dart formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Flutter Analyze
+        run: dart analyze lib test
+
+      - name: Flutter tests
+        run: flutter test --no-pub --enable-experiment=dot-shorthands --reporter compact
+
+  functions:
+    name: Cloud Functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: functions
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check and unit tests
+        run: npm run check
+
+  firestore-rules:
+    name: Security Rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Java (Firebase Emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Run rules unit tests in emulator
+        run: bash tool/test_firebase_rules.sh
+
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs:
+      - flutter
+      - functions
+      - firestore-rules
+    if: always()
+    steps:
+      - name: Require all checks green
+        run: |
+          echo "Flutter Analyze & Tests: ${{ needs.flutter.result }}"
+          echo "Cloud Functions: ${{ needs.functions.result }}"
+          echo "Security Rules: ${{ needs.firestore-rules.result }}"
+          if [ "${{ needs.flutter.result }}" != "success" ] || \
+             [ "${{ needs.functions.result }}" != "success" ] || \
+             [ "${{ needs.firestore-rules.result }}" != "success" ]; then
+            echo "CI no aprobado: corrige los jobs fallidos antes de merge a main."
+            exit 1
+          fi
+          echo "CI aprobado: listo para merge a main."

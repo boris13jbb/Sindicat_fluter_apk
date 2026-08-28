@@ -29,9 +29,9 @@ class StatusPill extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: foregroundColor,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: foregroundColor,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           if (showChevron) ...[
             const SizedBox(width: 2),

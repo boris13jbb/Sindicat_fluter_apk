@@ -30,4 +30,23 @@ enum UserRole {
         return 'Usuario';
     }
   }
+
+  /// Descripción operativa mostrada al asignar roles.
+  String get assignmentDescription {
+    switch (this) {
+      case UserRole.superadmin:
+        return 'Control total: usuarios, configuración global y todos los módulos.';
+      case UserRole.admin:
+        return 'Gestiona elecciones, socios, auditoría y asistencia.';
+      case UserRole.operadorAsistencia:
+        return 'Opera eventos, registros y reportes de asistencia.';
+      case UserRole.voter:
+        return 'Participa en votaciones y consulta su perfil.';
+      case UserRole.user:
+        return 'Acceso básico sin privilegios administrativos.';
+    }
+  }
+
+  /// Roles que un superadmin puede asignar desde la app.
+  static const assignableBySuperAdmin = UserRole.values;
 }
