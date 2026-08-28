@@ -47,5 +47,23 @@ void main() {
 
       expect(parsed.phoneNumber, '0991234567');
     });
+
+    test('reads isActive with default true', () {
+      final inactive = AppUser.fromMap({
+        'email': 'a@b.com',
+        'role': 'VOTER',
+        'isActive': false,
+      }, 'uid-4');
+
+      expect(inactive.isActive, isFalse);
+
+      final active = AppUser.fromMap({
+        'email': 'b@b.com',
+        'role': 'VOTER',
+      }, 'uid-5');
+
+      expect(active.isActive, isTrue);
+      expect(active.toMap()['isActive'], isTrue);
+    });
   });
 }

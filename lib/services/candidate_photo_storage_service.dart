@@ -4,7 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
 
-import 'candidate_storage_put_io.dart' if (dart.library.html) 'candidate_storage_put_web.dart';
+import 'candidate_storage_put_io.dart'
+    if (dart.library.html) 'candidate_storage_put_web.dart';
 
 /// Subida de foto de candidato bajo
 /// `elections/{electionId}/candidates/{candidateId}/{fileName}` y borrado no
@@ -14,7 +15,7 @@ import 'candidate_storage_put_io.dart' if (dart.library.html) 'candidate_storage
 /// `await snapshot.ref.getDownloadURL()` (nunca `ref.getDownloadURL()` antes de subir).
 class CandidatePhotoStorage {
   CandidatePhotoStorage({FirebaseStorage? storage})
-      : _storage = storage ?? FirebaseStorage.instance;
+    : _storage = storage ?? FirebaseStorage.instance;
 
   final FirebaseStorage _storage;
 
@@ -65,8 +66,7 @@ class CandidatePhotoStorage {
 
     final ext = _extensionFor(imageFile);
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final safeCandidateId =
-        candidateId.replaceAll(RegExp(r'[^\w\-]'), '_');
+    final safeCandidateId = candidateId.replaceAll(RegExp(r'[^\w\-]'), '_');
     final fileName = 'candidate_${safeCandidateId}_$timestamp.$ext';
 
     final ref = _storage

@@ -30,10 +30,12 @@ class Member {
   final String firstName; // Nombres
   final String lastName; // Apellidos
   final String fullName; // Nombre completo (calculado)
-  final String? workerCode; // Código/Número de trabajador (identificación interna)
+  final String?
+  workerCode; // Código/Número de trabajador (identificación interna)
   final String? documentId; // Cédula/DNI (documento oficial)
   final String? email;
   final String? phone;
+
   /// Modalidad de turno (misma escala que eventos de asistencia). Persistida en Firestore como `modalidad`.
   final Modalidad? modalidad;
   final MemberStatus status; // activo, inactivo

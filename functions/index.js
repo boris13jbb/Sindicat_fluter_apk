@@ -12,7 +12,27 @@ const nodemailer = require("nodemailer");
 const {
   buildBackendResetUrl,
   buildPasswordResetEmail,
+  buildWelcomeUserEmail,
+  PUBLIC_APP_URL,
 } = require("./email-template");
+const {
+  resolveAuthActiveChange,
+  roleChanged,
+} = require("./user-auth-sync");
+const {
+  parseInvitePayload,
+  parseAdminResetPayload,
+  memberIsActive,
+  createTemporaryPassword,
+} = require("./admin-user");
+const {
+  parseSearchPayload,
+  parseMemberLookupPayload,
+  searchUsers,
+  searchMembers,
+  lookupMemberForCaller,
+} = require("./admin-search");
+const {onDocumentUpdated} = require("firebase-functions/v2/firestore");
 
 initializeApp();
 
@@ -94,6 +114,61 @@ function createTransport() {
       pass: smtpPassword.value().replace(/\s+/g, ""),
     },
   });
+}
+
+async function findMemberByEmployeeNumber(employeeNumber) {
+  const value = String(employeeNumber || "").trim();
+  if (!value) return null;
+
+  const byWorkerCode = await db
+    .collection("members")
+    .where("workerCode", "==", value)
+    .limit(1)
+    .get();
+  if (!byWorkerCode.empty) return byWorkerCode.docs[0];
+
+  const byMemberNumber = await db
+    .collection("members")
+    .where("memberNumber", "==", value)
+    .limit(1)
+    .get();
+  if (!byMemberNumber.empty) return byMemberNumber.docs[0];
+
+  return null;
+}
+
+async function assertSuperAdminRequest(req) {
+  const authHeader = String(req.get("authorization") || "");
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    const error = new Error("missing-auth");
+    error.status = 401;
+    throw error;
+  }
+
+  const decoded = await getAuth().verifyIdToken(match[1]);
+  const callerDoc = await db.collection("users").doc(decoded.uid).get();
+  const caller = callerDoc.exists ? callerDoc.data() : null;
+  if (!caller || caller.role !== "SUPERADMIN" || caller.isActive === false) {
+    const error = new Error("forbidden");
+    error.status = 403;
+    throw error;
+  }
+
+  return decoded.uid;
+}
+
+async function assertAuthenticatedRequest(req) {
+  const authHeader = String(req.get("authorization") || "");
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    const error = new Error("missing-auth");
+    error.status = 401;
+    throw error;
+  }
+
+  const decoded = await getAuth().verifyIdToken(match[1]);
+  return decoded.uid;
 }
 
 async function sendResetEmail(email) {
@@ -306,6 +381,490 @@ exports.confirmPasswordReset = onRequest(
         ok: false,
         message: "No se pudo completar el cambio. Inténtalo nuevamente.",
       });
+    }
+  },
+);
+
+exports.adminInviteUser = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+    secrets: [smtpUser, smtpPassword],
+    maxInstances: 5,
+    timeoutSeconds: 60,
+  },
+  async (req, res) => {
+    res.set("Cache-Control", "no-store");
+
+    if (req.method !== "POST") {
+      res.status(405).json({ok: false, message: "Método no permitido."});
+      return;
+    }
+
+    try {
+      const actorUid = await assertSuperAdminRequest(req);
+      const parsed = parseInvitePayload(req.body);
+      if (parsed.error) {
+        res.status(400).json({ok: false, message: parsed.error});
+        return;
+      }
+
+      const {email, role, displayName, employeeNumber} = parsed.payload;
+      let memberId = null;
+      let workerCode = employeeNumber;
+
+      if (employeeNumber) {
+        const memberDoc = await findMemberByEmployeeNumber(employeeNumber);
+        if (!memberDoc) {
+          res.status(400).json({
+            ok: false,
+            message: "Número de trabajador no registrado en el padrón.",
+          });
+          return;
+        }
+        if (!memberIsActive(memberDoc.data())) {
+          res.status(400).json({
+            ok: false,
+            message: "El socio asociado no se encuentra activo.",
+          });
+          return;
+        }
+        memberId = memberDoc.id;
+        workerCode = memberDoc.data().workerCode || employeeNumber;
+      }
+
+      const temporaryPassword = createTemporaryPassword();
+      let userRecord;
+      try {
+        userRecord = await getAuth().createUser({
+          email,
+          password: temporaryPassword,
+          displayName: displayName || undefined,
+          disabled: false,
+        });
+      } catch (error) {
+        if (error?.code === "auth/email-already-exists") {
+          res.status(409).json({
+            ok: false,
+            message: "Ya existe una cuenta con ese correo.",
+          });
+          return;
+        }
+        throw error;
+      }
+
+      const now = Date.now();
+      try {
+        await db.collection("users").doc(userRecord.uid).set({
+          email,
+          displayName,
+          role,
+          employeeNumber: workerCode,
+          memberId,
+          createdAt: now,
+          updatedAt: now,
+          isActive: true,
+        });
+      } catch (error) {
+        await getAuth().deleteUser(userRecord.uid);
+        throw error;
+      }
+
+      let emailSent = false;
+      try {
+        const message = buildWelcomeUserEmail({
+          email,
+          displayName,
+          temporaryPassword,
+          appUrl: PUBLIC_APP_URL,
+        });
+        await createTransport().sendMail({
+          from: `"Sistema Integrado Sindicato" <${smtpUser.value().trim()}>`,
+          to: email,
+          subject: message.subject,
+          text: message.text,
+          html: message.html,
+        });
+        emailSent = true;
+      } catch (error) {
+        logger.warn("Welcome email failed after user invite", {
+          actorUid,
+          invitedUid: userRecord.uid,
+          detail: error?.message || "Unknown error",
+        });
+      }
+
+      await db.collection("audit_logs").add({
+        action: "create",
+        entityType: "user",
+        entityId: userRecord.uid,
+        userId: actorUid,
+        timestamp: now,
+        description: `Invitación de usuario ${email} con rol ${role}`,
+        changes: {
+          email,
+          role,
+          memberId,
+          emailSent,
+        },
+      });
+
+      res.status(200).json({
+        ok: true,
+        uid: userRecord.uid,
+        email,
+        role,
+        emailSent,
+        temporaryPassword: emailSent ? null : temporaryPassword,
+      });
+    } catch (error) {
+      if (error?.status === 401) {
+        res.status(401).json({ok: false, message: "Sesión no válida."});
+        return;
+      }
+      if (error?.status === 403) {
+        res.status(403).json({
+          ok: false,
+          message: "Solo un superadministrador puede invitar usuarios.",
+        });
+        return;
+      }
+
+      logger.error("adminInviteUser failed", {
+        code: error?.code || "unknown",
+        detail: error?.message || "Unknown error",
+      });
+      res.status(503).json({
+        ok: false,
+        message: "No se pudo crear la cuenta. Inténtalo nuevamente.",
+      });
+    }
+  },
+);
+
+exports.adminSendPasswordReset = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+    secrets: [smtpUser, smtpPassword],
+    maxInstances: 5,
+    timeoutSeconds: 60,
+  },
+  async (req, res) => {
+    res.set("Cache-Control", "no-store");
+
+    if (req.method !== "POST") {
+      res.status(405).json({ok: false, message: "Método no permitido."});
+      return;
+    }
+
+    try {
+      const actorUid = await assertSuperAdminRequest(req);
+      const parsed = parseAdminResetPayload(req.body);
+      if (parsed.error) {
+        res.status(400).json({ok: false, message: parsed.error});
+        return;
+      }
+
+      const {targetUserId} = parsed.payload;
+      const targetDoc = await db.collection("users").doc(targetUserId).get();
+      if (!targetDoc.exists) {
+        res.status(404).json({ok: false, message: "Usuario no encontrado."});
+        return;
+      }
+
+      const target = targetDoc.data() || {};
+      if (target.isActive === false) {
+        res.status(400).json({
+          ok: false,
+          message: "No se puede restablecer la contraseña de un usuario inactivo.",
+        });
+        return;
+      }
+
+      const email = normalizeEmail(target.email);
+      if (!isValidEmail(email)) {
+        res.status(400).json({ok: false, message: "El usuario no tiene un correo válido."});
+        return;
+      }
+
+      await sendResetEmail(email);
+
+      const now = Date.now();
+      await db.collection("audit_logs").add({
+        action: "update",
+        entityType: "user",
+        entityId: targetUserId,
+        userId: actorUid,
+        timestamp: now,
+        description: `Recuperación de contraseña enviada a ${email}`,
+        changes: {email, initiatedBy: "admin"},
+      });
+
+      res.status(200).json({
+        ok: true,
+        email,
+        message: "Se envió un enlace seguro de recuperación al correo del usuario.",
+      });
+    } catch (error) {
+      if (error?.status === 401) {
+        res.status(401).json({ok: false, message: "Sesión no válida."});
+        return;
+      }
+      if (error?.status === 403) {
+        res.status(403).json({
+          ok: false,
+          message: "Solo un superadministrador puede restablecer contraseñas.",
+        });
+        return;
+      }
+      if (error?.code === "auth/user-not-found") {
+        res.status(404).json({
+          ok: false,
+          message: "La cuenta no existe en Firebase Auth.",
+        });
+        return;
+      }
+
+      logger.error("adminSendPasswordReset failed", {
+        code: error?.code || "unknown",
+        detail: error?.message || "Unknown error",
+      });
+      res.status(503).json({
+        ok: false,
+        message: "No se pudo enviar el correo de recuperación.",
+      });
+    }
+  },
+);
+
+exports.adminSearchUsers = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+    maxInstances: 5,
+    timeoutSeconds: 30,
+  },
+  async (req, res) => {
+    res.set("Cache-Control", "no-store");
+
+    if (req.method !== "POST") {
+      res.status(405).json({ok: false, message: "Método no permitido."});
+      return;
+    }
+
+    try {
+      await assertSuperAdminRequest(req);
+      const parsed = parseSearchPayload(req.body);
+      if (parsed.error) {
+        res.status(400).json({ok: false, message: parsed.error});
+        return;
+      }
+
+      const {query, limit} = parsed.payload;
+      const users = await searchUsers(db, query, limit);
+      res.status(200).json({ok: true, users});
+    } catch (error) {
+      if (error?.status === 401) {
+        res.status(401).json({ok: false, message: "Sesión no válida."});
+        return;
+      }
+      if (error?.status === 403) {
+        res.status(403).json({
+          ok: false,
+          message: "Solo un superadministrador puede buscar usuarios.",
+        });
+        return;
+      }
+
+      logger.error("adminSearchUsers failed", {
+        code: error?.code || "unknown",
+        detail: error?.message || "Unknown error",
+      });
+      res.status(503).json({
+        ok: false,
+        message: "No se pudo completar la búsqueda de usuarios.",
+      });
+    }
+  },
+);
+
+exports.adminSearchMembers = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+    maxInstances: 5,
+    timeoutSeconds: 30,
+  },
+  async (req, res) => {
+    res.set("Cache-Control", "no-store");
+
+    if (req.method !== "POST") {
+      res.status(405).json({ok: false, message: "Método no permitido."});
+      return;
+    }
+
+    try {
+      await assertSuperAdminRequest(req);
+      const parsed = parseSearchPayload(req.body);
+      if (parsed.error) {
+        res.status(400).json({ok: false, message: parsed.error});
+        return;
+      }
+
+      const {query, limit} = parsed.payload;
+      const members = await searchMembers(db, query, limit);
+      res.status(200).json({ok: true, members});
+    } catch (error) {
+      if (error?.status === 401) {
+        res.status(401).json({ok: false, message: "Sesión no válida."});
+        return;
+      }
+      if (error?.status === 403) {
+        res.status(403).json({
+          ok: false,
+          message: "Solo un superadministrador puede buscar socios.",
+        });
+        return;
+      }
+
+      logger.error("adminSearchMembers failed", {
+        code: error?.code || "unknown",
+        detail: error?.message || "Unknown error",
+      });
+      res.status(503).json({
+        ok: false,
+        message: "No se pudo completar la búsqueda de socios.",
+      });
+    }
+  },
+);
+
+exports.lookupMemberByEmployee = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+    maxInstances: 10,
+    timeoutSeconds: 20,
+  },
+  async (req, res) => {
+    res.set("Cache-Control", "no-store");
+
+    if (req.method !== "POST") {
+      res.status(405).json({ok: false, message: "Método no permitido."});
+      return;
+    }
+
+    try {
+      const uid = await assertAuthenticatedRequest(req);
+      const parsed = parseMemberLookupPayload(req.body);
+      if (parsed.error) {
+        res.status(400).json({ok: false, message: parsed.error});
+        return;
+      }
+
+      const {employeeNumber} = parsed.payload;
+      const result = await lookupMemberForCaller(
+        db,
+        findMemberByEmployeeNumber,
+        uid,
+        employeeNumber,
+      );
+
+      res.status(200).json({
+        ok: true,
+        memberId: result.memberId,
+        member: result.member,
+      });
+    } catch (error) {
+      if (error?.status === 401) {
+        res.status(401).json({ok: false, message: "Sesión no válida."});
+        return;
+      }
+      if (error?.status === 403) {
+        res.status(403).json({
+          ok: false,
+          message: "No tienes permisos para consultar ese socio.",
+        });
+        return;
+      }
+      if (error?.status === 404 || error?.message === "not-found") {
+        res.status(404).json({
+          ok: false,
+          message: "Número de trabajador no registrado en el padrón de socios.",
+        });
+        return;
+      }
+      if (error?.status === 400 || error?.message === "inactive") {
+        res.status(400).json({
+          ok: false,
+          message: "El socio asociado no se encuentra activo.",
+        });
+        return;
+      }
+
+      logger.error("lookupMemberByEmployee failed", {
+        code: error?.code || "unknown",
+        detail: error?.message || "Unknown error",
+      });
+      res.status(503).json({
+        ok: false,
+        message: "No se pudo validar el número de trabajador.",
+      });
+    }
+  },
+);
+
+exports.syncUserAuthAccess = onDocumentUpdated(
+  {
+    document: "users/{userId}",
+    region: "us-central1",
+    maxInstances: 10,
+  },
+  async (event) => {
+    if (!event.data) return;
+
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const uid = event.params.userId;
+
+    const activeChange = resolveAuthActiveChange(before, after);
+    const hasRoleChange = roleChanged(before, after);
+
+    if (activeChange === null && !hasRoleChange) return;
+
+    try {
+      if (activeChange !== null) {
+        await getAuth().updateUser(uid, {disabled: activeChange.disabled});
+        if (activeChange.revokeTokens) {
+          await getAuth().revokeRefreshTokens(uid);
+        }
+        logger.info("Synced Firebase Auth access from Firestore profile", {
+          uid,
+          disabled: activeChange.disabled,
+        });
+        return;
+      }
+
+      if (hasRoleChange) {
+        await getAuth().revokeRefreshTokens(uid);
+        logger.info("Revoked refresh tokens after role change", {
+          uid,
+          previousRole: before.role || null,
+          nextRole: after.role,
+        });
+      }
+    } catch (error) {
+      if (error?.code === "auth/user-not-found") {
+        logger.warn("Firestore user profile without Firebase Auth account", {uid});
+        return;
+      }
+      logger.error("Failed to sync Firebase Auth access", {
+        uid,
+        code: error?.code || "unknown",
+        detail: error?.message || "Unknown error",
+      });
+      throw error;
     }
   },
 );

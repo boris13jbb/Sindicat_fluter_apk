@@ -11,6 +11,7 @@ class AppUser {
     this.employeeNumber,
     this.memberId,
     this.createdAt,
+    this.isActive = true,
     this.gender,
     this.avatarUrl,
     this.avatarMode,
@@ -24,12 +25,19 @@ class AppUser {
   final String? employeeNumber;
   final String? memberId;
   final int? createdAt;
+
+  /// Si es `false`, el usuario queda deshabilitado operativamente (gestión superadmin).
+  final bool isActive;
+
   /// `male` | `female` | `neutral` u omitido; usado para avatar por defecto.
   final String? gender;
+
   /// URL de foto personalizada (Storage) cuando [avatarMode] es `custom`.
   final String? avatarUrl;
+
   /// `custom` | `default_male` | `default_female` | `default_neutral`.
   final String? avatarMode;
+
   /// Teléfono de contacto del usuario (Firestore `phoneNumber`), editable por el propio usuario.
   final String? phoneNumber;
 
@@ -43,6 +51,7 @@ class AppUser {
       employeeNumber: map['employeeNumber'] as String?,
       memberId: map['memberId'] as String?,
       createdAt: (map['createdAt'] as num?)?.toInt(),
+      isActive: map['isActive'] as bool? ?? true,
       gender: map['gender'] as String?,
       avatarUrl: map['avatarUrl'] as String?,
       avatarMode: map['avatarMode'] as String?,
@@ -58,6 +67,7 @@ class AppUser {
     String? employeeNumber,
     String? memberId,
     int? createdAt,
+    bool? isActive,
     String? gender,
     String? avatarUrl,
     String? avatarMode,
@@ -71,6 +81,7 @@ class AppUser {
       employeeNumber: employeeNumber ?? this.employeeNumber,
       memberId: memberId ?? this.memberId,
       createdAt: createdAt ?? this.createdAt,
+      isActive: isActive ?? this.isActive,
       gender: gender ?? this.gender,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       avatarMode: avatarMode ?? this.avatarMode,
@@ -87,7 +98,7 @@ class AppUser {
       'memberId': memberId,
       'createdAt': createdAt ?? DateTime.now().millisecondsSinceEpoch,
       'updatedAt': DateTime.now().millisecondsSinceEpoch,
-      'isActive': true,
+      'isActive': isActive,
     };
     if (gender != null) map['gender'] = gender;
     if (avatarUrl != null) map['avatarUrl'] = avatarUrl;

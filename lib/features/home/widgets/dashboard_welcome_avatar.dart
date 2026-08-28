@@ -126,11 +126,10 @@ class _IllustratedAvatarPainter extends CustomPainter {
 
     void drawMaleHair() {
       final p = Path()
-        ..addOval(Rect.fromCircle(center: Offset(cx, 46 * scale), radius: 38 * scale));
-      canvas.drawPath(
-        p,
-        Paint()..color = _hairDark.withValues(alpha: 0.95),
-      );
+        ..addOval(
+          Rect.fromCircle(center: Offset(cx, 46 * scale), radius: 38 * scale),
+        );
+      canvas.drawPath(p, Paint()..color = _hairDark.withValues(alpha: 0.95));
       canvas.drawCircle(
         Offset(cx, 52 * scale),
         34 * scale,
@@ -142,10 +141,25 @@ class _IllustratedAvatarPainter extends CustomPainter {
       final hair = Path()
         ..moveTo(cx - 46 * scale, 62 * scale)
         ..quadraticBezierTo(cx - 50 * scale, 16 * scale, cx, 10 * scale)
-        ..quadraticBezierTo(cx + 50 * scale, 16 * scale, cx + 46 * scale, 62 * scale)
-        ..quadraticBezierTo(cx + 36 * scale, 98 * scale, cx + 24 * scale, 104 * scale)
+        ..quadraticBezierTo(
+          cx + 50 * scale,
+          16 * scale,
+          cx + 46 * scale,
+          62 * scale,
+        )
+        ..quadraticBezierTo(
+          cx + 36 * scale,
+          98 * scale,
+          cx + 24 * scale,
+          104 * scale,
+        )
         ..lineTo(cx - 24 * scale, 104 * scale)
-        ..quadraticBezierTo(cx - 36 * scale, 98 * scale, cx - 46 * scale, 62 * scale)
+        ..quadraticBezierTo(
+          cx - 36 * scale,
+          98 * scale,
+          cx - 46 * scale,
+          62 * scale,
+        )
         ..close();
       canvas.drawPath(hair, Paint()..color = _hairFemale);
       canvas.drawCircle(
@@ -188,9 +202,19 @@ class _IllustratedAvatarPainter extends CustomPainter {
     }
 
     // Ojos
-    final eyeY = variant == WelcomeAvatarVariant.female ? 52 * scale : 50 * scale;
-    canvas.drawCircle(Offset(cx - 12 * scale, eyeY), 3.2 * scale, Paint()..color = _hairDark);
-    canvas.drawCircle(Offset(cx + 12 * scale, eyeY), 3.2 * scale, Paint()..color = _hairDark);
+    final eyeY = variant == WelcomeAvatarVariant.female
+        ? 52 * scale
+        : 50 * scale;
+    canvas.drawCircle(
+      Offset(cx - 12 * scale, eyeY),
+      3.2 * scale,
+      Paint()..color = _hairDark,
+    );
+    canvas.drawCircle(
+      Offset(cx + 12 * scale, eyeY),
+      3.2 * scale,
+      Paint()..color = _hairDark,
+    );
 
     // Sonrisa
     final smile = Path()
@@ -242,8 +266,14 @@ class _IllustratedAvatarPainter extends CustomPainter {
       ),
       Radius.circular(10 * scale),
     );
-    canvas.drawRRect(armL, Paint()..color = _sweaterShadow.withValues(alpha: 0.45));
-    canvas.drawRRect(armR, Paint()..color = _sweaterShadow.withValues(alpha: 0.45));
+    canvas.drawRRect(
+      armL,
+      Paint()..color = _sweaterShadow.withValues(alpha: 0.45),
+    );
+    canvas.drawRRect(
+      armR,
+      Paint()..color = _sweaterShadow.withValues(alpha: 0.45),
+    );
   }
 
   @override

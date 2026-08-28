@@ -72,6 +72,30 @@ service cloud.firestore {
       return isAuthenticated() && getUserRole() in ['SUPERADMIN', 'ADMIN', 'OPERADOR_ASISTENCIA'];
     }
 
+    function isActiveUser() {
+      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isAuthenticated()
+        && exists(userDocPath)
+        && (!('isActive' in get(userDocPath).data) || get(userDocPath).data.isActive == true);
+    }
+
+    function userDocData() {
+      let userDocPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(userDocPath) ? get(userDocPath).data : null;
+    }
+
+    function isLinkedToMember(memberId) {
+      let user = userDocData();
+      return user != null
+        && 'memberId' in user
+        && user.memberId is string
+        && user.memberId == memberId;
+    }
+
+    function canReadMember(memberId) {
+      return isAdmin() || isOperator() || isLinkedToMember(memberId);
+    }
+
     function memberPath(memberId) {
       return /databases/$(database)/documents/members/$(memberId);
     }
@@ -106,6 +130,39 @@ service cloud.firestore {
           request.resource.data.employeeNumber
         )
       );
+    }
+
+    function validUserRole(role) {
+      return role in ['SUPERADMIN', 'ADMIN', 'OPERADOR_ASISTENCIA', 'VOTER', 'USER'];
+    }
+
+    function validSuperAdminMemberIdAssignment() {
+      return !changedKeys().hasAny(['memberId']) ||
+        !('memberId' in request.resource.data) ||
+        request.resource.data.memberId == null ||
+        request.resource.data.memberId == '' ||
+        exists(memberPath(request.resource.data.memberId));
+    }
+
+    function validSuperAdminUserUpdate() {
+      return changedKeys().hasOnly([
+          'role',
+          'memberId',
+          'employeeNumber',
+          'displayName',
+          'isActive',
+          'updatedAt',
+          'email',
+          'gender',
+          'avatarUrl',
+          'avatarMode',
+          'phoneNumber',
+        ])
+        && (!changedKeys().hasAny(['role']) ||
+          validUserRole(request.resource.data.role))
+        && (!changedKeys().hasAny(['isActive']) ||
+          request.resource.data.isActive is bool)
+        && validSuperAdminMemberIdAssignment();
     }
 
     function isValidAuditLogCreate() {
@@ -171,9 +228,10 @@ service cloud.firestore {
     // ==================== USUARIOS ====================
     
     match /users/{userId} {
-      // Tras cambiar reglas: desplegar con `firebase deploy --only firestore:rules`
-      // Leer: usuario autenticado puede leer su propio documento
-      allow read: if isOwner(userId);
+      // get: propio documento o superadmin.
+      // list: solo superadmin (evita enumeración de cuentas).
+      allow get: if isOwner(userId) || isSuperAdmin();
+      allow list: if isSuperAdmin();
       
       // Crear: auto-registro solo como votante, sin escalación de privilegios
       allow create: if isOwner(userId)
@@ -214,9 +272,9 @@ service cloud.firestore {
           request.resource.data.phoneNumber is string)
         && validOptionalUserMemberId();
       
-      // Actualizar: superadmin puede actualizar cualquier usuario, o el usuario puede actualizar su propio perfil
-      // IMPORTANTE: No permitir que usuarios cambien su propio rol (escalación de privilegios)
-      allow update: if isSuperAdmin() || (
+      // Actualizar: superadmin puede administrar roles/estado/vinculación;
+      // el usuario solo puede actualizar su perfil sin cambiar rol.
+      allow update: if (isSuperAdmin() && validSuperAdminUserUpdate()) || (
         isOwner(userId) &&
         request.resource.data.role == resource.data.role &&
         changedKeys().hasOnly([
@@ -240,7 +298,10 @@ service cloud.firestore {
     // ==================== SOCIOS (MEMBERS) ====================
     
     match /members/{memberId} {
-      allow read: if isAuthenticated();
+      // get: admin, operador o socio vinculado a su propia ficha.
+      // list: solo roles con funciones administrativas/operativas.
+      allow get: if isAuthenticated() && canReadMember(memberId);
+      allow list: if isAdmin() || isOperator();
       allow create: if isAdmin();
       allow update: if isSuperAdmin() || isAdmin();
       allow delete: if isSuperAdmin();
@@ -255,7 +316,7 @@ service cloud.firestore {
       // Permitir actualización parcial solo para campos de conteo de votos
       // Esto permite que usuarios VOTER incrementen totalVotes sin poder modificar otros campos
       allow update: if isAdmin() || (
-        isAuthenticated() && 
+        isActiveUser() &&
         electionIsOpen(electionId) &&
         ownVoteCreatedInRequest(electionId) &&
         changedKeys().hasOnly(['totalVotes', 'updatedAt']) &&
@@ -274,7 +335,7 @@ service cloud.firestore {
         // Permitir actualización parcial solo para campo voteCount
         // Esto permite que usuarios VOTER incrementen voteCount sin poder modificar otros campos
         allow update: if isAdmin() || (
-          isAuthenticated() && 
+          isActiveUser() &&
           electionIsOpen(electionId) &&
           ownVoteCreatedInRequest(electionId) &&
           getAfter(userVotePath(electionId)).data.candidateId == candidateId &&
@@ -294,7 +355,7 @@ service cloud.firestore {
           isAuthenticated() &&
           voteId == userVoteId(electionId)
         );
-        allow create: if isAuthenticated()
+        allow create: if isActiveUser()
                 && request.resource.data.keys().hasOnly([
                   'electionId',
                   'userId',

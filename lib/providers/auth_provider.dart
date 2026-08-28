@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -5,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../core/app_scaffold_messenger.dart';
 import '../core/models/user.dart';
 import '../core/models/user_avatar_prefs.dart';
+import '../core/security/account_status.dart';
 import '../services/auth_service.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -12,6 +15,8 @@ class AuthProvider extends ChangeNotifier {
     : _authService = authService ?? AuthService();
 
   final AuthService _authService;
+
+  StreamSubscription<AppUser?>? _profileSubscription;
 
   AppUser? _user;
   bool _isLoading = false;
@@ -28,18 +33,47 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      _authService.authStateChanges.listen((AppUser? u) {
-        _user = u;
-        _isLoading = false;
-        notifyListeners();
-      });
+      _authService.authStateChanges.listen(_onAuthUserChanged);
       _user = await _authService.getCurrentUser();
+      if (_user != null) {
+        _startProfileWatch(_user!.id);
+      }
     } catch (e) {
       debugPrint('Auth provider init error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  void _onAuthUserChanged(AppUser? user) {
+    _profileSubscription?.cancel();
+    _profileSubscription = null;
+    _user = user;
+    if (user != null) {
+      _startProfileWatch(user.id);
+    }
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  void _startProfileWatch(String uid) {
+    _profileSubscription?.cancel();
+    _profileSubscription = _authService
+        .watchUserProfile(uid)
+        .listen(
+          (profile) {
+            _user = profile;
+            notifyListeners();
+          },
+          onError: (Object e) {
+            if (e is AccountInactiveException) {
+              _user = null;
+              _errorMessage = e.message;
+              notifyListeners();
+            }
+          },
+        );
   }
 
   Future<void> signIn(String email, String password) async {
@@ -89,6 +123,8 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
+      _profileSubscription?.cancel();
+      _profileSubscription = null;
       await _authService.signOut();
       _user = null;
     } catch (_) {

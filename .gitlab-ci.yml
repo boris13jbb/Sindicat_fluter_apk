@@ -1,26 +1,39 @@
-# You can override the included template(s) by including variable overrides
-# SAST customization: https://docs.gitlab.com/user/application_security/sast/#available-cicd-variables
-# Secret Detection customization: https://docs.gitlab.com/user/application_security/secret_detection/pipeline/configure/
-# Dependency Scanning customization: https://docs.gitlab.com/user/application_security/dependency_scanning/#customizing-analyzer-behavior
-# Container Scanning customization: https://docs.gitlab.com/user/application_security/container_scanning/#customizing-analyzer-behavior
-# Note that environment variables can be set in several places
-# See https://docs.gitlab.com/ci/variables/#cicd-variable-precedence
+# CI/CD — VotaSind (Flutter + Firebase)
+# Documentación: docs/deployment/ci.md
+
 stages:
-- quality
-- test
+  - quality
+  - test
+
+variables:
+  FLUTTER_VERSION: stable
+
+.flutter_before_script: &flutter_before_script
+  - flutter pub get
 
 flutter_quality:
   stage: quality
   image: ghcr.io/cirruslabs/flutter:stable
+  before_script: *flutter_before_script
   script:
-  - flutter pub get
-  - BASE_SHA="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-HEAD~1}"
-  - CHANGED_DART="$(git diff --name-only "$BASE_SHA" HEAD -- '*.dart')"
-  - if [ -n "$CHANGED_DART" ]; then dart format --output=none --set-exit-if-changed $CHANGED_DART; fi
-  - dart analyze lib test
-  - flutter test --no-pub --enable-experiment=dot-shorthands --reporter compact
+    - dart format --output=none --set-exit-if-changed lib test
+    - dart analyze lib test
+    - flutter test --no-pub --enable-experiment=dot-shorthands --reporter compact
 
-sast:
+functions_test:
   stage: test
-include:
-- template: Security/SAST.gitlab-ci.yml
+  image: node:22-bookworm
+  before_script:
+    - cd functions && npm ci
+  script:
+    - npm run check
+
+firestore_rules:
+  stage: test
+  image: node:22-bookworm
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq openjdk-21-jre-headless
+    - npm ci
+    - npm install -g firebase-tools
+  script:
+    - bash tool/test_firebase_rules.sh

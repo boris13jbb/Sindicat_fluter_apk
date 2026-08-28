@@ -4,11 +4,7 @@ import '../app_design_tokens.dart';
 
 /// Escudo oficial del sindicato (Vicunha Textil · Ecuador).
 class AppBrandLogo extends StatelessWidget {
-  const AppBrandLogo({
-    super.key,
-    this.size = 88,
-    this.padding = 10,
-  });
+  const AppBrandLogo({super.key, this.size = 88, this.padding = 10});
 
   static const String assetPath = 'assets/images/logo_sindicato_vicunha.png';
 

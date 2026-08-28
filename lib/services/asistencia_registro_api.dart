@@ -16,4 +16,3 @@ abstract class AsistenciaRegistroApi {
     bool registrosAttendanceEvents = false,
   });
 }
-

@@ -28,6 +28,7 @@ class ElectionCard extends StatelessWidget {
   final VoidCallback onAddCandidate;
   final VoidCallback onViewResults;
   final VoidCallback onDelete;
+
   /// Listado `/voto/archived_elections`: menú reducido y toque principal a resultados.
   final bool listIsArchived;
   final VoidCallback? onArchive;
@@ -86,8 +87,14 @@ class ElectionCard extends StatelessWidget {
     }
   }
 
-  ({Color dot, Color badgeBg, Color badgeFg, String badgeLabel, String subtitle})
-      _presentation(BuildContext context) {
+  ({
+    Color dot,
+    Color badgeBg,
+    Color badgeFg,
+    String badgeLabel,
+    String subtitle,
+  })
+  _presentation(BuildContext context) {
     if (election.status == ElectionStatus.draft) {
       return (
         dot: Colors.orange.shade600,
@@ -212,7 +219,8 @@ class ElectionCard extends StatelessWidget {
                         election.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
                               fontWeight: FontWeight.w800,
                               color: AppDesignTokens.primaryDark,
                               height: 1.2,
@@ -224,16 +232,20 @@ class ElectionCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppDesignTokens.primaryDark
-                                  .withValues(alpha: 0.55),
-                            ),
+                          color: AppDesignTokens.primaryDark.withValues(
+                            alpha: 0.55,
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: p.badgeBg,
                     borderRadius: BorderRadius.circular(999),
@@ -252,10 +264,15 @@ class ElectionCard extends StatelessWidget {
                   PopupMenuButton<String>(
                     icon: Icon(
                       Icons.more_vert_rounded,
-                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.45),
+                      color: AppDesignTokens.primaryDark.withValues(
+                        alpha: 0.45,
+                      ),
                     ),
                     padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
                     onSelected: (value) {
                       switch (value) {
                         case 'dashboard':

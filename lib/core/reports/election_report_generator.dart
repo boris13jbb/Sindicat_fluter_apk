@@ -429,7 +429,9 @@ class ElectionReportGenerator {
             children: [
               pw.Expanded(child: _gridField('TÍTULO', election.title)),
               pw.SizedBox(width: 10),
-              pw.Expanded(child: _gridField('DESCRIPCIÓN', election.description)),
+              pw.Expanded(
+                child: _gridField('DESCRIPCIÓN', election.description),
+              ),
             ],
           ),
           pw.SizedBox(height: 10),
@@ -834,7 +836,10 @@ class ElectionReportGenerator {
       pw.TableRow(
         decoration: pw.BoxDecoration(color: _greyLine),
         children: [
-          _td('TOTAL', pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
+          _td(
+            'TOTAL',
+            pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+          ),
           _td('', pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
           _td(
             '$totalVotes',
@@ -895,14 +900,14 @@ class ElectionReportGenerator {
 
     final body = totalVotes == 0
         ? 'En la elección "$title" no se registraron votos válidos al momento '
-            'de generar este documento. El reporte sirve como constancia para '
-            'transparencia y control interno.'
+              'de generar este documento. El reporte sirve como constancia para '
+              'transparencia y control interno.'
         : 'La elección "$title" registró un total de $totalVotes voto(s) '
-            'válido(s). El candidato "${winner?.name ?? '—'}" obtuvo la mayor '
-            'preferencia. '
-            '${sorted.length > 1 ? 'Demás postulantes: $others.' : ''} '
-            'Este documento constituye un respaldo documental para '
-            'transparencia y archivo electoral.';
+              'válido(s). El candidato "${winner?.name ?? '—'}" obtuvo la mayor '
+              'preferencia. '
+              '${sorted.length > 1 ? 'Demás postulantes: $others.' : ''} '
+              'Este documento constituye un respaldo documental para '
+              'transparencia y archivo electoral.';
 
     return pw.Container(
       padding: const pw.EdgeInsets.all(12),
@@ -1001,7 +1006,11 @@ class ElectionReportGenerator {
     );
   }
 
-  pw.Widget _pageFooter(DateTime now, {required int page, required int totalPages}) {
+  pw.Widget _pageFooter(
+    DateTime now, {
+    required int page,
+    required int totalPages,
+  }) {
     final fecha = _formatDateTime(now);
     return pw.Column(
       children: [

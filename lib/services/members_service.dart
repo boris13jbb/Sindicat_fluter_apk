@@ -328,6 +328,13 @@ class MembersService {
       final doc = await _firestore.collection('members').doc(memberId).get();
       if (!doc.exists) return null;
       return Member.fromMap(doc.data()!, doc.id);
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint('Acceso denegado al socio solicitado.');
+        return null;
+      }
+      debugPrint('Error obteniendo socio: $e');
+      return null;
     } catch (e) {
       debugPrint('Error obteniendo socio: $e');
       return null;

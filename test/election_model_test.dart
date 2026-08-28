@@ -51,8 +51,9 @@ void main() {
       final e = Election.fromMap({
         'title': 'Sin bandera',
         'startDate': fixedDate.millisecondsSinceEpoch,
-        'endDate':
-            fixedDate.add(const Duration(days: 1)).millisecondsSinceEpoch,
+        'endDate': fixedDate
+            .add(const Duration(days: 1))
+            .millisecondsSinceEpoch,
         'isActive': true,
         'createdBy': 'admin',
       }, 'e1');

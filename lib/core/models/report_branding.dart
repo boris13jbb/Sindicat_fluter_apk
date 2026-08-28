@@ -1,10 +1,6 @@
 /// Marca / logo para reportes PDF (Firestore `app_settings/branding`).
 class ReportBranding {
-  const ReportBranding({
-    this.reportLogoUrl,
-    this.updatedAt,
-    this.updatedBy,
-  });
+  const ReportBranding({this.reportLogoUrl, this.updatedAt, this.updatedBy});
 
   final String? reportLogoUrl;
   final int? updatedAt;

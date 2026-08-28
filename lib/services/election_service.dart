@@ -6,6 +6,7 @@ import '../core/models/election_result.dart';
 import '../core/models/audit_log.dart';
 import '../core/models/member.dart';
 import '../core/security/election_visibility.dart';
+import '../core/security/account_status.dart';
 import 'audit_service.dart';
 import 'asistencia_service.dart';
 import 'members_service.dart';
@@ -98,7 +99,8 @@ class ElectionService {
           return snap.docs
               .map((d) => Election.fromMap(d.data(), d.id))
               .where(
-                (e) => !e.isArchived && canVoteInElection(election: e, now: now),
+                (e) =>
+                    !e.isArchived && canVoteInElection(election: e, now: now),
               )
               .toList();
         });
@@ -323,15 +325,15 @@ class ElectionService {
       await _ensureUniqueCandidateName(candidate);
       final candRef = candidate.id.trim().isNotEmpty
           ? _firestore
-              .collection('elections')
-              .doc(candidate.electionId)
-              .collection('candidates')
-              .doc(candidate.id.trim())
+                .collection('elections')
+                .doc(candidate.electionId)
+                .collection('candidates')
+                .doc(candidate.id.trim())
           : _firestore
-              .collection('elections')
-              .doc(candidate.electionId)
-              .collection('candidates')
-              .doc();
+                .collection('elections')
+                .doc(candidate.electionId)
+                .collection('candidates')
+                .doc();
       final data = candidate.toMap()..['id'] = candRef.id;
       // Ensure required fields are present
       data['electionId'] = candidate.electionId;
@@ -770,14 +772,25 @@ class VoteService {
       throw Exception(electionVotingStatusMessage(votingStatus));
     }
 
-    // 🆕 Validar elegibilidad antes de permitir el voto
-    if (memberId != null && memberId.isNotEmpty) {
+    // Validar elegibilidad antes de permitir el voto
+    final memberRequiredMessage = VoteEligibilityPolicy.memberIdRequiredMessage(
+      requireAttendance: election.requireAttendance,
+      memberId: memberId,
+    );
+    if (memberRequiredMessage != null) {
+      debugPrint(
+        '   ❌ Voto bloqueado: falta memberId con asistencia requerida',
+      );
+      throw Exception(memberRequiredMessage);
+    }
+
+    if (election.requireAttendance) {
       debugPrint('   🔍 Validando elegibilidad...');
       try {
         final isEligible = await isUserEligibleToVote(
           electionId: electionId,
           userId: userId,
-          memberId: memberId,
+          memberId: memberId!.trim(),
         );
 
         if (!isEligible) {
@@ -792,10 +805,6 @@ class VoteService {
         debugPrint('   ❌ Error durante validación de elegibilidad: $e');
         rethrow;
       }
-    } else {
-      debugPrint(
-        '   ⚠️ MemberId no proporcionado - omitiendo validación de elegibilidad',
-      );
     }
 
     final batch = _firestore.batch();

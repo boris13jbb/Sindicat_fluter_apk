@@ -25,11 +25,12 @@ class QREncodingHelper {
         'No se puede generar QR: El socio no tiene Número de Trabajador (workerCode) asignado',
       );
     }
-    
+
     final qrData = {
       'nombres': member.firstName,
       'apellidos': member.lastName,
-      'identificador': member.workerCode, // SIEMPRE usar workerCode, nunca documentId
+      'identificador':
+          member.workerCode, // SIEMPRE usar workerCode, nunca documentId
     };
     return jsonEncode(qrData);
   }

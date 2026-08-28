@@ -292,11 +292,20 @@ For more issues, see [Troubleshooting Guide](docs/troubleshooting/common-issues.
 4. Specify platform and version
 
 ### Pull Requests
-1. Fork the repository
-2. Create feature branch
-3. Make changes
-4. Test thoroughly
-5. Submit PR with description
+
+```text
+feature/nueva-funcion → Pull Request → main
+         ↓
+   CI Gate debe estar ✅
+   (Flutter + Functions + Security Rules)
+```
+
+1. Crear rama desde `main`: `git checkout -b feature/mi-cambio`
+2. Validar local: `.\tool\verify.ps1`
+3. Push y abrir PR hacia `main`
+4. Esperar **CI Gate** en verde antes del merge
+
+Guía completa: [`docs/deployment/git-workflow.md`](docs/deployment/git-workflow.md)
 
 ### Code Style
 - Follow Dart style guide

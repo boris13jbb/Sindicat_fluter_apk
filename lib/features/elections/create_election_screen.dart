@@ -30,8 +30,7 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
   bool _loading = false;
   final AsistenciaService _asistenciaService = AsistenciaService();
   late final Stream<List<EventoAsistenciaVinculoEleccion>>
-      _eventosVinculoStream =
-      _asistenciaService.watchEventosParaVinculoEleccion();
+  _eventosVinculoStream = _asistenciaService.watchEventosParaVinculoEleccion();
 
   @override
   void dispose() {
@@ -139,15 +138,17 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
             Expanded(
               child: Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(AppDesignTokens.horizontalPadding),
+                  padding: const EdgeInsets.all(
+                    AppDesignTokens.horizontalPadding,
+                  ),
                   child: PremiumCard(
                     margin: EdgeInsets.zero,
                     child: Text(
                       'Solo administradores pueden crear elecciones.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: AppDesignTokens.primaryDark,
-                          ),
+                        color: AppDesignTokens.primaryDark,
+                      ),
                     ),
                   ),
                 ),
@@ -191,7 +192,8 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                     children: [
                       Text(
                         'Datos principales',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
                               fontWeight: FontWeight.w800,
                               color: AppDesignTokens.primaryDark,
                             ),
@@ -201,23 +203,27 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                         controller: _titleController,
                         textCapitalization: TextCapitalization.sentences,
                         decoration: votoPremiumInputDecoration('Nombre'),
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Requerido'
+                            : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
                         controller: _descriptionController,
                         decoration: votoPremiumInputDecoration('Descripción'),
                         maxLines: 4,
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Requerido'
+                            : null,
                       ),
                       const SizedBox(height: 12),
                       InkWell(
                         onTap: () => _pickDate(true),
                         borderRadius: BorderRadius.circular(14),
                         child: InputDecorator(
-                          decoration: votoPremiumInputDecoration('Fecha inicio'),
+                          decoration: votoPremiumInputDecoration(
+                            'Fecha inicio',
+                          ),
                           child: Row(
                             children: [
                               Expanded(
@@ -228,7 +234,7 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                                     fontWeight: FontWeight.w600,
                                     color: _startDate == null
                                         ? AppDesignTokens.primaryDark
-                                            .withValues(alpha: 0.45)
+                                              .withValues(alpha: 0.45)
                                         : AppDesignTokens.primaryDark,
                                   ),
                                 ),
@@ -247,7 +253,9 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                         onTap: () => _pickDate(false),
                         borderRadius: BorderRadius.circular(14),
                         child: InputDecorator(
-                          decoration: votoPremiumInputDecoration('Fecha cierre'),
+                          decoration: votoPremiumInputDecoration(
+                            'Fecha cierre',
+                          ),
                           child: Row(
                             children: [
                               Expanded(
@@ -258,7 +266,7 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                                     fontWeight: FontWeight.w600,
                                     color: _endDate == null
                                         ? AppDesignTokens.primaryDark
-                                            .withValues(alpha: 0.45)
+                                              .withValues(alpha: 0.45)
                                         : AppDesignTokens.primaryDark,
                                   ),
                                 ),
@@ -275,7 +283,8 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                       const SizedBox(height: 22),
                       Text(
                         'Reglas',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
                               fontWeight: FontWeight.w800,
                               color: AppDesignTokens.primaryDark,
                             ),
@@ -286,7 +295,8 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                         subtitle:
                             'Si está desactivada, la elección no aparece en el listado público.',
                         value: _isVisibleToVoters,
-                        onChanged: (v) => setState(() => _isVisibleToVoters = v),
+                        onChanged: (v) =>
+                            setState(() => _isVisibleToVoters = v),
                       ),
                       _premiumSwitchTile(
                         title: 'Mostrar resultados en vivo',
@@ -370,7 +380,8 @@ class _CreateElectionScreenState extends State<CreateElectionScreen> {
                               );
                               return;
                             }
-                            if (_requireAttendance && _eventoAsistenciaId == null) {
+                            if (_requireAttendance &&
+                                _eventoAsistenciaId == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text(

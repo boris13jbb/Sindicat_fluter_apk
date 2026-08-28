@@ -33,7 +33,8 @@ class _VotingScreenState extends State<VotingScreen> {
 
   bool _localVoteDone = false;
   String _userId = '';
-  String? _memberId; // ID canónico del socio para validación de elegibilidad
+  String? _memberId;
+  bool _memberIdResolved = false;
 
   @override
   void initState() {
@@ -45,29 +46,23 @@ class _VotingScreenState extends State<VotingScreen> {
     _initializeMemberId();
   }
 
-  /// Inicializa el memberId canónico del socio para validar elegibilidad.
+  /// Resuelve el `memberId` canónico del padrón (sin usar `userId` como fallback).
   Future<void> _initializeMemberId() async {
     try {
       final user = await _authService.getCurrentUser();
-      if (user != null) {
-        setState(() {
-          _memberId = user.memberId?.trim().isNotEmpty == true
-              ? user.memberId!.trim()
-              : user.employeeNumber?.trim().isNotEmpty == true
-              ? user.employeeNumber!.trim()
-              : _userId;
-        });
-        debugPrint(
-          '🗳️ MemberId inicializado: $_memberId '
-          '(tipo: ${user.memberId?.trim().isNotEmpty == true
-              ? "users.memberId"
-              : user.employeeNumber?.trim().isNotEmpty == true
-              ? "employeeNumber"
-              : "userId fallback"})',
-        );
-      }
+      if (!mounted) return;
+      setState(() {
+        _memberId = user?.memberId?.trim().isNotEmpty == true
+            ? user!.memberId!.trim()
+            : null;
+        _memberIdResolved = true;
+      });
+      debugPrint('🗳️ MemberId inicializado: ${_memberId ?? "sin vincular"}');
     } catch (e) {
       debugPrint('⚠️ Error al inicializar memberId: $e');
+      if (mounted) {
+        setState(() => _memberIdResolved = true);
+      }
     }
   }
 
@@ -121,8 +116,8 @@ class _VotingScreenState extends State<VotingScreen> {
             child: Text(
               'Inicia sesión para votar.',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: AppDesignTokens.primaryDark.withValues(alpha: 0.8),
-                  ),
+                color: AppDesignTokens.primaryDark.withValues(alpha: 0.8),
+              ),
               textAlign: TextAlign.center,
             ),
           ),
@@ -203,7 +198,9 @@ class _VotingScreenState extends State<VotingScreen> {
                     }
                     final boot = bootSnap.data!;
                     if (boot.election == null) {
-                      return const Center(child: Text('La elección no existe.'));
+                      return const Center(
+                        child: Text('La elección no existe.'),
+                      );
                     }
 
                     return StreamBuilder<ElectionLiveState>(
@@ -255,18 +252,48 @@ class _VotingScreenState extends State<VotingScreen> {
                               ),
                             );
                           }
-                          if (_memberId == null || _memberId!.isEmpty) {
+                          if (!_memberIdResolved) {
                             return const Center(
                               child: CircularProgressIndicator(),
                             );
                           }
+                          if (_memberId == null || _memberId!.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.link_off, size: 48),
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'Tu cuenta no está vinculada al padrón de socios. '
+                                      'Un administrador debe vincularla antes de votar '
+                                      'en elecciones con requisito de asistencia.',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    FilledButton.icon(
+                                      onPressed: () => Navigator.pushNamed(
+                                        context,
+                                        '/profile',
+                                      ),
+                                      icon: const Icon(Icons.person_outline),
+                                      label: const Text('Ir a mi perfil'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
                           return StreamBuilder<bool>(
-                            stream: _voteService.watchUserEligibilityForElection(
-                              electionId: widget.electionId,
-                              attendanceEventId: eventoId,
-                              userId: _userId,
-                              memberId: _memberId!,
-                            ),
+                            stream: _voteService
+                                .watchUserEligibilityForElection(
+                                  electionId: widget.electionId,
+                                  attendanceEventId: eventoId,
+                                  userId: _userId,
+                                  memberId: _memberId!,
+                                ),
                             builder: (context, attSnap) {
                               if (attSnap.hasError) {
                                 return _VoteLoadError(
@@ -307,10 +334,7 @@ class _VotingScreenState extends State<VotingScreen> {
         ],
       ),
       bottomNavigationBar: role != null
-          ? VotoModuleBottomNavigation(
-              role: role,
-              selection: VotoNavSlot.voto,
-            )
+          ? VotoModuleBottomNavigation(role: role, selection: VotoNavSlot.voto)
           : null,
     );
   }
@@ -378,12 +402,10 @@ class _VotingCandidateOptionTile extends StatelessWidget {
         ),
         child: Material(
           color: Colors.white,
-          borderRadius:
-              BorderRadius.circular(AppDesignTokens.radiusLarge),
+          borderRadius: BorderRadius.circular(AppDesignTokens.radiusLarge),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              borderRadius:
-                  BorderRadius.circular(AppDesignTokens.radiusLarge),
+              borderRadius: BorderRadius.circular(AppDesignTokens.radiusLarge),
               border: Border.all(
                 color: selected
                     ? accent.withValues(alpha: 0.55)
@@ -459,10 +481,7 @@ class _VotingCandidateOptionTile extends StatelessWidget {
 }
 
 class _VotingCandidateAvatar extends StatelessWidget {
-  const _VotingCandidateAvatar({
-    this.imageUrl,
-    required this.accent,
-  });
+  const _VotingCandidateAvatar({this.imageUrl, required this.accent});
 
   final String? imageUrl;
   final Color accent;
@@ -520,7 +539,9 @@ class _VoteLoadError extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppDesignTokens.primaryDark.withValues(alpha: 0.85)),
+                style: TextStyle(
+                  color: AppDesignTokens.primaryDark.withValues(alpha: 0.85),
+                ),
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
@@ -657,9 +678,9 @@ class _VotingContentState extends State<_VotingContent> {
                     Text(
                       'Selecciona una opción',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: AppDesignTokens.primaryDark,
-                          ),
+                        fontWeight: FontWeight.w800,
+                        color: AppDesignTokens.primaryDark,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -874,9 +895,9 @@ class _AlreadyVotedContent extends StatelessWidget {
               Text(
                 '¡Voto registrado!',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: AppDesignTokens.primaryDark,
-                    ),
+                  fontWeight: FontWeight.w800,
+                  color: AppDesignTokens.primaryDark,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
@@ -920,10 +941,10 @@ class _AlreadyVotedContent extends StatelessWidget {
                     election?.showResultsAutomatically == false
                         ? 'Los resultados serán publicados por administración.'
                         : election == null ||
-                                !election.isActive ||
-                                !election.isVisibleToVoters
-                            ? 'Los resultados no están publicados para votantes.'
-                            : 'Los resultados estarán disponibles cuando finalice la elección.',
+                              !election.isActive ||
+                              !election.isVisibleToVoters
+                        ? 'Los resultados no están publicados para votantes.'
+                        : 'Los resultados estarán disponibles cuando finalice la elección.',
                     textAlign: TextAlign.center,
                     style: AppDesignTokens.bodyMuted(context),
                   );

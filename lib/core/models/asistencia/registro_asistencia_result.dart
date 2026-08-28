@@ -12,4 +12,3 @@ class RegistroAsistenciaResult {
 
   bool get ok => asistenciaId != null && asistenciaId!.isNotEmpty;
 }
-

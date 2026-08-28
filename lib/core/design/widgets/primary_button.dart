@@ -23,20 +23,13 @@ class PrimaryButton extends StatelessWidget {
       child = const SizedBox(
         height: 24,
         width: 24,
-        child: CircularProgressIndicator(
-          strokeWidth: 2.5,
-          color: Colors.white,
-        ),
+        child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
       );
     } else if (icon != null) {
       child = Row(
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 22),
-          const SizedBox(width: 8),
-          Text(label),
-        ],
+        children: [Icon(icon, size: 22), const SizedBox(width: 8), Text(label)],
       );
     } else {
       child = Text(label);
@@ -49,7 +42,9 @@ class PrimaryButton extends StatelessWidget {
         style: FilledButton.styleFrom(
           backgroundColor: AppDesignTokens.primary,
           foregroundColor: Colors.white,
-          disabledBackgroundColor: AppDesignTokens.primary.withValues(alpha: 0.55),
+          disabledBackgroundColor: AppDesignTokens.primary.withValues(
+            alpha: 0.55,
+          ),
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppDesignTokens.radiusMedium),

@@ -10,11 +10,11 @@ Future<TaskSnapshot> storagePutCandidateImage(
   Uint8List bytes,
   SettableMetadata metadata,
 ) async {
-  debugPrint('CandidateStorage: subiendo imagen a Storage path=${ref.fullPath}');
+  debugPrint(
+    'CandidateStorage: subiendo imagen a Storage path=${ref.fullPath}',
+  );
 
-  if (!kIsWeb &&
-      localPath.isNotEmpty &&
-      !localPath.startsWith('blob:')) {
+  if (!kIsWeb && localPath.isNotEmpty && !localPath.startsWith('blob:')) {
     final f = File(localPath);
     final exists = await f.exists();
     final len = exists ? await f.length() : 0;
@@ -30,7 +30,9 @@ Future<TaskSnapshot> storagePutCandidateImage(
       '(${bytes.length} bytes)',
     );
   } else if (localPath.startsWith('blob:')) {
-    debugPrint('CandidateStorage: ruta tipo blob → putData (${bytes.length} bytes)');
+    debugPrint(
+      'CandidateStorage: ruta tipo blob → putData (${bytes.length} bytes)',
+    );
   }
 
   final snapshot = await ref.putData(bytes, metadata);

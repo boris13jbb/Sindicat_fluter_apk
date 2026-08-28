@@ -26,10 +26,7 @@ class VotoWaveHeader extends StatelessWidget {
         height: 168,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              AppDesignTokens.primaryDark,
-              AppDesignTokens.primary,
-            ],
+            colors: [AppDesignTokens.primaryDark, AppDesignTokens.primary],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -53,7 +50,8 @@ class VotoWaveHeader extends StatelessWidget {
                       children: [
                         Text(
                           title,
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -63,7 +61,8 @@ class VotoWaveHeader extends StatelessWidget {
                           subtitle,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
                                 color: Colors.white.withValues(alpha: 0.9),
                               ),
                         ),
@@ -152,8 +151,7 @@ class VotoModuleBottomNavigation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = role == UserRole.admin || role == UserRole.superadmin;
-    final canManageAttendance =
-        isAdmin || role == UserRole.operadorAsistencia;
+    final canManageAttendance = isAdmin || role == UserRole.operadorAsistencia;
     return SafeArea(
       top: false,
       minimum: const EdgeInsets.fromLTRB(16, 0, 16, 14),
@@ -282,8 +280,7 @@ class VotoNavItem extends StatelessWidget {
                     style: TextStyle(
                       color: fg,
                       fontSize: 11,
-                      fontWeight:
-                          selected ? FontWeight.w900 : FontWeight.w600,
+                      fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
                     ),
                   ),
                 ),

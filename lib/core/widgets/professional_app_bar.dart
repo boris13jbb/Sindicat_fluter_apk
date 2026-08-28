@@ -9,6 +9,7 @@ class ProfessionalAppBar extends StatelessWidget
     required this.title,
     this.onNavigateBack,
     this.actions,
+
     /// Anchura máxima del bloque scrolleable para [actions]; evita tapar el título en filas muy estrechas.
     this.actionsFlexMaxFraction = 0.48,
   });
@@ -34,12 +35,10 @@ class ProfessionalAppBar extends StatelessWidget
 
     final rawActions = actions;
     if (rawActions != null && rawActions.isNotEmpty) {
-      final needsScrollRail =
-          rawActions.length > 2 && screenW < 560;
-      final maxActionsW = math.max(
-        screenW * actionsFlexMaxFraction,
-        math.min(screenW - 140, 260.0),
-      ).toDouble();
+      final needsScrollRail = rawActions.length > 2 && screenW < 560;
+      final maxActionsW = math
+          .max(screenW * actionsFlexMaxFraction, math.min(screenW - 140, 260.0))
+          .toDouble();
 
       normalizedActions = needsScrollRail
           ? SizedBox(
@@ -48,9 +47,9 @@ class ProfessionalAppBar extends StatelessWidget
               child: Align(
                 alignment: Alignment.centerRight,
                 child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(context).copyWith(
-                    physics: const BouncingScrollPhysics(),
-                  ),
+                  behavior: ScrollConfiguration.of(
+                    context,
+                  ).copyWith(physics: const BouncingScrollPhysics()),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
@@ -72,7 +71,9 @@ class ProfessionalAppBar extends StatelessWidget
     return AppBar(
       title: Text(
         title,
-        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
+        style: theme.textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),

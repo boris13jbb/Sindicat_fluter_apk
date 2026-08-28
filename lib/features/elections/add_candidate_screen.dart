@@ -123,8 +123,7 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
         );
         _imageUrlController.text = imageUrlResolved;
       } else {
-        imageUrlResolved =
-            trimmedManualUrl.isEmpty ? null : trimmedManualUrl;
+        imageUrlResolved = trimmedManualUrl.isEmpty ? null : trimmedManualUrl;
       }
 
       final service = ElectionService();
@@ -213,8 +212,9 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
                         decoration: votoPremiumInputDecoration(
                           'Nombre completo *',
                         ),
-                        validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Requerido' : null,
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Requerido'
+                            : null,
                       ),
                       const SizedBox(height: 12),
                       TextFormField(
