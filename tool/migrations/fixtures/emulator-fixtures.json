@@ -1,0 +1,192 @@
+{
+  "personas": [
+    {
+      "id": "persona-ok",
+      "data": {
+        "nombres": "Ana",
+        "apellidos": "Garcia",
+        "identificador": "W001"
+      }
+    },
+    {
+      "id": "persona-dup",
+      "data": {
+        "nombres": "Luis",
+        "apellidos": "Rios",
+        "identificador": "W-DUP"
+      }
+    },
+    {
+      "id": "persona-nomember",
+      "data": {
+        "nombres": "Sin",
+        "apellidos": "Member",
+        "identificador": "NO-MATCH"
+      }
+    },
+    {
+      "id": "member-m1",
+      "data": {
+        "nombres": "Ya",
+        "apellidos": "Migrado",
+        "identificador": "W-MIG",
+        "migrationVersion": "legacy-attendance-v1"
+      }
+    }
+  ],
+  "members": [
+    {
+      "id": "member-m1",
+      "data": {
+        "memberNumber": "100",
+        "workerCode": "W001",
+        "documentId": "CC100",
+        "firstName": "Ana",
+        "lastName": "Garcia",
+        "fullName": "Ana Garcia",
+        "email": "ana@example.com",
+        "status": "active"
+      }
+    },
+    {
+      "id": "member-dup-a",
+      "data": {
+        "memberNumber": "201",
+        "workerCode": "W-DUP",
+        "firstName": "Luis",
+        "lastName": "A",
+        "fullName": "Luis A",
+        "status": "active"
+      }
+    },
+    {
+      "id": "member-dup-b",
+      "data": {
+        "memberNumber": "202",
+        "workerCode": "W-DUP",
+        "firstName": "Luis",
+        "lastName": "B",
+        "fullName": "Luis B",
+        "status": "active"
+      }
+    },
+    {
+      "id": "member-mig",
+      "data": {
+        "memberNumber": "300",
+        "workerCode": "W-MIG",
+        "firstName": "Ya",
+        "lastName": "Migrado",
+        "fullName": "Ya Migrado",
+        "status": "active"
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": "user-with-member",
+      "data": {
+        "email": "ana@example.com",
+        "role": "VOTER",
+        "memberId": "member-m1"
+      }
+    },
+    {
+      "id": "user-no-member",
+      "data": {
+        "email": "orphan@example.com",
+        "role": "VOTER",
+        "employeeNumber": "100"
+      }
+    },
+    {
+      "id": "user-review",
+      "data": {
+        "email": "review@example.com",
+        "role": "VOTER",
+        "employeeNumber": "W-DUP"
+      }
+    }
+  ],
+  "eventos": [
+    {
+      "id": "evento-valid",
+      "data": {
+        "nombre": "Asamblea",
+        "fecha": 1700000000000,
+        "tipoReunion": "ORDINARIA",
+        "activo": true
+      }
+    },
+    {
+      "id": "evento-dup",
+      "data": {
+        "nombre": "Duplicado",
+        "fecha": 1700001000000,
+        "tipoReunion": "ORDINARIA",
+        "activo": true
+      }
+    },
+    {
+      "id": "evento-invalid",
+      "data": {
+        "nombre": "",
+        "fecha": 0
+      }
+    }
+  ],
+  "attendanceEvents": [
+    {
+      "id": "evento-dup",
+      "data": {
+        "nombre": "Duplicado moderno",
+        "fecha": 1700001000000,
+        "legacySource": "eventos",
+        "legacyDocumentId": "evento-dup",
+        "migrationVersion": "legacy-attendance-v1"
+      }
+    }
+  ],
+  "asistencias": [
+    {
+      "id": "YXR0ZW5kYW5jZV9ldmVudHM=_bWVtYmVyLW0x",
+      "data": {
+        "eventoId": "evento-valid",
+        "personaId": "persona-ok",
+        "fechaRegistro": 1700000500000,
+        "asistio": true,
+        "metodoRegistro": "MANUAL"
+      }
+    },
+    {
+      "id": "legacy-orphan",
+      "data": {
+        "eventoId": "evento-missing",
+        "personaId": "persona-ok",
+        "fechaRegistro": 1700000600000,
+        "asistio": true
+      }
+    },
+    {
+      "id": "legacy-dup",
+      "data": {
+        "eventoId": "evento-dup",
+        "personaId": "persona-ok",
+        "fechaRegistro": 1700000700000,
+        "asistio": true
+      }
+    }
+  ],
+  "modernAttendances": [
+    {
+      "id": "bWVtYmVyLW0x",
+      "eventId": "evento-dup",
+      "data": {
+        "eventoId": "evento-dup",
+        "personaId": "member-m1",
+        "fechaRegistro": 1700000800000,
+        "asistio": true
+      }
+    }
+  ]
+}
