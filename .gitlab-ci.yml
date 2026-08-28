@@ -32,7 +32,7 @@ firestore_rules:
   stage: test
   image: node:22-bookworm
   before_script:
-    - apt-get update -qq && apt-get install -y -qq default-jre-headless
+    - apt-get update -qq && apt-get install -y -qq openjdk-21-jre-headless
     - npm ci
     - npm install -g firebase-tools
   script:
