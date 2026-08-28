@@ -422,49 +422,38 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
       debugPrint('   ✅ Agregados ${result.length} members');
 
       try {
-        final personasSnapshot = await _asistenciaService.firestore
-            .collection('personas')
-            .get();
+        final legacyPersonas = await _asistenciaService
+            .fetchAllLegacyPersonas();
 
         debugPrint(
-          '   📊 Encontradas ${personasSnapshot.docs.length} personas legacy',
+          '   📊 Encontradas ${legacyPersonas.length} personas legacy',
         );
 
         int personasAgregadas = 0;
-        for (final doc in personasSnapshot.docs) {
-          try {
-            final persona = PersonaAsistencia.fromMap(doc.data(), doc.id);
-            final identificador = persona.identificador;
+        for (final persona in legacyPersonas) {
+          final identificador = persona.identificador;
 
-            if (identificador != null &&
-                identificador.isNotEmpty &&
-                identificadoresVistos.contains(identificador)) {
-              continue;
-            }
-
-            if (identificador != null && identificador.isNotEmpty) {
-              identificadoresVistos.add(identificador);
-            }
-
-            if (_busqueda.isNotEmpty) {
-              final query = _busqueda.toLowerCase();
-              final matches =
-                  persona.nombreCompleto.toLowerCase().contains(query) ||
-                  (persona.identificador?.toLowerCase().contains(query) ??
-                      false);
-
-              if (!matches) continue;
-            }
-
-            result.add({
-              'id': persona.id,
-              'data': persona,
-              'source': 'persona',
-            });
-            personasAgregadas++;
-          } catch (e) {
-            debugPrint('   ❌ Error procesando persona ${doc.id}: $e');
+          if (identificador != null &&
+              identificador.isNotEmpty &&
+              identificadoresVistos.contains(identificador)) {
+            continue;
           }
+
+          if (identificador != null && identificador.isNotEmpty) {
+            identificadoresVistos.add(identificador);
+          }
+
+          if (_busqueda.isNotEmpty) {
+            final query = _busqueda.toLowerCase();
+            final matches =
+                persona.nombreCompleto.toLowerCase().contains(query) ||
+                (persona.identificador?.toLowerCase().contains(query) ?? false);
+
+            if (!matches) continue;
+          }
+
+          result.add({'id': persona.id, 'data': persona, 'source': 'persona'});
+          personasAgregadas++;
         }
 
         debugPrint('   ✅ Agregadas $personasAgregadas personas legacy');

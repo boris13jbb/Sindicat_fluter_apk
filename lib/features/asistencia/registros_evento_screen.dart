@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -65,11 +64,8 @@ class _RegistrosEventoScreenState extends State<RegistrosEventoScreen> {
         role: role,
         selection: VotoNavSlot.asistencia,
       ),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('attendance_events')
-            .doc(eventId)
-            .snapshots(),
+      body: StreamBuilder<AttendanceEvent?>(
+        stream: _attendanceSvc.watchEventById(eventId),
         builder: (context, evSnap) {
           if (evSnap.hasError) {
             return Column(
@@ -85,7 +81,7 @@ class _RegistrosEventoScreenState extends State<RegistrosEventoScreen> {
                     child: Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
-                        'Error: ${evSnap.error}',
+                        'No se pudo cargar el evento.',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -95,7 +91,7 @@ class _RegistrosEventoScreenState extends State<RegistrosEventoScreen> {
             );
           }
 
-          if (!evSnap.hasData || !evSnap.data!.exists) {
+          if (!evSnap.hasData || evSnap.data == null) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -120,8 +116,9 @@ class _RegistrosEventoScreenState extends State<RegistrosEventoScreen> {
             );
           }
 
-          final map = evSnap.data!.data() ?? {};
-          final nombreEv = map['nombre'] as String? ?? '(sin nombre)';
+          final nombreEv = evSnap.data!.nombre.isEmpty
+              ? '(sin nombre)'
+              : evSnap.data!.nombre;
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
