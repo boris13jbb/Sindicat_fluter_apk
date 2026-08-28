@@ -11,7 +11,7 @@
 - Firestore es reactivo: servicios exponen `Stream` con `includeMetadataChanges: true` para detectar cache/pending writes.
 - Votacion: `VoteService.castVote()` usa `WriteBatch` sobre 3 docs (`votes`, `candidates`, `elections`) para mantener contadores sincronizados.
 - Auditoria separada: `EventService` escribe en coleccion `events` con metadatos de actor/resultado.
-- Asistencia usa colecciones `eventos`, `personas`, `asistencias` y replica en subcoleccion `eventos/{id}/asistencias` por compatibilidad Android (`AsistenciaService.createAsistencia`).
+- Asistencia: flujo canónico `attendance_events` + `AttendanceService`; legacy `eventos`/`personas`/`asistencias` vía `AsistenciaService` (ver `docs/architecture/attendance-consolidation.md`).
 
 ## Project-specific conventions (follow these)
 - Idioma de negocio y colecciones es mixto ES/EN (`elections` + `eventos`); no renombrar dominios existentes.
