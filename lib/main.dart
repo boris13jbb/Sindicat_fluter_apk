@@ -1,8 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'core/security/app_check_bootstrap.dart';
 import 'core/widgets/system_navigation_insets.dart';
 import 'core/widgets/startup_loading_screen.dart';
 import 'package:provider/provider.dart';
@@ -74,8 +74,8 @@ Future<void> _initializeFirebase() async {
     );
   }
 
-  // App Check: sin proveedor, Storage/Firestore con "refuerzo" activo devuelven 403.
-  await _activateAppCheckForMobile();
+  // App Check: Android/iOS/Web. Windows = unsupported for online Secure Attendance.
+  await _activateAppCheck();
 
   // Configuración de Firestore: solo activamos persistencia fuera de la Web
   // o de forma controlada para evitar el timeout del arranque.
@@ -98,30 +98,33 @@ Future<void> _initializeFirebase() async {
   debugPrint('✅ Firebase inicializado correctamente');
 }
 
-/// Activa App Check en Android/iOS. En `flutter run` (debug) usa el proveedor
-/// de depuración: registra el token que aparezca en logcat en Firebase Console
-/// > App Check > tu app > Gestionar tokens de depuración, o desactiva el
-/// refuerzo de App Check para Storage mientras desarrollas.
-Future<void> _activateAppCheckForMobile() async {
-  if (kIsWeb) return;
-  final mobile =
-      defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS;
-  if (!mobile) return;
-
+/// Activa App Check (Android/iOS/Web). Ver [activateAttendanceAppCheck].
+///
+/// Debug móvil: provider debug — registrar token en Firebase Console.
+/// Web: requiere `--dart-define=FIREBASE_APPCHECK_WEB_SITE_KEY=...`.
+Future<void> _activateAppCheck() async {
   try {
-    await FirebaseAppCheck.instance.activate(
-      androidProvider: kDebugMode
-          ? AndroidProvider.debug
-          : AndroidProvider.playIntegrity,
-      appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttest,
-    );
-    debugPrint(
-      '✅ App Check activo (${kDebugMode ? "modo depuración: registra el token en la consola Firebase si Storage devuelve 403" : "Play Integrity / App Attest"})',
-    );
+    await activateAttendanceAppCheck();
+    if (kIsWeb) {
+      debugPrint('✅ App Check Web activo (reCAPTCHA via dart-define)');
+    } else if (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      debugPrint(
+        '✅ App Check activo (${kDebugMode ? "modo depuración" : "Play Integrity / App Attest"})',
+      );
+    }
+  } on AppCheckBootstrapException catch (e) {
+    // Web release/debug sin site key: fallo controlado (no degradar en silencio).
+    debugPrint('⚠️ App Check bootstrap: ${e.code}');
+    if (kIsWeb && !kDebugMode) {
+      // Release web without config must not pretend App Check is optional.
+      rethrow;
+    }
   } catch (e, st) {
     debugPrint('⚠️ App Check no se pudo activar: $e');
-    debugPrint('$st');
+    if (kDebugMode) {
+      debugPrint('$st');
+    }
   }
 }
 

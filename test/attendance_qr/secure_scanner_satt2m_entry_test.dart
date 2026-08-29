@@ -158,6 +158,8 @@ class _ScannerEntryService extends SecureAttendanceQrService {
            ),
          ),
          apiBaseUrl: 'http://test.local/api',
+         requireAppCheckHeader: false,
+         appCheckTokenProvider: () async => null,
        );
 
   final SecureQrCrypto _crypto;

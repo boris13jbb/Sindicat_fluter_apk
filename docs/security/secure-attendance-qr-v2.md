@@ -93,18 +93,75 @@ Si al sincronizar el `member` está inactive/revocado:
 - Aprobación solo ADMIN/SUPERADMIN → `active`
 - `pending`/`revoked` no pueden preparar paquete ni sincronizar
 
-## App Check (pre-deploy)
+## App Check (código listo — configuración externa pendiente)
 
 | Campo | Estado |
 |-------|--------|
-| Server-side App Check en attendance QR Functions | **NO ENFORCED** (soft) |
-| Clasificación | **PRE-DEPLOY HARDENING REQUIRED** / **PRE-DEPLOY BLOCKER** |
-| Código preparado | `assertAppCheckPrepared` — se activa solo con `ATTENDANCE_QR_REQUIRE_APPCHECK=1` |
-| Emulator / tests | Siempre omitido (`FUNCTIONS_EMULATOR` / skip flag) |
+| Clasificación | **CODE READY / PRE-PRODUCTION CONFIGURATION REQUIRED** |
+| Server-side enforcement en código | **REQUIRED por defecto en producción** |
+| Flag legacy `ATTENDANCE_QR_REQUIRE_APPCHECK` | **Ignorado** (no debe usarse para “apagar” seguridad) |
+| Emulator | Bypass solo con `FUNCTIONS_EMULATOR=true` |
+| Tests | Bypass explícito `ATTENDANCE_QR_SKIP_APPCHECK=1` o verificador inyectado |
+| Cliente envía `X-Firebase-AppCheck` | Sí (online `_post`) + `Authorization: Bearer` |
+| Offline SATT2M (rotación local) | **No** pide App Check |
+| Deploy / Console | **Todavía NO ejecutado** |
 
-No desplegar Functions de attendance QR a producción hasta exigir App Check
-(o un control equivalente documentado) en los endpoints HTTP sensibles.
-Este checkpoint Git **no** implementa App Check; solo deja el gap explícito.
+### Inventario endpoints online
+
+| Endpoint | Auth | App Check | Rol |
+|----------|------|-----------|-----|
+| `/api/attendance-enroll-member-device` | Bearer UID | REQUIRED (prod) | Socio con `memberId` activo |
+| `/api/attendance-prepare-offline-credential` | Bearer UID | REQUIRED (prod) | Socio enrolado |
+| `/api/attendance-prepare-offline-event` | Bearer UID | REQUIRED (prod) | Operador / admin |
+| `/api/attendance-register-scanner-device` | Bearer UID | REQUIRED (prod) | Operador |
+| `/api/attendance-approve-scanner-device` | Bearer UID | REQUIRED (prod) | ADMIN / SUPERADMIN |
+| `/api/attendance-sync-offline-batch` | Bearer UID | REQUIRED (prod) | Scanner activo |
+
+Auth y App Check son independientes: uno válido sin el otro → **DENIED**.
+
+### Cliente por plataforma
+
+| Plataforma | Provider |
+|------------|----------|
+| Android debug | `AndroidProvider.debug` |
+| Android release | `AndroidProvider.playIntegrity` |
+| iOS debug | `AppleProvider.debug` |
+| iOS release | `AppleProvider.appAttest` |
+| Web | `ReCaptchaV3Provider` (default) o `ReCaptchaEnterpriseProvider` vía dart-define |
+| Windows | **UNSUPPORTED_FOR_THIS_FLOW** (no bypass global; usar Web/Android/iOS para online) |
+
+### Configuración Web (dart-define)
+
+```text
+--dart-define=FIREBASE_APPCHECK_WEB_SITE_KEY=<site-key-from-console>
+--dart-define=FIREBASE_APPCHECK_WEB_PROVIDER=recaptcha_v3
+```
+
+Opcional enterprise:
+
+```text
+--dart-define=FIREBASE_APPCHECK_WEB_PROVIDER=recaptcha_enterprise
+```
+
+Sin site key en Web: error controlado `app-check-web-not-configured` (no degradación silenciosa).
+La site key **no** se hardcodea en el repositorio.
+
+### Pasos externos todavía NO ejecutados (bloquean deploy, no CI)
+
+1. **Android:** registrar app en Firebase App Check (Play Integrity).
+2. **iOS:** registrar App Attest / debug tokens según entorno.
+3. **Web:** registrar provider reCAPTCHA en Firebase Console y obtener site key.
+4. **Build/release:** pasar `FIREBASE_APPCHECK_WEB_SITE_KEY` en CI/CD de Web.
+5. **Deploy Functions:** el código ya exige App Check en producción; falta deploy autorizado.
+
+**No se afirma** “ENFORCED IN PRODUCTION” hasta que exista deploy real + providers registrados en Console.
+
+### Debug Web
+
+El plugin `firebase_app_check` 0.3.x no expone un `DebugProvider` web.
+En desarrollo Web usar site key de prueba vía dart-define y, si Firebase lo requiere,
+configurar el debug token del SDK JS según la documentación oficial de Firebase App Check
+(`self.FIREBASE_APPCHECK_DEBUG_TOKEN`) — sin credenciales reales en el repo.
 
 ## SATT2M — QR personal dinámico (modo cotidiano)
 

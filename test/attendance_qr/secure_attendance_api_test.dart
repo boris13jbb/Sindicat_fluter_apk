@@ -32,6 +32,8 @@ void main() {
           auth: _FakeAuth(),
           httpClient: client,
           apiBaseUrl: 'http://test.local/api',
+          requireAppCheckHeader: true,
+          appCheckTokenProvider: () async => 'test-app-check',
         );
         try {
           await service.debugPostForTests('/attendance-enroll-member-device', {
@@ -61,6 +63,8 @@ void main() {
         auth: _FakeAuth(),
         httpClient: client,
         apiBaseUrl: 'http://test.local/api',
+        requireAppCheckHeader: true,
+        appCheckTokenProvider: () async => 'test-app-check',
       );
       try {
         await service.debugPostForTests('/x', {});
@@ -83,6 +87,8 @@ void main() {
         auth: _FakeAuth(),
         httpClient: client,
         apiBaseUrl: 'http://test.local/api',
+        requireAppCheckHeader: true,
+        appCheckTokenProvider: () async => 'test-app-check',
       );
       try {
         await service.debugPostForTests('/x', {});

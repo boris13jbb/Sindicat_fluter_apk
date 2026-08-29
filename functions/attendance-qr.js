@@ -88,32 +88,59 @@ async function assertBearerUid(req) {
 }
 
 /**
- * App Check gate (PRE-DEPLOY HARDENING).
+ * App Check enforcement policy for Secure Attendance HTTP endpoints.
  *
- * - Emulator / tests: always skipped.
- * - Production: enforced ONLY when ATTENDANCE_QR_REQUIRE_APPCHECK=1.
- *   Until that flag is set at deploy time, App Check remains PENDING.
+ * Production: REQUIRED by default (independent of Auth).
+ * Emulator: bypass when FUNCTIONS_EMULATOR=true.
+ * Tests: bypass only with explicit ATTENDANCE_QR_SKIP_APPCHECK=1
+ *        or by injecting verifyAppCheckTokenForTests.
+ *
+ * Never treat a missing ATTENDANCE_QR_REQUIRE_APPCHECK as "security off".
+ * That legacy flag is ignored for enforcement decisions.
  */
-async function assertAppCheckPrepared(req) {
-  if (process.env.FUNCTIONS_EMULATOR === "true") return;
-  if (process.env.ATTENDANCE_QR_SKIP_APPCHECK === "1") return;
-  if (process.env.ATTENDANCE_QR_REQUIRE_APPCHECK !== "1") {
-    return;
-  }
+function shouldEnforceAttendanceAppCheck(env = process.env) {
+  if (String(env.FUNCTIONS_EMULATOR || "") === "true") return false;
+  if (String(env.ATTENDANCE_QR_SKIP_APPCHECK || "") === "1") return false;
+  return true;
+}
+
+/** Injectable verifier for unit tests (production uses Admin SDK). */
+let verifyAppCheckTokenImpl = async (appCheckToken) => {
+  const {getAppCheck} = require("firebase-admin/app-check");
+  await getAppCheck().verifyToken(appCheckToken);
+};
+
+function setVerifyAppCheckTokenForTests(fn) {
+  verifyAppCheckTokenImpl = fn;
+}
+
+function resetVerifyAppCheckTokenForTests() {
+  verifyAppCheckTokenImpl = async (appCheckToken) => {
+    const {getAppCheck} = require("firebase-admin/app-check");
+    await getAppCheck().verifyToken(appCheckToken);
+  };
+}
+
+/**
+ * Asserts X-Firebase-AppCheck (case-insensitive via req.get).
+ * Token is never accepted from query/body/URL.
+ */
+async function assertAppCheck(req) {
+  if (!shouldEnforceAttendanceAppCheck()) return;
   const appCheckToken = String(req.get("x-firebase-appcheck") || "").trim();
   if (!appCheckToken) {
     throw new HttpError(401, "missing-app-check");
   }
   try {
-    const {getAppCheck} = require("firebase-admin/app-check");
-    await getAppCheck().verifyToken(appCheckToken);
-  } catch (_) {
+    await verifyAppCheckTokenImpl(appCheckToken);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
     throw new HttpError(401, "invalid-app-check");
   }
 }
 
 async function assertAuthenticatedRequest(req) {
-  await assertAppCheckPrepared(req);
+  await assertAppCheck(req);
   return assertBearerUid(req);
 }
 
@@ -784,5 +811,12 @@ module.exports = {
     participantsHash,
     attendanceDocId,
     METODO_SECURE,
+    shouldEnforceAttendanceAppCheck,
+    assertAppCheck,
+    assertBearerUid,
+    assertAuthenticatedRequest,
+    setVerifyAppCheckTokenForTests,
+    resetVerifyAppCheckTokenForTests,
+    HttpError,
   },
 };

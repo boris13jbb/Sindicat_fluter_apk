@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -42,12 +43,18 @@ class SecureAttendanceQrService {
     SecureQrCrypto? crypto,
     http.Client? httpClient,
     String? apiBaseUrl,
+    Future<String?> Function()? appCheckTokenProvider,
+    bool? requireAppCheckHeader,
   }) : _auth = auth ?? FirebaseAuth.instance,
        _store = store ?? SecureAttendanceOfflineStore(),
        _keyStore = keyStore ?? SecureKeyStore(),
        _crypto = crypto ?? SecureQrCrypto(),
        _http = httpClient ?? http.Client(),
-       _apiBase = apiBaseUrl ?? resolveApiBaseUrl();
+       _apiBase = apiBaseUrl ?? resolveApiBaseUrl(),
+       _appCheckTokenProvider =
+           appCheckTokenProvider ?? _defaultAppCheckTokenProvider,
+       _requireAppCheckHeader =
+           requireAppCheckHeader ?? !_talkingToFunctionsEmulator();
 
   final FirebaseAuth _auth;
   final SecureAttendanceOfflineStore _store;
@@ -55,7 +62,23 @@ class SecureAttendanceQrService {
   final SecureQrCrypto _crypto;
   final http.Client _http;
   final String _apiBase;
+  final Future<String?> Function() _appCheckTokenProvider;
+  final bool _requireAppCheckHeader;
   final _uuid = const Uuid();
+
+  /// True when compile-time dart-define targets Functions emulator.
+  static bool _talkingToFunctionsEmulator() {
+    const useEmu = bool.fromEnvironment('ATTENDANCE_QR_USE_EMULATOR');
+    return useEmu;
+  }
+
+  static Future<String?> _defaultAppCheckTokenProvider() async {
+    try {
+      return await FirebaseAppCheck.instance.getToken();
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Production Hosting rewrite base (Functions behind `/api/*`).
   static const String kProductionApiBase =
@@ -125,15 +148,37 @@ class SecureAttendanceQrService {
   ) async {
     final token = await _idToken();
     final endpoint = '$_apiBase$path';
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+      'Accept': 'application/json',
+    };
+
+    if (_requireAppCheckHeader) {
+      String? appCheckToken;
+      try {
+        appCheckToken = await _appCheckTokenProvider();
+      } catch (_) {
+        throw SecureAttendanceApiException(
+          'app-check-unavailable',
+          endpoint: endpoint,
+        );
+      }
+      final trimmed = appCheckToken?.trim() ?? '';
+      if (trimmed.isEmpty) {
+        throw SecureAttendanceApiException(
+          'app-check-unavailable',
+          endpoint: endpoint,
+        );
+      }
+      headers['X-Firebase-AppCheck'] = trimmed;
+    }
+
     late final http.Response response;
     try {
       response = await _http.post(
         Uri.parse(endpoint),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
+        headers: headers,
         body: jsonEncode(body),
       );
     } catch (_) {
@@ -225,6 +270,11 @@ class SecureAttendanceQrService {
           return 'Debes iniciar sesión para activar tu código de asistencia.';
         case 'forbidden':
           return 'No tienes permiso para activar el código de asistencia.';
+        case 'app-check-unavailable':
+        case 'missing-app-check':
+        case 'invalid-app-check':
+          return 'No se pudo verificar la seguridad de este dispositivo. '
+              'Inténtalo nuevamente.';
         case 'offline-not-activated':
           return 'Este dispositivo todavía no ha sido activado para asistencia. '
               'Conéctate a Internet una vez para activar tu QR seguro.';

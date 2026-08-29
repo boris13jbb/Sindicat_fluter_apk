@@ -36,6 +36,8 @@ class _FakeSecureService extends SecureAttendanceQrService {
           ),
         ),
         apiBaseUrl: 'http://test.local/api',
+        requireAppCheckHeader: false,
+        appCheckTokenProvider: () async => null,
       );
 
   final Map<String, dynamic> credential;
