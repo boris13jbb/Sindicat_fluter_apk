@@ -67,7 +67,7 @@ class SecureQrCrypto {
         base64UrlToBytes(signatureBase64Url),
         publicKey: publicKey,
       );
-      return _ed25519.verify(data, signature: signature);
+      return await _ed25519.verify(data, signature: signature);
     } catch (_) {
       return false;
     }
