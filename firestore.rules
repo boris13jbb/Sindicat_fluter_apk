@@ -116,6 +116,16 @@ service cloud.firestore {
         && get(memberPath(memberId)).data.status in ['active', 'activo'];
     }
 
+    // Elegibilidad electoral en servidor: usuario autenticado con socio activo vinculado.
+    function authenticatedUserHasActiveMember() {
+      let user = userDocData();
+      return user != null
+        && 'memberId' in user
+        && user.memberId is string
+        && user.memberId != ''
+        && memberIsActive(user.memberId);
+    }
+
     function voterMemberIdAssignmentAllowed(memberId, role) {
       return role != 'VOTER' || memberIsActive(memberId);
     }
@@ -381,6 +391,7 @@ service cloud.firestore {
           voteId == userVoteId(electionId)
         );
         allow create: if isActiveUser()
+                && authenticatedUserHasActiveMember()
                 && request.resource.data.keys().hasOnly([
                   'electionId',
                   'userId',
