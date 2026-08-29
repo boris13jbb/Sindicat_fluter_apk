@@ -111,12 +111,27 @@ service cloud.firestore {
         );
     }
 
+    function memberIsActive(memberId) {
+      return exists(memberPath(memberId))
+        && get(memberPath(memberId)).data.status in ['active', 'activo'];
+    }
+
+    function voterMemberIdAssignmentAllowed(memberId, role) {
+      return role != 'VOTER' || memberIsActive(memberId);
+    }
+
     function validOptionalUserMemberId() {
       return !('memberId' in request.resource.data) ||
         request.resource.data.memberId == null ||
-        memberMatchesEmployeeNumber(
-          request.resource.data.memberId,
-          request.resource.data.employeeNumber
+        (
+          memberMatchesEmployeeNumber(
+            request.resource.data.memberId,
+            request.resource.data.employeeNumber
+          ) &&
+          voterMemberIdAssignmentAllowed(
+            request.resource.data.memberId,
+            request.resource.data.role
+          )
         );
     }
 
@@ -128,6 +143,10 @@ service cloud.firestore {
         memberMatchesEmployeeNumber(
           request.resource.data.memberId,
           request.resource.data.employeeNumber
+        ) &&
+        voterMemberIdAssignmentAllowed(
+          request.resource.data.memberId,
+          request.resource.data.role
         )
       );
     }
@@ -141,7 +160,13 @@ service cloud.firestore {
         !('memberId' in request.resource.data) ||
         request.resource.data.memberId == null ||
         request.resource.data.memberId == '' ||
-        exists(memberPath(request.resource.data.memberId));
+        (
+          exists(memberPath(request.resource.data.memberId)) &&
+          voterMemberIdAssignmentAllowed(
+            request.resource.data.memberId,
+            request.resource.data.role
+          )
+        );
     }
 
     function validSuperAdminUserUpdate() {

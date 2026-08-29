@@ -9,6 +9,7 @@ import '../core/models/audit_log.dart';
 import '../core/models/member.dart';
 import '../core/models/user.dart';
 import '../core/models/user_role.dart';
+import '../core/security/voter_member_policy.dart';
 import 'audit_service.dart';
 
 /// Resultado paginado del listado administrativo de usuarios.
@@ -77,6 +78,27 @@ class UsersAdminPolicy {
       throw UsersAdminException(
         'No se puede desactivar al único superadministrador activo.',
       );
+    }
+  }
+
+  /// Valida vinculación defensiva socio ↔ usuario (lógica pura, testeable).
+  static void ensureCanLinkMember({
+    required UserRole targetRole,
+    required MemberStatus memberStatus,
+    required String memberId,
+    String? existingOwnerUserId,
+    required String targetUserId,
+  }) {
+    try {
+      VoterMemberPolicy.ensureCanLinkMember(
+        targetRole: targetRole,
+        memberStatus: memberStatus,
+        memberId: memberId,
+        existingOwnerUserId: existingOwnerUserId,
+        targetUserId: targetUserId,
+      );
+    } on VoterMemberPolicyException catch (error) {
+      throw UsersAdminException(error.message);
     }
   }
 }
@@ -407,6 +429,27 @@ class UsersAdminService {
     }
 
     final member = Member.fromMap(memberDoc.data()!, memberDoc.id);
+
+    final duplicateQuery = await _usersCol
+        .where('memberId', isEqualTo: member.id)
+        .limit(2)
+        .get();
+    String? existingOwnerUserId;
+    for (final doc in duplicateQuery.docs) {
+      if (doc.id != targetUserId) {
+        existingOwnerUserId = doc.id;
+        break;
+      }
+    }
+
+    UsersAdminPolicy.ensureCanLinkMember(
+      targetRole: target.role,
+      memberStatus: member.status,
+      memberId: member.id,
+      existingOwnerUserId: existingOwnerUserId,
+      targetUserId: targetUserId,
+    );
+
     final workerCode = member.workerCode?.trim();
 
     final updates = <String, dynamic>{
