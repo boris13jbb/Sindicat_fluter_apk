@@ -21,8 +21,10 @@ class SecureAttendanceOfflineStore {
   final _receipts = stringMapStoreFactory.store('receipts');
   final _challenges = stringMapStoreFactory.store('used_challenges');
   final _nonces = stringMapStoreFactory.store('used_response_nonces');
+  final _sigHashes = stringMapStoreFactory.store('used_signature_hashes');
   final _packages = stringMapStoreFactory.store('packages');
   final _credentials = stringMapStoreFactory.store('credentials');
+  final _events = stringMapStoreFactory.store('recent_events');
   final _meta = stringMapStoreFactory.store('meta');
 
   Future<Database> _open() async {
@@ -78,6 +80,13 @@ class SecureAttendanceOfflineStore {
     await _nonces.record(receipt.responseNonce).put(db, {
       'at': receipt.scannedAtTrusted,
     });
+    if (receipt.memberSignature.isNotEmpty) {
+      await _sigHashes.record(receipt.memberSignature).put(db, {
+        'at': receipt.scannedAtTrusted,
+        'eventId': receipt.eventId,
+        'memberId': receipt.memberId,
+      });
+    }
   }
 
   Future<List<OfflineAttendanceReceipt>> pendingReceipts() async {
@@ -128,6 +137,29 @@ class SecureAttendanceOfflineStore {
     final db = await _open();
     final rows = await _nonces.find(db);
     return rows.map((r) => r.key).toSet();
+  }
+
+  Future<Set<String>> usedSignatureHashes() async {
+    final db = await _open();
+    final rows = await _sigHashes.find(db);
+    return rows.map((r) => r.key).toSet();
+  }
+
+  /// Caches attendance events needed to generate SATT2M offline.
+  Future<void> saveRecentEvents(List<Map<String, dynamic>> events) async {
+    final db = await _open();
+    await _events.delete(db);
+    for (final e in events) {
+      final id = e['id']?.toString() ?? '';
+      if (id.isEmpty) continue;
+      await _events.record(id).put(db, e);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> loadRecentEvents() async {
+    final db = await _open();
+    final rows = await _events.find(db);
+    return rows.map((r) => Map<String, dynamic>.from(r.value)).toList();
   }
 
   Future<void> markReceiptSynced(

@@ -30,7 +30,9 @@ class Satt2WireCodec {
     final dot = trimmed.indexOf('.');
     if (dot <= 0 || dot >= trimmed.length - 1) return null;
     final type = trimmed.substring(0, dot);
-    if (type != kSatt2ChallengeType && type != kSatt2ResponseType) {
+    if (type != kSatt2ChallengeType &&
+        type != kSatt2ResponseType &&
+        type != kSatt2MemberType) {
       return null;
     }
     try {
@@ -316,6 +318,136 @@ class Satt2Response {
       memberLat: memberLat,
       memberLng: memberLng,
       memberAccuracy: memberAccuracy,
+    );
+  }
+}
+
+/// Member dynamic personal QR (SATT2M). No PII — device/credential bound.
+class Satt2MemberQr {
+  const Satt2MemberQr({
+    required this.eventId,
+    required this.memberDeviceId,
+    required this.credentialId,
+    required this.timeWindow,
+    required this.issuedAt,
+    required this.expiresAt,
+    required this.responseNonce,
+    required this.signature,
+    this.protocolVersion = kSatt2ProtocolVersion,
+  });
+
+  final String eventId;
+  final String memberDeviceId;
+  final String credentialId;
+  final String timeWindow;
+  final int issuedAt;
+  final int expiresAt;
+  final String responseNonce;
+  final String signature;
+  final int protocolVersion;
+
+  Map<String, String> toCanonicalFields() => {
+    'v': '2',
+    'type': kSatt2MemberType,
+    'eventId': eventId,
+    'memberDeviceId': memberDeviceId,
+    'credentialId': credentialId,
+    'timeWindow': timeWindow,
+    'issuedAt': '$issuedAt',
+    'expiresAt': '$expiresAt',
+    'responseNonce': responseNonce,
+    'protocolVersion': '$protocolVersion',
+  };
+
+  Map<String, dynamic> toWireBody() => {
+    'v': 2,
+    'eventId': eventId,
+    'memberDeviceId': memberDeviceId,
+    'credentialId': credentialId,
+    'timeWindow': timeWindow,
+    'issuedAt': issuedAt,
+    'expiresAt': expiresAt,
+    'responseNonce': responseNonce,
+    'protocolVersion': protocolVersion,
+    'sig': signature,
+  };
+
+  String toQrString() => Satt2WireCodec.encode(kSatt2MemberType, toWireBody());
+
+  static String timeWindowForIssuedAt(
+    int issuedAtMs, {
+    int rotationSeconds = kQrRotationSeconds,
+  }) {
+    final windowMs = rotationSeconds * 1000;
+    return '${issuedAtMs ~/ windowMs}';
+  }
+
+  static Satt2MemberQr? tryParse(String raw) {
+    final map = Satt2WireCodec.decode(raw);
+    if (map == null || map['_wireType'] != kSatt2MemberType) return null;
+    try {
+      return Satt2MemberQr(
+        eventId: map['eventId']?.toString() ?? '',
+        memberDeviceId: map['memberDeviceId']?.toString() ?? '',
+        credentialId: map['credentialId']?.toString() ?? '',
+        timeWindow: map['timeWindow']?.toString() ?? '',
+        issuedAt: (map['issuedAt'] as num?)?.toInt() ?? 0,
+        expiresAt: (map['expiresAt'] as num?)?.toInt() ?? 0,
+        responseNonce: map['responseNonce']?.toString() ?? '',
+        signature: map['sig']?.toString() ?? '',
+        protocolVersion: (map['protocolVersion'] as num?)?.toInt() ?? 2,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> verify(String memberPublicKey) {
+    return SecureQrCrypto().verifyMemberQr(
+      fields: toCanonicalFields(),
+      signatureBase64Url: signature,
+      publicKeyBase64Url: memberPublicKey,
+    );
+  }
+
+  static Future<Satt2MemberQr> create({
+    required String eventId,
+    required String memberDeviceId,
+    required String credentialId,
+    required SimpleKeyPair memberKeyPair,
+    required int issuedAtMs,
+    int rotationSeconds = kQrRotationSeconds,
+    int maxValiditySeconds = kQrMaxValiditySeconds,
+  }) async {
+    final responseNonce = generateSecureNonce(24);
+    final expiresAt = issuedAtMs + maxValiditySeconds * 1000;
+    final timeWindow = timeWindowForIssuedAt(
+      issuedAtMs,
+      rotationSeconds: rotationSeconds,
+    );
+    final draft = Satt2MemberQr(
+      eventId: eventId,
+      memberDeviceId: memberDeviceId,
+      credentialId: credentialId,
+      timeWindow: timeWindow,
+      issuedAt: issuedAtMs,
+      expiresAt: expiresAt,
+      responseNonce: responseNonce,
+      signature: '',
+    );
+    final sig = await SecureQrCrypto().signMemberQr(
+      fields: draft.toCanonicalFields(),
+      keyPair: memberKeyPair,
+    );
+    return Satt2MemberQr(
+      eventId: eventId,
+      memberDeviceId: memberDeviceId,
+      credentialId: credentialId,
+      timeWindow: timeWindow,
+      issuedAt: issuedAtMs,
+      expiresAt: expiresAt,
+      responseNonce: responseNonce,
+      signature: sig,
     );
   }
 }

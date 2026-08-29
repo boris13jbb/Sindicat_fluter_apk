@@ -983,7 +983,10 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         }
         return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
-          child: SecureAttendanceQrTab(hasLinkedMember: _currentMember != null),
+          child: SecureAttendanceQrTab(
+            hasLinkedMember: _currentMember != null,
+            memberDisplayName: _currentMember?.fullName.trim() ?? '',
+          ),
         );
       },
     );

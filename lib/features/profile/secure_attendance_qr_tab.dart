@@ -10,21 +10,27 @@ import '../../core/design/widgets/premium_card.dart';
 import '../../core/design/widgets/primary_button.dart';
 import '../../core/security/attendance_qr/secure_qr_models.dart';
 import '../../core/security/attendance_qr/secure_qr_protocol.dart';
+import '../../services/attendance_service.dart';
 import '../../services/secure_attendance_qr_service.dart';
 
-/// Secure Attendance QR V2 tab for Mi Perfil.
-///
-/// Replaces legacy static workerCode QR for attendance. Does NOT offer
-/// download/share of static QR.
+/// Secure Attendance QR V2 tab for Mi Perfil — everyday SATT2M personal QR.
 class SecureAttendanceQrTab extends StatefulWidget {
   const SecureAttendanceQrTab({
     super.key,
     required this.hasLinkedMember,
+    this.memberDisplayName = '',
     this.service,
+    this.attendanceService,
+    this.eventsLoader,
   });
 
   final bool hasLinkedMember;
+  final String memberDisplayName;
   final SecureAttendanceQrService? service;
+  final AttendanceService? attendanceService;
+
+  /// Test/prod override: when set, used instead of [AttendanceService.getAllEvents].
+  final Stream<List<AttendanceEvent>> Function()? eventsLoader;
 
   @override
   State<SecureAttendanceQrTab> createState() => _SecureAttendanceQrTabState();
@@ -32,65 +38,231 @@ class SecureAttendanceQrTab extends StatefulWidget {
 
 class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
   late final SecureAttendanceQrService _service;
+  AttendanceService? _attendance;
+
   Map<String, dynamic>? _credential;
+  List<AttendanceEvent> _events = const [];
+  AttendanceEvent? _selectedEvent;
   String? _statusMessage;
   bool _busy = false;
-  Satt2Response? _activeResponse;
-  Timer? _countdown;
+  bool _needsActivation = false;
+  bool _booting = true;
+
+  Satt2MemberQr? _activeMemberQr;
+  Timer? _rotationTimer;
+  Timer? _tickTimer;
   int _secondsLeft = 0;
+
+  /// High-security challenge/response path (only when event requires it).
   bool _scanningChallenge = false;
+  Satt2Response? _activeResponse;
 
   @override
   void initState() {
     super.initState();
     _service = widget.service ?? SecureAttendanceQrService();
-    _loadCredential();
+    // Avoid constructing AttendanceService (Firebase) when a loader is injected.
+    if (widget.eventsLoader == null) {
+      _attendance = widget.attendanceService ?? AttendanceService();
+    } else {
+      _attendance = widget.attendanceService;
+    }
+    _bootstrap();
   }
 
   @override
   void dispose() {
-    _countdown?.cancel();
+    _rotationTimer?.cancel();
+    _tickTimer?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadCredential() async {
-    final cred = await _service.loadStoredCredential();
-    if (!mounted) return;
-    setState(() => _credential = cred);
-  }
-
-  Future<void> _prepareCredential() async {
+  Future<void> _bootstrap() async {
+    if (!widget.hasLinkedMember) {
+      setState(() => _booting = false);
+      return;
+    }
     setState(() {
-      _busy = true;
+      _booting = true;
       _statusMessage = null;
+      _needsActivation = false;
     });
     try {
-      if (_service.assurance == SecureAttendanceAssurance.limitedAssurance ||
-          _service.assurance == SecureAttendanceAssurance.onlineOnly) {
-        // Honest Web limitation notice — do not claim hardware security.
-        _statusMessage =
-            'Este navegador ofrece protección limitada de claves. '
-            'Para máxima seguridad usa la app Android/iOS.';
+      await _loadEvents();
+      await _activateCredential(silent: true);
+      if (_selectedEvent != null &&
+          _credential != null &&
+          !_isChallengeMode(_selectedEvent!)) {
+        await _startMemberQrRotation();
       }
-      await _service.enrollMemberDevice();
-      final cred = await _service.prepareOfflineCredential(
-        locationPermission: false,
-      );
+    } finally {
+      if (mounted) setState(() => _booting = false);
+    }
+  }
+
+  Future<void> _loadEvents() async {
+    List<AttendanceEvent> events = const [];
+    try {
+      final Stream<List<AttendanceEvent>> stream;
+      if (widget.eventsLoader != null) {
+        stream = widget.eventsLoader!();
+      } else {
+        stream = (_attendance ?? AttendanceService()).getAllEvents();
+      }
+      events = await stream.first.timeout(const Duration(seconds: 8));
+    } catch (_) {
+      final cached = await _service.loadCachedEvents();
+      events = cached
+          .map((m) => AttendanceEvent.fromMap(m, m['id']?.toString() ?? ''))
+          .where((e) => e.id.isNotEmpty)
+          .toList();
+    }
+
+    final eligible = events.where(_isEligibleEvent).toList()
+      ..sort((a, b) => b.fecha.compareTo(a.fecha));
+
+    if (eligible.isNotEmpty) {
+      await _service.cacheRecentEvents([
+        for (final e in eligible.take(20)) {...e.toMap(), 'id': e.id},
+      ]);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _events = eligible;
+      if (eligible.isEmpty) {
+        _selectedEvent = null;
+      } else if (eligible.length == 1) {
+        _selectedEvent = eligible.first;
+      } else {
+        final highlighted = AttendanceService.pickHighlightedOperationalEventId(
+          eligible,
+        );
+        _selectedEvent = eligible.firstWhere(
+          (e) => e.id == highlighted,
+          orElse: () => eligible.first,
+        );
+      }
+    });
+  }
+
+  bool _isEligibleEvent(AttendanceEvent e) {
+    if (!e.activo) return false;
+    final estado = e.estado.toLowerCase().trim();
+    if (estado == 'finalizado' || estado == 'cancelado') return false;
+    return true;
+  }
+
+  bool _isChallengeMode(AttendanceEvent e) =>
+      e.secureQrMode == kSecureQrModeChallengeResponse;
+
+  Future<void> _activateCredential({bool silent = false}) async {
+    setState(() {
+      _busy = true;
+      if (!silent) _statusMessage = null;
+    });
+    try {
+      final cred = await _service.ensureCredentialReady();
       if (!mounted) return;
       setState(() {
         _credential = cred;
-        _statusMessage = 'Credencial offline preparada.';
+        _needsActivation = false;
+        _statusMessage = null;
       });
     } catch (e) {
+      final existing = await _service.loadStoredCredential();
+      if (_service.isCredentialUsable(existing)) {
+        if (!mounted) return;
+        setState(() {
+          _credential = existing;
+          _needsActivation = false;
+        });
+        return;
+      }
       if (!mounted) return;
-      setState(() => _statusMessage = 'No se pudo preparar: $e');
+      setState(() {
+        _credential = null;
+        _needsActivation = true;
+        _statusMessage = SecureAttendanceQrService.userFacingActivationError(e);
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _startChallengeScan() async {
-    setState(() => _scanningChallenge = true);
+  Future<void> _onEventChanged(AttendanceEvent? event) async {
+    _rotationTimer?.cancel();
+    _tickTimer?.cancel();
+    setState(() {
+      _selectedEvent = event;
+      _activeMemberQr = null;
+      _activeResponse = null;
+      _secondsLeft = 0;
+      _scanningChallenge = false;
+    });
+    if (event == null) return;
+    if (_isChallengeMode(event)) return;
+    if (_credential != null) {
+      await _startMemberQrRotation();
+    }
+  }
+
+  Future<void> _startMemberQrRotation() async {
+    final event = _selectedEvent;
+    if (event == null || _credential == null) return;
+    _rotationTimer?.cancel();
+    _tickTimer?.cancel();
+    await _rotateMemberQr();
+    _rotationTimer = Timer.periodic(
+      const Duration(seconds: kQrRotationSeconds),
+      (_) => _rotateMemberQr(),
+    );
+  }
+
+  Future<void> _rotateMemberQr() async {
+    final event = _selectedEvent;
+    if (event == null) return;
+    try {
+      final qr = await _service.buildMemberDynamicQr(eventId: event.id);
+      if (!mounted) return;
+      _tickTimer?.cancel();
+      setState(() {
+        _activeMemberQr = qr;
+        _secondsLeft =
+            ((qr.expiresAt - DateTime.now().millisecondsSinceEpoch) / 1000)
+                .ceil()
+                .clamp(0, kQrMaxValiditySeconds);
+        _statusMessage = null;
+      });
+      _tickTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (!mounted) {
+          t.cancel();
+          return;
+        }
+        final left =
+            ((_activeMemberQr!.expiresAt -
+                        DateTime.now().millisecondsSinceEpoch) /
+                    1000)
+                .ceil();
+        if (left <= 0) {
+          t.cancel();
+          setState(() {
+            _secondsLeft = 0;
+          });
+          return;
+        }
+        setState(() => _secondsLeft = left);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _activeMemberQr = null;
+        _statusMessage = e.toString().contains('missing-credential')
+            ? 'Este dispositivo todavía no ha sido activado para asistencia. '
+                  'Conéctate a Internet una vez para activar tu QR seguro.'
+            : 'No se pudo generar el código. Inténtalo de nuevo.';
+      });
+    }
   }
 
   Future<void> _onChallengeDetected(String raw) async {
@@ -104,26 +276,25 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
         challengeQr: raw,
       );
       if (!mounted) return;
-      _startCountdown(response);
+      _startResponseCountdown(response);
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString().contains('legacy')
           ? 'Código QR antiguo. Este código ya no es válido para asistencia segura.'
-          : 'Challenge inválido: $e';
+          : 'No se pudo generar la respuesta. Escanea de nuevo el código del evento.';
       setState(() => _statusMessage = msg);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _startCountdown(Satt2Response response) {
-    _countdown?.cancel();
+  void _startResponseCountdown(Satt2Response response) {
+    _tickTimer?.cancel();
     setState(() {
       _activeResponse = response;
       _secondsLeft = kResponseMaxValiditySeconds;
-      _statusMessage = 'Muestra este QR al operador. No compartas capturas.';
     });
-    _countdown = Timer.periodic(const Duration(seconds: 1), (t) {
+    _tickTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) {
         t.cancel();
         return;
@@ -133,7 +304,8 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
         setState(() {
           _activeResponse = null;
           _secondsLeft = 0;
-          _statusMessage = 'Respuesta expirada. Escanea un nuevo challenge.';
+          _statusMessage =
+              'Código expirado. Escanea un nuevo código del evento.';
         });
         return;
       }
@@ -154,6 +326,13 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
             ),
           ),
         ),
+      );
+    }
+
+    if (_booting) {
+      return const Padding(
+        padding: EdgeInsets.all(32),
+        child: Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -183,11 +362,8 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
       );
     }
 
-    final expiresAt = int.tryParse('${_credential?['expiresAt']}') ?? 0;
-    final issuedAt = int.tryParse('${_credential?['issuedAtServer']}') ?? 0;
-    final hasCred =
-        _credential != null &&
-        DateTime.now().millisecondsSinceEpoch < expiresAt;
+    final event = _selectedEvent;
+    final challengeMode = event != null && _isChallengeMode(event);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -199,79 +375,193 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Código de asistencia seguro',
+                  'MI CÓDIGO DE ASISTENCIA',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                     color: AppDesignTokens.primary,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Protocolo SATT2 (Ed25519). El QR estático por workerCode '
-                  'ya no se usa para asistencia.',
-                  style: TextStyle(
-                    color: AppDesignTokens.primaryDark.withValues(alpha: 0.55),
-                    height: 1.35,
-                  ),
-                ),
-                if (kIsWeb) ...[
-                  const SizedBox(height: 12),
+                const SizedBox(height: 12),
+                if (_events.isEmpty) ...[
                   Text(
-                    'Web: almacenamiento de claves con protección limitada '
-                    '(LIMITED_ASSURANCE). Preferir app nativa para eventos.',
+                    'No existe un evento de asistencia activo.',
                     style: TextStyle(
-                      color: Colors.orange.shade800,
-                      fontSize: 13,
-                      height: 1.3,
+                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.7),
+                      height: 1.35,
                     ),
                   ),
-                ],
-                const SizedBox(height: 16),
-                if (!hasCred) ...[
-                  Text(
-                    'Sin credencial offline en este dispositivo.',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 12),
-                  PrimaryButton(
-                    onPressed: _busy ? null : _prepareCredential,
-                    label: _busy
-                        ? 'Preparando…'
-                        : 'Preparar credencial offline',
-                  ),
                 ] else ...[
-                  _infoRow('Estado', '🟢 Credencial lista'),
-                  _infoRow(
-                    'Preparado',
-                    DateTime.fromMillisecondsSinceEpoch(
-                      issuedAt,
-                    ).toLocal().toString(),
-                  ),
-                  _infoRow(
-                    'Válida hasta',
-                    DateTime.fromMillisecondsSinceEpoch(
-                      expiresAt,
-                    ).toLocal().toString(),
-                  ),
-                  const SizedBox(height: 12),
-                  PrimaryButton(
-                    onPressed: _busy ? null : _startChallengeScan,
-                    label: 'Escanear código del evento',
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: _busy ? null : _prepareCredential,
-                    child: const Text('Renovar credencial'),
-                  ),
+                  if (_events.length > 1) ...[
+                    Text(
+                      'Evento para registrar asistencia',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppDesignTokens.primaryDark.withValues(
+                          alpha: 0.7,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<AttendanceEvent>(
+                      initialValue: _selectedEvent,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: [
+                        for (final e in _events)
+                          DropdownMenuItem(
+                            value: e,
+                            child: Text(
+                              e.nombre,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: _busy ? null : _onEventChanged,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (_needsActivation || _credential == null) ...[
+                    Text(
+                      'Este dispositivo todavía no ha sido activado para asistencia. '
+                      'Conéctate a Internet una vez para activar tu QR seguro.',
+                      style: TextStyle(
+                        color: AppDesignTokens.primaryDark.withValues(
+                          alpha: 0.75,
+                        ),
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    PrimaryButton(
+                      onPressed: _busy
+                          ? null
+                          : () async {
+                              await _activateCredential();
+                              if (_credential != null &&
+                                  _selectedEvent != null &&
+                                  !_isChallengeMode(_selectedEvent!)) {
+                                await _startMemberQrRotation();
+                              }
+                            },
+                      label: _busy ? 'Activando…' : 'Reintentar activación',
+                    ),
+                  ] else if (challengeMode) ...[
+                    Text(
+                      'Este evento requiere el modo de alta seguridad.',
+                      style: TextStyle(
+                        color: AppDesignTokens.primaryDark.withValues(
+                          alpha: 0.7,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    PrimaryButton(
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() => _scanningChallenge = true),
+                      label: 'Escanear código del evento',
+                    ),
+                  ] else if (_activeMemberQr != null) ...[
+                    Center(
+                      child: QrImageView(
+                        data: _activeMemberQr!.toQrString(),
+                        size: 260,
+                        backgroundColor: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (widget.memberDisplayName.trim().isNotEmpty)
+                      Text(
+                        widget.memberDisplayName.trim(),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                        ),
+                      ),
+                    if (event != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        event.nombre,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppDesignTokens.primaryDark.withValues(
+                            alpha: 0.65,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    const Text(
+                      '🟢 QR seguro activo',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Válido durante $_secondsLeft segundos',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _secondsLeft <= 5
+                            ? Colors.red
+                            : AppDesignTokens.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: (_secondsLeft / kQrMaxValiditySeconds).clamp(
+                          0.0,
+                          1.0,
+                        ),
+                        minHeight: 6,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Este código cambia automáticamente por seguridad.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppDesignTokens.primaryDark.withValues(
+                          alpha: 0.55,
+                        ),
+                      ),
+                    ),
+                    if (kIsWeb) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        'Para mayor seguridad en eventos presenciales recomendamos '
+                        'usar la aplicación móvil.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange.shade800,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ] else ...[
+                    const Center(child: CircularProgressIndicator()),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Preparando tu código…',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ],
                 if (_statusMessage != null) ...[
                   const SizedBox(height: 12),
                   Text(
                     _statusMessage!,
                     style: TextStyle(
-                      color: AppDesignTokens.primaryDark.withValues(
-                        alpha: 0.55,
-                      ),
+                      color: AppDesignTokens.primaryDark.withValues(alpha: 0.7),
+                      height: 1.35,
                     ),
                   ),
                 ],
@@ -286,15 +576,13 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  Text(
-                    'Respuesta segura',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+                  const Text(
+                    'Código de respuesta',
+                    style: TextStyle(fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Válido por $_secondsLeft s',
+                    'Válido durante $_secondsLeft segundos',
                     style: TextStyle(
                       color: _secondsLeft <= 5
                           ? Colors.red
@@ -308,40 +596,12 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
                     size: 240,
                     backgroundColor: Colors.white,
                   ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'No descargues ni reenvíes este código. Expira automáticamente.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13),
-                  ),
                 ],
               ),
             ),
           ),
         ],
       ],
-    );
-  }
-
-  Widget _infoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 110,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: AppDesignTokens.primaryDark.withValues(alpha: 0.55),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(child: Text(value)),
-        ],
-      ),
     );
   }
 }

@@ -11,23 +11,23 @@ import '../../core/security/attendance_qr/secure_qr_models.dart';
 import '../../core/security/attendance_qr/secure_qr_protocol.dart';
 import '../../core/security/attendance_qr/secure_qr_validator.dart';
 import '../../core/security/attendance_qr/trusted_offline_clock.dart';
+import '../../services/attendance_service.dart';
 import '../../services/secure_attendance_qr_service.dart';
 
-/// Secure Attendance QR V2 scanner — offline-capable challenge/response path.
-///
-/// Does NOT accept legacy workerCode JSON. Manual override stays on the
-/// legacy [ScannerAsistenciaScreen] under a separate audited flow.
+/// Secure Attendance QR V2 scanner — SATT2M (default) + optional SATT2C/R.
 class SecureScannerScreen extends StatefulWidget {
   const SecureScannerScreen({
     super.key,
     required this.eventId,
     this.scannerId,
     this.service,
+    this.attendanceService,
   });
 
   final String eventId;
   final String? scannerId;
   final SecureAttendanceQrService? service;
+  final AttendanceService? attendanceService;
 
   @override
   State<SecureScannerScreen> createState() => _SecureScannerScreenState();
@@ -35,13 +35,15 @@ class SecureScannerScreen extends StatefulWidget {
 
 class _SecureScannerScreenState extends State<SecureScannerScreen> {
   late final SecureAttendanceQrService _service;
+  late final AttendanceService _attendance;
   AttendanceOfflinePackage? _package;
   TrustedOfflineClock? _clock;
   Satt2Challenge? _challenge;
   Timer? _rotation;
   String? _message;
   bool _busy = false;
-  bool _scanResponseMode = false;
+  bool _scanMode = true;
+  bool _challengeMode = false;
   OfflineParticipantSnapshot? _lastParticipant;
   OfflineAttendanceReceipt? _lastReceipt;
 
@@ -49,13 +51,30 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
   void initState() {
     super.initState();
     _service = widget.service ?? SecureAttendanceQrService();
-    _loadPackage();
+    _attendance = widget.attendanceService ?? AttendanceService();
+    _bootstrap();
   }
 
   @override
   void dispose() {
     _rotation?.cancel();
     super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
+    setState(() => _busy = true);
+    try {
+      final event = await _attendance.getEventById(widget.eventId);
+      final challengeMode =
+          event?.secureQrMode == kSecureQrModeChallengeResponse;
+      setState(() => _challengeMode = challengeMode);
+      await _loadPackage();
+    } catch (e) {
+      setState(() {
+        _busy = false;
+        _message = 'Error iniciando escáner: $e';
+      });
+    }
   }
 
   Future<void> _loadPackage() async {
@@ -87,8 +106,9 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
         _message = expired
             ? 'Paquete offline vencido. Vuelve a prepararlo.'
             : null;
+        _scanMode = !_challengeMode;
       });
-      if (!expired) {
+      if (!expired && _challengeMode) {
         await _startChallengeRotation();
       }
     } catch (e) {
@@ -115,7 +135,7 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
     } catch (e) {
       setState(() {
         _busy = false;
-        _message = 'No se pudo preparar paquete: $e';
+        _message = SecureAttendanceQrService.userFacingActivationError(e);
       });
     }
   }
@@ -154,13 +174,13 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
     }
   }
 
-  Future<void> _onResponseScanned(String raw) async {
+  Future<void> _onQrScanned(String raw) async {
     final package = _package;
     final clock = _clock;
-    final challenge = _challenge;
-    if (package == null || clock == null || challenge == null) return;
+    if (package == null || clock == null) return;
 
     if (Satt2WireCodec.isLegacyWorkerCodeQr(raw) &&
+        !raw.trim().startsWith(kSatt2MemberType) &&
         !raw.trim().startsWith(kSatt2ResponseType)) {
       setState(() {
         _message =
@@ -171,11 +191,11 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
 
     setState(() => _busy = true);
     try {
-      final result = await _service.validateAndStoreResponse(
-        responseQr: raw,
-        expectedChallenge: challenge,
+      final result = await _service.validateAndStoreScannedQr(
+        rawQr: raw,
         package: package,
         clock: clock,
+        expectedChallenge: _challengeMode ? _challenge : null,
       );
       if (!mounted) return;
       if (result.rejected) {
@@ -189,10 +209,12 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
         _busy = false;
         _lastParticipant = result.participant;
         _lastReceipt = result.receipt;
-        _scanResponseMode = false;
+        _scanMode = true;
         _message = 'Asistencia registrada offline — pendiente sincronizar';
       });
-      await _rotateChallenge();
+      if (_challengeMode) {
+        await _rotateChallenge();
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -239,7 +261,9 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _message = 'Sync pendiente / error: $e';
+        _message =
+            'Sync pendiente / error: '
+            '${SecureAttendanceQrService.userFacingActivationError(e)}';
       });
     }
   }
@@ -254,7 +278,9 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Secure QR V2'),
+        title: Text(
+          _challengeMode ? 'Asistencia (alta seguridad)' : 'Asistencia segura',
+        ),
         backgroundColor: AppDesignTokens.primary,
         foregroundColor: Colors.white,
       ),
@@ -267,7 +293,9 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Asistencia segura offline',
+                    _challengeMode
+                        ? 'Modo challenge / respuesta'
+                        : 'Escanear código del socio',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: AppDesignTokens.primaryDark,
@@ -286,7 +314,9 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
                       icon: Icons.cloud_download_outlined,
                     )
                   else ...[
-                    if (challengeQr != null && !_scanResponseMode) ...[
+                    if (_challengeMode &&
+                        challengeQr != null &&
+                        !_scanMode) ...[
                       const Text(
                         'Muestra este challenge al socio (rota cada 15 s)',
                         textAlign: TextAlign.center,
@@ -301,13 +331,12 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
                       ),
                       const SizedBox(height: 12),
                       PrimaryButton(
-                        onPressed: () =>
-                            setState(() => _scanResponseMode = true),
+                        onPressed: () => setState(() => _scanMode = true),
                         label: 'Escanear respuesta del socio',
                         icon: Icons.qr_code_scanner,
                       ),
                     ],
-                    if (_scanResponseMode)
+                    if (_scanMode)
                       SizedBox(
                         height: 280,
                         child: ClipRRect(
@@ -320,11 +349,18 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
                                 if (v != null && v.isNotEmpty) values.add(v);
                               }
                               if (values.isEmpty || _busy) return;
-                              _onResponseScanned(values.first);
+                              _onQrScanned(values.first);
                             },
                           ),
                         ),
                       ),
+                    if (_challengeMode && _scanMode) ...[
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => setState(() => _scanMode = false),
+                        child: const Text('Volver al challenge'),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     OutlinedButton.icon(
                       onPressed: _busy ? null : _sync,
@@ -356,14 +392,6 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     Text('Nº socio: ${_lastParticipant!.memberNumber}'),
-                    if (_lastParticipant!.workerCode.isNotEmpty)
-                      Text(
-                        'WorkerCode (verificación visual): '
-                        '${_lastParticipant!.workerCode}',
-                      ),
-                    const Text(
-                      'Foto no disponible — verificar identidad visualmente',
-                    ),
                     Text('Sync: ${_lastReceipt!.syncStatus.name}'),
                   ],
                 ),

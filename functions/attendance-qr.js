@@ -87,6 +87,36 @@ async function assertBearerUid(req) {
   }
 }
 
+/**
+ * App Check gate (PRE-DEPLOY HARDENING).
+ *
+ * - Emulator / tests: always skipped.
+ * - Production: enforced ONLY when ATTENDANCE_QR_REQUIRE_APPCHECK=1.
+ *   Until that flag is set at deploy time, App Check remains PENDING.
+ */
+async function assertAppCheckPrepared(req) {
+  if (process.env.FUNCTIONS_EMULATOR === "true") return;
+  if (process.env.ATTENDANCE_QR_SKIP_APPCHECK === "1") return;
+  if (process.env.ATTENDANCE_QR_REQUIRE_APPCHECK !== "1") {
+    return;
+  }
+  const appCheckToken = String(req.get("x-firebase-appcheck") || "").trim();
+  if (!appCheckToken) {
+    throw new HttpError(401, "missing-app-check");
+  }
+  try {
+    const {getAppCheck} = require("firebase-admin/app-check");
+    await getAppCheck().verifyToken(appCheckToken);
+  } catch (_) {
+    throw new HttpError(401, "invalid-app-check");
+  }
+}
+
+async function assertAuthenticatedRequest(req) {
+  await assertAppCheckPrepared(req);
+  return assertBearerUid(req);
+}
+
 async function loadActiveUser(uid) {
   const snap = await db.collection("users").doc(uid).get();
   if (!snap.exists) throw new HttpError(403, "user-missing");
@@ -154,7 +184,7 @@ function jsonErr(res, error) {
 async function handleEnrollMemberDevice(req, res) {
   try {
     if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
-    const uid = await assertBearerUid(req);
+    const uid = await assertAuthenticatedRequest(req);
     await enforceNamedRateLimit("att-enroll", uid, ENROLL_LIMIT);
     const user = await loadActiveUser(uid);
     const memberId = String(user.memberId || "").trim();
@@ -207,7 +237,7 @@ async function handleEnrollMemberDevice(req, res) {
 async function handlePrepareOfflineCredential(req, res) {
   try {
     if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
-    const uid = await assertBearerUid(req);
+    const uid = await assertAuthenticatedRequest(req);
     await enforceNamedRateLimit("att-cred", uid, PREP_LIMIT);
     const user = await loadActiveUser(uid);
     const memberId = String(user.memberId || "").trim();
@@ -281,7 +311,7 @@ async function handlePrepareOfflineCredential(req, res) {
 async function handlePrepareOfflineEvent(req, res) {
   try {
     if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
-    const uid = await assertBearerUid(req);
+    const uid = await assertAuthenticatedRequest(req);
     await enforceNamedRateLimit("att-pkg", uid, PREP_LIMIT);
     const user = await loadActiveUser(uid);
     if (!isOperatorRole(user.role)) throw new HttpError(403, "forbidden");
@@ -406,7 +436,7 @@ async function handlePrepareOfflineEvent(req, res) {
 async function handleRegisterScannerDevice(req, res) {
   try {
     if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
-    const uid = await assertBearerUid(req);
+    const uid = await assertAuthenticatedRequest(req);
     const user = await loadActiveUser(uid);
     if (!isOperatorRole(user.role)) throw new HttpError(403, "forbidden");
 
@@ -455,7 +485,7 @@ async function handleRegisterScannerDevice(req, res) {
 async function handleApproveScannerDevice(req, res) {
   try {
     if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
-    const uid = await assertBearerUid(req);
+    const uid = await assertAuthenticatedRequest(req);
     const user = await loadActiveUser(uid);
     if (!isAdminRole(user.role)) throw new HttpError(403, "forbidden");
 
@@ -492,7 +522,7 @@ function attendanceDocId(eventId, memberId) {
 async function handleSyncOfflineBatch(req, res) {
   try {
     if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
-    const uid = await assertBearerUid(req);
+    const uid = await assertAuthenticatedRequest(req);
     await enforceNamedRateLimit("att-sync", uid, SYNC_LIMIT);
     const user = await loadActiveUser(uid);
     if (!isOperatorRole(user.role)) throw new HttpError(403, "forbidden");
@@ -594,26 +624,51 @@ async function syncOneReceipt({raw, scannerId, scannerPub, operatorUid}) {
       return {localReceiptId, status: "review", code: "member-inactive-at-sync"};
     }
 
-    // Verify member response signature over response canonical fields.
-    const responseFields = {
-      v: "2",
-      type: "SATT2R",
-      eventId,
-      scannerId,
-      challengeId: receiptFields.challengeId,
-      challengeNonce: receiptFields.challengeNonce,
-      memberDeviceId,
-      credentialId: String(raw.credentialId || device.lastCredentialId || ""),
-      responseNonce: receiptFields.responseNonce,
-      issuedAt: String(raw.responseIssuedAt || raw.scannedAtDevice || ""),
-      protocolVersion: "2",
-    };
-    const responseCanonical = cryptoHelpers.canonicalResponsePayload(responseFields);
-    const memberSigOk = cryptoHelpers.verifyUtf8(
-      responseCanonical,
-      String(raw.memberSignature || ""),
-      String(device.publicKey || ""),
-    );
+    // Verify member signature (SATT2R challenge-response or SATT2M dynamic QR).
+    const isMemberQr =
+      String(raw.qrMode || "") === "SATT2M" ||
+      String(raw.challengeNonce || "") === "SATT2M";
+    let memberSigOk = false;
+    if (isMemberQr) {
+      const memberFields = {
+        v: "2",
+        type: "SATT2M",
+        eventId,
+        memberDeviceId,
+        credentialId: String(raw.credentialId || device.lastCredentialId || ""),
+        timeWindow: String(raw.timeWindow || raw.challengeId || ""),
+        issuedAt: String(raw.responseIssuedAt || ""),
+        expiresAt: String(raw.memberQrExpiresAt || ""),
+        responseNonce: receiptFields.responseNonce,
+        protocolVersion: "2",
+      };
+      const memberCanonical = cryptoHelpers.canonicalMemberQrPayload(memberFields);
+      memberSigOk = cryptoHelpers.verifyUtf8(
+        memberCanonical,
+        String(raw.memberSignature || ""),
+        String(device.publicKey || ""),
+      );
+    } else {
+      const responseFields = {
+        v: "2",
+        type: "SATT2R",
+        eventId,
+        scannerId,
+        challengeId: receiptFields.challengeId,
+        challengeNonce: receiptFields.challengeNonce,
+        memberDeviceId,
+        credentialId: String(raw.credentialId || device.lastCredentialId || ""),
+        responseNonce: receiptFields.responseNonce,
+        issuedAt: String(raw.responseIssuedAt || raw.scannedAtDevice || ""),
+        protocolVersion: "2",
+      };
+      const responseCanonical = cryptoHelpers.canonicalResponsePayload(responseFields);
+      memberSigOk = cryptoHelpers.verifyUtf8(
+        responseCanonical,
+        String(raw.memberSignature || ""),
+        String(device.publicKey || ""),
+      );
+    }
     if (!memberSigOk) {
       return {localReceiptId, status: "rejected", code: "invalid-member-signature"};
     }

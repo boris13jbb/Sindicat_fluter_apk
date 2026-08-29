@@ -18,6 +18,11 @@ const RESPONSE_KEYS = [
   "protocolVersion", "memberLat", "memberLng", "memberAccuracy",
 ];
 
+const MEMBER_QR_KEYS = [
+  "v", "type", "eventId", "memberDeviceId", "credentialId", "timeWindow",
+  "issuedAt", "expiresAt", "responseNonce", "protocolVersion",
+];
+
 const PACKAGE_KEYS = [
   "v", "type", "packageId", "eventId", "eventName", "startAt", "endAt",
   "issuedAtServer", "expiresAt", "serverTimeAtPreparation", "scannerId",
@@ -137,12 +142,14 @@ function secureNonce(byteLength = 24) {
 module.exports = {
   CHALLENGE_KEYS,
   RESPONSE_KEYS,
+  MEMBER_QR_KEYS,
   PACKAGE_KEYS,
   RECEIPT_KEYS,
   CREDENTIAL_KEYS,
   canonicalKeyValuePayload,
   canonicalChallengePayload: (f) => canonicalKeyValuePayload(CHALLENGE_KEYS, f),
   canonicalResponsePayload: (f) => canonicalKeyValuePayload(RESPONSE_KEYS, f),
+  canonicalMemberQrPayload: (f) => canonicalKeyValuePayload(MEMBER_QR_KEYS, f),
   canonicalPackagePayload: (f) => canonicalKeyValuePayload(PACKAGE_KEYS, f),
   canonicalReceiptPayload: (f) => canonicalKeyValuePayload(RECEIPT_KEYS, f),
   canonicalCredentialPayload: (f) => canonicalKeyValuePayload(CREDENTIAL_KEYS, f),

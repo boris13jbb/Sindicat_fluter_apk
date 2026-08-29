@@ -24,6 +24,9 @@ class AttendanceEvent {
   final bool requireScannerLocation;
   final bool requireMemberLocation;
 
+  /// Secure QR mode: `dynamic_member_qr` (default) or `challenge_response`.
+  final String secureQrMode;
+
   AttendanceEvent({
     required this.id,
     required this.nombre,
@@ -44,6 +47,7 @@ class AttendanceEvent {
     this.geofenceRadiusMeters = 150,
     this.requireScannerLocation = false,
     this.requireMemberLocation = false,
+    this.secureQrMode = 'dynamic_member_qr',
   });
 
   factory AttendanceEvent.fromMap(Map<String, dynamic> map, String id) {
@@ -70,6 +74,9 @@ class AttendanceEvent {
           (map['geofenceRadiusMeters'] as num?)?.toDouble() ?? 150,
       requireScannerLocation: map['requireScannerLocation'] == true,
       requireMemberLocation: map['requireMemberLocation'] == true,
+      secureQrMode: (map['secureQrMode']?.toString().trim().isNotEmpty == true)
+          ? map['secureQrMode'].toString().trim()
+          : 'dynamic_member_qr',
     );
   }
 
@@ -95,6 +102,7 @@ class AttendanceEvent {
       'geofenceRadiusMeters': geofenceRadiusMeters,
       'requireScannerLocation': requireScannerLocation,
       'requireMemberLocation': requireMemberLocation,
+      'secureQrMode': secureQrMode,
     };
   }
 
@@ -118,6 +126,7 @@ class AttendanceEvent {
     double? geofenceRadiusMeters,
     bool? requireScannerLocation,
     bool? requireMemberLocation,
+    String? secureQrMode,
   }) {
     return AttendanceEvent(
       id: id ?? this.id,
@@ -142,6 +151,7 @@ class AttendanceEvent {
           requireScannerLocation ?? this.requireScannerLocation,
       requireMemberLocation:
           requireMemberLocation ?? this.requireMemberLocation,
+      secureQrMode: secureQrMode ?? this.secureQrMode,
     );
   }
 }

@@ -8,20 +8,38 @@ library;
 /// Protocol version embedded in every SATT2 payload.
 const int kSatt2ProtocolVersion = 2;
 
-/// Challenge QR type tag.
+/// Challenge QR type tag (high-security mode).
 const String kSatt2ChallengeType = 'SATT2C';
 
-/// Response QR type tag.
+/// Response QR type tag (high-security mode).
 const String kSatt2ResponseType = 'SATT2R';
 
-/// Challenge rotation interval (seconds).
+/// Member dynamic personal QR (everyday mode).
+const String kSatt2MemberType = 'SATT2M';
+
+/// Challenge rotation interval (seconds) — SATT2C.
 const int kChallengeRotationSeconds = 15;
 
-/// Maximum response validity (seconds).
+/// Maximum response validity (seconds) — SATT2R.
 const int kResponseMaxValiditySeconds = 20;
+
+/// Member QR rotation interval (seconds) — SATT2M.
+const int kQrRotationSeconds = 20;
+
+/// Member QR maximum validity (seconds) — SATT2M.
+const int kQrMaxValiditySeconds = 30;
 
 /// Default offline credential lifetime (days).
 const int kCredentialMaxDays = 7;
+
+/// Event secure QR mode: everyday dynamic member QR.
+const String kSecureQrModeDynamicMember = 'dynamic_member_qr';
+
+/// Event secure QR mode: scanner challenge + member response.
+const String kSecureQrModeChallengeResponse = 'challenge_response';
+
+/// Receipt marker: challengeNonce when attendance came from SATT2M.
+const String kSatt2MemberReceiptChallengeNonce = 'SATT2M';
 
 /// MetodoRegistro value written only by Cloud Functions / Admin SDK.
 const String kMetodoSecureQrV2 = 'SECURE_QR_V2';
@@ -98,6 +116,20 @@ const List<String> kResponseCanonicalKeys = [
   'memberAccuracy',
 ];
 
+/// Ordered keys for SATT2M member dynamic QR signing.
+const List<String> kMemberQrCanonicalKeys = [
+  'v',
+  'type',
+  'eventId',
+  'memberDeviceId',
+  'credentialId',
+  'timeWindow',
+  'issuedAt',
+  'expiresAt',
+  'responseNonce',
+  'protocolVersion',
+];
+
 /// Ordered keys for offline package signing (server).
 const List<String> kPackageCanonicalKeys = [
   'v',
@@ -165,6 +197,12 @@ String canonicalChallengePayload(Map<String, String> fields) =>
 String canonicalResponsePayload(Map<String, String> fields) =>
     canonicalKeyValuePayload(
       orderedKeys: kResponseCanonicalKeys,
+      fields: fields,
+    );
+
+String canonicalMemberQrPayload(Map<String, String> fields) =>
+    canonicalKeyValuePayload(
+      orderedKeys: kMemberQrCanonicalKeys,
       fields: fields,
     );
 

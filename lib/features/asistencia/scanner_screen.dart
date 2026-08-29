@@ -521,8 +521,8 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
       _mensaje = null;
     });
     try {
-      Member? member =
-          await (_membersService ??= MembersService()).getMemberById(rawLookup);
+      Member? member = await (_membersService ??= MembersService())
+          .getMemberById(rawLookup);
       member ??= await _membersService!.getMemberByWorkerCode(rawLookup);
       member ??= await _membersService!.getMemberByNumber(rawLookup);
       if (member == null) {

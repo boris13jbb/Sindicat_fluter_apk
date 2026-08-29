@@ -118,6 +118,28 @@ class SecureQrCrypto {
     );
   }
 
+  Future<String> signMemberQr({
+    required Map<String, String> fields,
+    required SimpleKeyPair keyPair,
+  }) {
+    return signUtf8(
+      canonicalPayload: canonicalMemberQrPayload(fields),
+      keyPair: keyPair,
+    );
+  }
+
+  Future<bool> verifyMemberQr({
+    required Map<String, String> fields,
+    required String signatureBase64Url,
+    required String publicKeyBase64Url,
+  }) {
+    return verifyUtf8(
+      canonicalPayload: canonicalMemberQrPayload(fields),
+      signatureBase64Url: signatureBase64Url,
+      publicKeyBase64Url: publicKeyBase64Url,
+    );
+  }
+
   Future<String> signReceipt({
     required Map<String, String> fields,
     required SimpleKeyPair keyPair,

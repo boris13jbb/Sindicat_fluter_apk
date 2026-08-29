@@ -97,9 +97,25 @@ Si al sincronizar el `member` está inactive/revocado:
 
 | Campo | Estado |
 |-------|--------|
-| Server-side App Check en attendance QR Functions | **NO ENFORCED** |
+| Server-side App Check en attendance QR Functions | **NO ENFORCED** (soft) |
 | Clasificación | **PRE-DEPLOY HARDENING REQUIRED** / **PRE-DEPLOY BLOCKER** |
+| Código preparado | `assertAppCheckPrepared` — se activa solo con `ATTENDANCE_QR_REQUIRE_APPCHECK=1` |
+| Emulator / tests | Siempre omitido (`FUNCTIONS_EMULATOR` / skip flag) |
 
 No desplegar Functions de attendance QR a producción hasta exigir App Check
 (o un control equivalente documentado) en los endpoints HTTP sensibles.
 Este checkpoint Git **no** implementa App Check; solo deja el gap explícito.
+
+## SATT2M — QR personal dinámico (modo cotidiano)
+
+| Campo | Valor |
+|-------|-------|
+| Type | `SATT2M` |
+| Rotación | 20 s |
+| Validez máxima | 30 s |
+| Firma | Ed25519 del dispositivo enrolado |
+| Default de evento | `secureQrMode = dynamic_member_qr` |
+| Alta seguridad | `secureQrMode = challenge_response` (SATT2C/SATT2R) |
+
+El socio ve **MI CÓDIGO DE ASISTENCIA** en Perfil → Asistencia segura.
+El QR se genera offline tras activar la credencial una vez con Internet.
