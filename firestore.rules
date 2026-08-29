@@ -410,6 +410,55 @@ service cloud.firestore {
     }
 
     // ==================== EVENTOS DE ASISTENCIA ====================
+
+    // Cliente NUNCA puede escribir SECURE_QR_V2 (solo Admin SDK / Functions).
+    function isSecureQrV2Method(data) {
+      return ('metodoRegistro' in data)
+        && data.metodoRegistro == 'SECURE_QR_V2';
+    }
+
+    // Override excepcional: motivo obligatorio + actor = auth.uid.
+    function isValidManualOverrideCreate() {
+      return request.resource.data.metodoRegistro == 'MANUAL_OVERRIDE'
+        && request.resource.data.personaId is string
+        && request.resource.data.personaId.size() > 0
+        && request.resource.data.justificacion is string
+        && request.resource.data.justificacion.size() >= 3
+        && request.resource.data.registradoPor is string
+        && request.resource.data.registradoPor == request.auth.uid;
+    }
+
+    // Métodos legacy de cliente (QR/barcode/manual clásico). No incluyen secure.
+    function isLegacyClientAttendanceMethod() {
+      return !('metodoRegistro' in request.resource.data)
+        || request.resource.data.metodoRegistro in [
+          'MANUAL', 'ESCANEO_QR', 'ESCANEO_BARCODE'
+        ];
+    }
+
+    function canClientCreateAttendance() {
+      return isOperator()
+        && !isSecureQrV2Method(request.resource.data)
+        && (
+          isLegacyClientAttendanceMethod()
+          || isValidManualOverrideCreate()
+        );
+    }
+
+    function canClientUpdateAttendance() {
+      return isOperator()
+        && !isSecureQrV2Method(request.resource.data)
+        && !isSecureQrV2Method(resource.data)
+        && (
+          // No elevar a MANUAL_OVERRIDE sin justificación
+          request.resource.data.metodoRegistro != 'MANUAL_OVERRIDE'
+          || (
+            request.resource.data.justificacion is string
+            && request.resource.data.justificacion.size() >= 3
+            && request.resource.data.registradoPor == request.auth.uid
+          )
+        );
+    }
     
     // Sistema nuevo: attendance_events con subcolecciones
     match /attendance_events/{eventId} {
@@ -422,8 +471,8 @@ service cloud.firestore {
       // Asistencias del evento
       match /asistencias/{asistenciaId} {
         allow read: if isAuthenticated();
-        allow create: if isOperator();
-        allow update: if isOperator();
+        allow create: if canClientCreateAttendance();
+        allow update: if canClientUpdateAttendance();
         allow delete: if isSuperAdmin();
       }
     }
@@ -438,7 +487,8 @@ service cloud.firestore {
 
       match /asistencias/{asistenciaId} {
         allow read: if isAuthenticated();
-        allow create, update: if isOperator();
+        allow create: if canClientCreateAttendance();
+        allow update: if canClientUpdateAttendance();
         allow delete: if isSuperAdmin();
       }
     }
@@ -451,8 +501,26 @@ service cloud.firestore {
 
     match /asistencias/{asistenciaId} {
       allow read: if isAuthenticated();
-      allow create, update: if isOperator();
+      allow create: if canClientCreateAttendance();
+      allow update: if canClientUpdateAttendance();
       allow delete: if isSuperAdmin();
+    }
+
+    // Secure Attendance QR V2 — device registries (backend-only writes)
+    match /attendance_member_devices/{deviceId} {
+      allow read: if isAuthenticated()
+        && (
+          isAdmin()
+          || isOperator()
+          || (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.memberId == resource.data.memberId)
+        );
+      allow create, update, delete: if false;
+    }
+
+    match /attendance_scanner_devices/{scannerId} {
+      allow read: if isAuthenticated() && (isAdmin() || isOperator());
+      allow create, update, delete: if false;
     }
 
     // Lectura explícita para consultas collectionGroup('asistencias') usadas

@@ -72,6 +72,13 @@ dependencies:
   firebase_app_check: ^0.3.2+10
   http: ^1.6.0
 
+  # Secure Attendance QR V2 (Ed25519 + offline store + geofence)
+  cryptography: ^2.7.0
+  flutter_secure_storage: ^9.2.4
+  geolocator: ^13.0.2
+  sembast: ^3.8.5+1
+  sembast_web: ^2.4.0+4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

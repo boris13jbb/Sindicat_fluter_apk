@@ -245,23 +245,23 @@ describe('users', () => {
 });
 
 describe('attendance permissions', () => {
-  test('allows operator writes and blocks voter writes', async () => {
-    const event = {
-      nombre: 'Asamblea',
-      descripcion: '',
-      fecha: 1000,
-      lugar: 'Sede',
-      tipo: 'asamblea',
-      activo: true,
-      miembrosConvocados: [],
-      modalidadesNoConvocadas: [],
-      creadoPor: 'operator',
-      createdAt: 1000,
-      estado: 'programado',
-    };
+  const event = {
+    nombre: 'Asamblea',
+    descripcion: '',
+    fecha: 1000,
+    lugar: 'Sede',
+    tipo: 'asamblea',
+    activo: true,
+    miembrosConvocados: [],
+    modalidadesNoConvocadas: [],
+    creadoPor: 'operator',
+    createdAt: 1000,
+    estado: 'programado',
+  };
+
+  test('allows operator to create attendance event; voter denied', async () => {
     const operatorDb = testEnv.authenticatedContext('operator').firestore();
     const voterDb = testEnv.authenticatedContext('voter').firestore();
-
     await assertSucceeds(
       setDoc(doc(operatorDb, 'attendance_events/event-1'), event),
     );
@@ -271,12 +271,164 @@ describe('attendance permissions', () => {
         creadoPor: 'voter',
       }),
     );
+  });
+
+  test('1 VOTER intenta crear attendance → DENIED', async () => {
+    await seed('attendance_events/event-voter', event);
+    const voterDb = testEnv.authenticatedContext('voter').firestore();
+    await assertFails(
+      setDoc(
+        doc(voterDb, 'attendance_events/event-voter/asistencias/m1'),
+        {
+          personaId: 'm1',
+          eventoId: 'event-voter',
+          asistio: true,
+          fechaRegistro: 1000,
+        },
+      ),
+    );
+  });
+
+  test('2 OPERADOR intenta crear secure_qr_v2 → DENIED', async () => {
+    await seed('attendance_events/event-op-secure', event);
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertFails(
+      setDoc(
+        doc(operatorDb, 'attendance_events/event-op-secure/asistencias/m1'),
+        {
+          personaId: 'm1',
+          eventoId: 'event-op-secure',
+          asistio: true,
+          fechaRegistro: 1000,
+          metodoRegistro: 'SECURE_QR_V2',
+          registradoPor: 'operator',
+          justificacion: 'x',
+        },
+      ),
+    );
+  });
+
+  test('3 ADMIN intenta crear secure_qr_v2 → DENIED', async () => {
+    await seed('attendance_events/event-admin-secure', event);
+    const adminDb = testEnv.authenticatedContext('admin').firestore();
+    await assertFails(
+      setDoc(
+        doc(adminDb, 'attendance_events/event-admin-secure/asistencias/m1'),
+        {
+          personaId: 'm1',
+          eventoId: 'event-admin-secure',
+          asistio: true,
+          fechaRegistro: 1000,
+          metodoRegistro: 'SECURE_QR_V2',
+          registradoPor: 'admin',
+          justificacion: 'bypass',
+        },
+      ),
+    );
+  });
+
+  test('4 device member direct client write → DENIED', async () => {
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertFails(
+      setDoc(doc(operatorDb, 'attendance_member_devices/dev-1'), {
+        deviceId: 'dev-1',
+        memberId: 'm1',
+        publicKey: 'abc',
+        status: 'active',
+      }),
+    );
+  });
+
+  test('5 scanner direct client write → DENIED', async () => {
+    const adminDb = testEnv.authenticatedContext('admin').firestore();
+    await assertFails(
+      setDoc(doc(adminDb, 'attendance_scanner_devices/scn-1'), {
+        scannerId: 'scn-1',
+        publicKey: 'abc',
+        status: 'active',
+      }),
+    );
+  });
+
+  test('7 manual override sin motivo → DENIED', async () => {
+    await seed('attendance_events/event-mo', event);
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertFails(
+      setDoc(
+        doc(operatorDb, 'attendance_events/event-mo/asistencias/m1'),
+        {
+          personaId: 'm1',
+          eventoId: 'event-mo',
+          asistio: true,
+          fechaRegistro: 1000,
+          metodoRegistro: 'MANUAL_OVERRIDE',
+          justificacion: '',
+          registradoPor: 'operator',
+        },
+      ),
+    );
+    await assertFails(
+      setDoc(
+        doc(operatorDb, 'attendance_events/event-mo/asistencias/m2'),
+        {
+          personaId: 'm2',
+          eventoId: 'event-mo',
+          asistio: true,
+          fechaRegistro: 1000,
+          metodoRegistro: 'MANUAL_OVERRIDE',
+          registradoPor: 'operator',
+        },
+      ),
+    );
+  });
+
+  test('8 manual override con rol no autorizado (VOTER) → DENIED', async () => {
+    await seed('attendance_events/event-mo-voter', event);
+    const voterDb = testEnv.authenticatedContext('voter').firestore();
+    await assertFails(
+      setDoc(
+        doc(voterDb, 'attendance_events/event-mo-voter/asistencias/m1'),
+        {
+          personaId: 'm1',
+          eventoId: 'event-mo-voter',
+          asistio: true,
+          fechaRegistro: 1000,
+          metodoRegistro: 'MANUAL_OVERRIDE',
+          justificacion: 'motivo valido de override',
+          registradoPor: 'voter',
+        },
+      ),
+    );
+  });
+
+  test('9 manual override bien formado por OPERADOR → ALLOWED', async () => {
+    await seed('attendance_events/event-mo-ok', event);
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
     await assertSucceeds(
       setDoc(
-        doc(operatorDb, 'attendance_events/event-1/asistencias/member-1'),
+        doc(operatorDb, 'attendance_events/event-mo-ok/asistencias/m1'),
+        {
+          personaId: 'm1',
+          eventoId: 'event-mo-ok',
+          asistio: true,
+          fechaRegistro: 1000,
+          metodoRegistro: 'MANUAL_OVERRIDE',
+          justificacion: 'camara fallida - verificacion visual',
+          registradoPor: 'operator',
+        },
+      ),
+    );
+  });
+
+  test('allows legacy operator attendance without metodoRegistro', async () => {
+    await seed('attendance_events/event-legacy', event);
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(operatorDb, 'attendance_events/event-legacy/asistencias/member-1'),
         {
           personaId: 'member-1',
-          eventoId: 'event-1',
+          eventoId: 'event-legacy',
           asistio: true,
           fechaRegistro: 1000,
         },

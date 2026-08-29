@@ -10,7 +10,13 @@ export 'persona.dart';
 enum MetodoRegistro {
   escaneoQr('ESCANEO_QR'),
   escaneoBarcode('ESCANEO_BARCODE'),
-  manual('MANUAL');
+  manual('MANUAL'),
+
+  /// Canonical secure path — written only by Cloud Functions / Admin SDK.
+  secureQrV2('SECURE_QR_V2'),
+
+  /// Exceptional operator override with mandatory audit reason.
+  manualOverride('MANUAL_OVERRIDE');
 
   const MetodoRegistro(this.value);
   final String value;

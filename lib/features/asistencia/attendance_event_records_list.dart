@@ -69,6 +69,10 @@ class _AttendanceEventRecordsListState
         return 'Barra';
       case MetodoRegistro.manual:
         return 'Manual';
+      case MetodoRegistro.secureQrV2:
+        return 'Secure QR';
+      case MetodoRegistro.manualOverride:
+        return 'Override';
     }
   }
 

@@ -194,8 +194,11 @@ class AttendanceService {
     return encoded.isEmpty ? '_' : encoded;
   }
 
-  /// Registrar asistencia manual
-  /// `personaId` debe ser normalmente el id del documento en `members` para que cuadre con el reporte.
+  /// Registrar asistencia (cliente).
+  ///
+  /// [MetodoRegistro.secureQrV2] está prohibido aquí — solo Cloud Functions.
+  /// [MetodoRegistro.manualOverride] exige justificación no vacía y memberId
+  /// de padrón (no crea socios).
   Future<String> registerAttendance({
     required String eventId,
     required String personaId,
@@ -210,6 +213,31 @@ class AttendanceService {
       }
       if (eventId.isEmpty || personaId.isEmpty) {
         throw Exception('Evento o persona no proporcionados');
+      }
+      if (metodo == MetodoRegistro.secureQrV2) {
+        throw Exception(
+          'SECURE_QR_V2 solo puede registrarse vía Cloud Functions',
+        );
+      }
+
+      final nota = (observaciones ?? '').trim();
+      if (metodo == MetodoRegistro.manualOverride && nota.length < 3) {
+        throw Exception(
+          'El registro manual excepcional requiere un motivo (mín. 3 caracteres)',
+        );
+      }
+
+      // Override: el personaId debe existir en members (padrón).
+      if (metodo == MetodoRegistro.manualOverride) {
+        final memberSnap = await _firestore
+            .collection('members')
+            .doc(personaId)
+            .get();
+        if (!memberSnap.exists) {
+          throw Exception(
+            'Socio no encontrado en padrón. Seleccione un member existente.',
+          );
+        }
       }
 
       final existing = await _firestore
@@ -230,7 +258,6 @@ class AttendanceService {
           .doc(_safeDocSegment(personaId));
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final nota = observaciones ?? '';
 
       final data = {
         'id': attendanceRef.id,
@@ -258,8 +285,11 @@ class AttendanceService {
         action: AuditAction.attendance,
         entityType: AuditEntityType.attendanceRecord,
         entityId: attendanceRef.id,
-        description:
-            'Asistencia registrada: ${asistio ? "Presente" : "Ausente"} - Persona: $personaId',
+        description: metodo == MetodoRegistro.manualOverride
+            ? 'MANUAL_OVERRIDE: ${asistio ? "Presente" : "Ausente"} - '
+                  'member=$personaId - motivo=$nota'
+            : 'Asistencia registrada: ${asistio ? "Presente" : "Ausente"} - '
+                  'Persona: $personaId',
         platform: 'flutter',
       );
       return attendanceRef.id;

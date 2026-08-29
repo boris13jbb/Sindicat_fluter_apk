@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:excel/excel.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import '../core/models/asistencia/asistencia.dart';
@@ -383,6 +384,19 @@ class AsistenciaService implements AsistenciaRegistroApi {
     if (asistencia.eventoId.isEmpty || identificadorPersona.isEmpty) {
       throw Exception('Evento o persona no proporcionados');
     }
+    if (asistencia.metodoRegistro == MetodoRegistro.secureQrV2) {
+      throw Exception(
+        'SECURE_QR_V2 solo puede registrarse vía Cloud Functions',
+      );
+    }
+    if (asistencia.metodoRegistro == MetodoRegistro.manualOverride) {
+      final motivo = (asistencia.justificacion ?? '').trim();
+      if (motivo.length < 3) {
+        throw Exception(
+          'El registro manual excepcional requiere un motivo (mín. 3 caracteres)',
+        );
+      }
+    }
 
     final existente = await getAsistenciaPorEventoYPersona(
       asistencia.eventoId,
@@ -402,6 +416,11 @@ class AsistenciaService implements AsistenciaRegistroApi {
     final data = asistencia.toMap()
       ..['id'] = id
       ..['personaId'] = identificadorPersona;
+    // Actor para auditoría / Rules cuando es override.
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      data['registradoPor'] = uid;
+    }
     await _firestore.runTransaction((transaction) async {
       final current = await transaction.get(ref);
       final currentSub = await transaction.get(subRef);
@@ -884,19 +903,27 @@ class AsistenciaService implements AsistenciaRegistroApi {
     return porDocId?.id;
   }
 
-  /// Registro manual de asistencia (compatible con Android)
-  /// identificadorPersona: ID de Firestore de la persona existente
+  /// Registro manual excepcional (legacy `eventos`/`asistencias`).
+  /// Exige justificación y NUNCA usa SECURE_QR_V2.
   Future<String?> registrarAsistenciaManual(
     String personaId, // ID de Firestore de la persona
     String eventoId,
     bool asistio,
-    String justificacion,
-  ) async {
+    String justificacion, {
+    bool excepcionalOverride = true,
+  }) async {
     if (personaId.isEmpty) {
       throw Exception('ID de persona no proporcionado');
     }
 
-    // Obtener persona existente
+    final motivo = justificacion.trim();
+    if (excepcionalOverride && motivo.length < 3) {
+      throw Exception(
+        'El registro manual excepcional requiere un motivo (mín. 3 caracteres)',
+      );
+    }
+
+    // Obtener persona existente — no crear desde texto/QR.
     final persona = await getPersonaById(personaId);
     if (persona == null) {
       throw Exception('Persona no encontrada con ID: $personaId');
@@ -915,8 +942,10 @@ class AsistenciaService implements AsistenciaRegistroApi {
         eventoId: eventoId,
         personaId: persona.id,
         asistio: asistio,
-        justificacion: justificacion.isEmpty ? null : justificacion,
-        metodoRegistro: MetodoRegistro.manual,
+        justificacion: motivo.isEmpty ? null : motivo,
+        metodoRegistro: excepcionalOverride
+            ? MetodoRegistro.manualOverride
+            : MetodoRegistro.manual,
       ),
       persona.id,
     );

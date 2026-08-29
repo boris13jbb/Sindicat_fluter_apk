@@ -34,7 +34,17 @@ const {
 } = require("./admin-search");
 const {onDocumentUpdated} = require("firebase-functions/v2/firestore");
 
+// Admin must initialize before modules that call getFirestore() at load time.
 initializeApp();
+
+const {
+  attendanceEnrollMemberDevice,
+  attendancePrepareOfflineCredential,
+  attendancePrepareOfflineEvent,
+  attendanceRegisterScannerDevice,
+  attendanceApproveScannerDevice,
+  attendanceSyncOfflineBatch,
+} = require("./attendance-qr");
 
 const smtpUser = defineSecret("SMTP_USER");
 const smtpPassword = defineSecret("SMTP_PASSWORD");
@@ -814,6 +824,13 @@ exports.lookupMemberByEmployee = onRequest(
     }
   },
 );
+
+exports.attendanceEnrollMemberDevice = attendanceEnrollMemberDevice;
+exports.attendancePrepareOfflineCredential = attendancePrepareOfflineCredential;
+exports.attendancePrepareOfflineEvent = attendancePrepareOfflineEvent;
+exports.attendanceRegisterScannerDevice = attendanceRegisterScannerDevice;
+exports.attendanceApproveScannerDevice = attendanceApproveScannerDevice;
+exports.attendanceSyncOfflineBatch = attendanceSyncOfflineBatch;
 
 exports.syncUserAuthAccess = onDocumentUpdated(
   {

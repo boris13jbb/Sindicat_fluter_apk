@@ -16,6 +16,14 @@ class AttendanceEvent {
   final int createdAt;
   final String estado;
 
+  /// Optional geofence (backward compatible — defaults preserve existing events).
+  final bool geofenceEnabled;
+  final double? latitude;
+  final double? longitude;
+  final double geofenceRadiusMeters;
+  final bool requireScannerLocation;
+  final bool requireMemberLocation;
+
   AttendanceEvent({
     required this.id,
     required this.nombre,
@@ -30,6 +38,12 @@ class AttendanceEvent {
     required this.creadoPor,
     required this.createdAt,
     this.estado = 'programado',
+    this.geofenceEnabled = false,
+    this.latitude,
+    this.longitude,
+    this.geofenceRadiusMeters = 150,
+    this.requireScannerLocation = false,
+    this.requireMemberLocation = false,
   });
 
   factory AttendanceEvent.fromMap(Map<String, dynamic> map, String id) {
@@ -49,6 +63,13 @@ class AttendanceEvent {
       creadoPor: map['creadoPor'] ?? '',
       createdAt: (map['createdAt'] as num?)?.toInt() ?? 0,
       estado: map['estado'] ?? 'programado',
+      geofenceEnabled: map['geofenceEnabled'] == true,
+      latitude: (map['latitude'] as num?)?.toDouble(),
+      longitude: (map['longitude'] as num?)?.toDouble(),
+      geofenceRadiusMeters:
+          (map['geofenceRadiusMeters'] as num?)?.toDouble() ?? 150,
+      requireScannerLocation: map['requireScannerLocation'] == true,
+      requireMemberLocation: map['requireMemberLocation'] == true,
     );
   }
 
@@ -68,6 +89,12 @@ class AttendanceEvent {
       'creadoPor': creadoPor,
       'createdAt': createdAt,
       'estado': estado,
+      'geofenceEnabled': geofenceEnabled,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
+      'geofenceRadiusMeters': geofenceRadiusMeters,
+      'requireScannerLocation': requireScannerLocation,
+      'requireMemberLocation': requireMemberLocation,
     };
   }
 
@@ -85,6 +112,12 @@ class AttendanceEvent {
     String? creadoPor,
     int? createdAt,
     String? estado,
+    bool? geofenceEnabled,
+    double? latitude,
+    double? longitude,
+    double? geofenceRadiusMeters,
+    bool? requireScannerLocation,
+    bool? requireMemberLocation,
   }) {
     return AttendanceEvent(
       id: id ?? this.id,
@@ -101,6 +134,14 @@ class AttendanceEvent {
       creadoPor: creadoPor ?? this.creadoPor,
       createdAt: createdAt ?? this.createdAt,
       estado: estado ?? this.estado,
+      geofenceEnabled: geofenceEnabled ?? this.geofenceEnabled,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      geofenceRadiusMeters: geofenceRadiusMeters ?? this.geofenceRadiusMeters,
+      requireScannerLocation:
+          requireScannerLocation ?? this.requireScannerLocation,
+      requireMemberLocation:
+          requireMemberLocation ?? this.requireMemberLocation,
     );
   }
 }
