@@ -1,12 +1,13 @@
 # Fase 4.1B — Inventario read-only de Firestore producción
 
 **Checkpoint tooling:** `v1.4.4-readonly-adc` (`b596d42`)
-**Checkpoint documental:** `v1.4.5-production-inventory`
+**Checkpoint documental:** `v1.4.6-4.1c-noop`
+**Checkpoint anterior:** `v1.4.5-production-inventory` (`38d777f`)
 **Proyecto Firebase:** `sistema-integrado-sindicato`
 **Versión análisis:** `production-readonly-v1`
 **Estado 4.1B:** inventario producción ejecutado y documentado (2026-08-28) — 0 escrituras
 **Estado backup pre-4.1C:** verificado en GCS (2026-08-28)
-**Estado 4.1C:** `backupVerified=true`, `migrationAuthorized=false` — **NO ejecutar migración ni `--apply`**
+**Estado 4.1C:** **NO-OP APROBADA** (2026-08-28) — sin migración; 0 writes / 0 updates / 0 deletes
 
 ---
 
@@ -202,15 +203,53 @@ migración: NO
 
 Reportes locales (gitignored): `tool/migrations/migration-reports/production-readonly-inventory-20260828-2113.{json,csv}`
 
-### Puerta 4.1C
+### Puerta 4.1C — cerrada (NO-OP)
 
 ```text
 backupVerified: true
-migrationAuthorized: false
-blockedUntilBackupVerified: false   # backup ya verificado
+migrationAuthorized: true   # autorización explícita recibida para evaluación 4.1C
+migrationExecuted: false    # NO-OP: no había datos elegibles
+resultado: NO-OP APROBADA
 ```
 
-**LISTO PARA SOLICITAR AUTORIZACIÓN EXPLÍCITA 4.1C** — no ejecutar migración ni `--apply` sin ella.
+**La fase 4.1C NO requiere migración.** La ausencia de writes es el resultado esperado. **NO** se implementó ni desbloqueó `--apply` para esta fase.
+
+### Cierre 4.1C — NO-OP (2026-08-28)
+
+| Campo | Valor |
+|-------|-------|
+| Resultado | **NO-OP APROBADA** |
+| Motivo | No existen registros legacy elegibles para migrar |
+| Fingerprint inventario (4.1B) | `7b2f43e48af9365f6b616e5dd0f8bffd271b517f5f836bf5022026a6cef7071c` |
+| Fingerprint precheck 4.1C | `7b2f43e48af9365f6b616e5dd0f8bffd271b517f5f836bf5022026a6cef7071c` |
+| Datos cambiaron | **NO** |
+| `eventos` legacy | 0 |
+| `asistencias` legacy | 0 |
+| Auto-migrables | 0 |
+| Casos manuales | 0 |
+| Conflictos | 0 |
+| Huérfanos | 0 |
+| Duplicados | 0 |
+| Dry-run writes propuestos | 0 |
+| Dry-run updates propuestos | 0 |
+| Dry-run deletes propuestos | 0 |
+| Writes reales | 0 |
+| Updates reales | 0 |
+| Deletes reales | 0 |
+| `--apply` ejecutado | **NO** |
+| Backup verificado | **SÍ** (`pre-4-1c-20260828-224919`) |
+| Producción consistente | **SÍ** |
+
+Reporte precheck 4.1C (gitignored): `tool/migrations/migration-reports/production-readonly-inventory-20260828-2303.{json,csv}`
+
+### Follow-up independiente (fuera de 4.1C)
+
+| Observación | Detalle |
+|-------------|---------|
+| Usuario sin `memberId` | 1 usuario con match exacto posible |
+| Incluido en 4.1C | **NO** — fuera del alcance de migración legacy |
+| Modificado en 4.1C | **NO** |
+| Estado | **PENDIENTE PARA REVISIÓN INDEPENDIENTE** |
 
 ---
 

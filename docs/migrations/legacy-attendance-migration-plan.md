@@ -3,7 +3,8 @@
 Documento operativo para migrar datos legacy de asistencia sin romper producción.
 
 **Versión de migración:** `legacy-attendance-v1`
-**Checkpoint documental:** `v1.4.5-production-inventory`
+**Checkpoint documental:** `v1.4.6-4.1c-noop`
+**Checkpoint anterior:** `v1.4.5-production-inventory` (`38d777f`)
 **Checkpoint tooling:** `v1.4.4-readonly-adc` (`b596d42`)
 
 ---
@@ -256,26 +257,40 @@ Ver también: `docs/architecture/attendance-consolidation.md`
 
 Detalle: `docs/migrations/production-readonly-inventory.md`
 
-### 4.1C — lista para solicitar autorización (NO ejecutada)
+### 4.1C — completada (NO-OP)
 
-| Gate | Estado |
-|------|--------|
-| `backupVerified` | `true` — GCS `pre-4-1c-20260828-224919`, `SUCCESSFUL` |
-| `migrationAuthorized` | `false` — requiere autorización explícita del propietario |
-| `blockedUntilBackupVerified` | `false` — backup ya verificado |
-| Migración real ejecutada | **NO** |
-| `--apply` ejecutado | **NO** |
+| Campo | Valor |
+|-------|-------|
+| Resultado | **NO-OP APROBADA** (2026-08-28) |
+| Motivo | No existen registros legacy elegibles (`eventos`=0, `asistencias` legacy=0) |
+| Fingerprint estable | Sí — idéntico al inventario 4.1B |
+| Auto-migrables | 0 |
+| Casos manuales / conflictos / huérfanos / duplicados | 0 |
+| Dry-run propuesto | 0 writes, 0 updates, 0 deletes |
+| Migración real | **NO ejecutada** |
+| `--apply` | **NO ejecutado** |
+| Writes / updates / deletes reales | 0 / 0 / 0 |
+| Backup pre-4.1C | Verificado (`pre-4-1c-20260828-224919`) |
+| Producción | Consistente |
+
+**La fase 4.1C NO requiere migración.** La ausencia de writes es el resultado esperado. **NO** se implementó ni desbloqueó `--apply` únicamente para cerrar esta fase.
 
 - [x] Backup Firestore exportado y verificado en GCS
-- [ ] Autorización explícita para migración
-- [ ] Migración real (`--apply` aún no habilitado en tooling)
+- [x] Autorización explícita para evaluación 4.1C
+- [x] Precheck read-only + dry-run contra producción (0 operaciones propuestas)
+- [x] Cierre documental sin migración real
 
-**NO ejecutar migración automáticamente. NO ejecutar `--apply` sin autorización explícita.**
+Detalle: `docs/migrations/production-readonly-inventory.md` (sección *Cierre 4.1C — NO-OP*)
 
-**Alcance estimado post-inventario:** mínimo (posible backfill `users.memberId` en 1 usuario).
+### Follow-up independiente (fuera de 4.1C)
 
-**Estado:** LISTO PARA SOLICITAR AUTORIZACIÓN EXPLÍCITA 4.1C
+| Observación | Estado |
+|-------------|--------|
+| 1 usuario sin `memberId` con match exacto posible | **PENDIENTE PARA REVISIÓN INDEPENDIENTE** |
+| Incluido en alcance 4.1C | **NO** |
+| Modificado en 4.1C | **NO** |
 
 ### Fases posteriores
 
 - [ ] Retiro legacy (tras estabilidad operativa)
+- [ ] Revisión independiente backfill `users.memberId` (si procede)
