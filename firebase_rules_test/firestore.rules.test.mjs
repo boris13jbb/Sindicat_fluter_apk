@@ -286,7 +286,26 @@ describe('attendance permissions', () => {
 });
 
 describe('votes', () => {
-  beforeEach(async () => {
+  const activeMember = {
+    memberNumber: '200',
+    firstName: 'Voto',
+    lastName: 'Activo',
+    fullName: 'Voto Activo',
+    workerCode: 'W-200',
+    status: 'active',
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  const inactiveMember = {
+    ...activeMember,
+    memberNumber: '201',
+    workerCode: 'W-201',
+    fullName: 'Voto Inactivo',
+    status: 'inactive',
+  };
+
+  async function seedOpenElection() {
     const now = Date.now();
     await seed('elections/election-1', {
       isActive: true,
@@ -302,15 +321,14 @@ describe('votes', () => {
       order: 0,
       voteCount: 0,
     });
-  });
+  }
 
-  test('allows the atomic vote batch exactly once', async () => {
-    const db = testEnv.authenticatedContext('voter').firestore();
+  async function commitVoteBatch(db, userId) {
     const batch = writeBatch(db);
-    const voteRef = doc(db, 'elections/election-1/votes/election-1_voter');
+    const voteRef = doc(db, `elections/election-1/votes/election-1_${userId}`);
     batch.set(voteRef, {
       electionId: 'election-1',
-      userId: 'voter',
+      userId,
       candidateId: 'candidate-1',
       votedAt: serverTimestamp(),
     });
@@ -321,14 +339,92 @@ describe('votes', () => {
       totalVotes: increment(1),
       updatedAt: Date.now(),
     });
+    return batch.commit();
+  }
 
-    await assertSucceeds(batch.commit());
-    await assertFails(setDoc(voteRef, {
-      electionId: 'election-1',
-      userId: 'voter',
-      candidateId: 'candidate-1',
-      votedAt: new Date(),
-    }));
+  beforeEach(async () => {
+    await seedOpenElection();
+    await seed('members/member-active', activeMember);
+    await seed('users/voter', {
+      ...userData('VOTER'),
+      memberId: 'member-active',
+      employeeNumber: 'W-200',
+    });
+  });
+
+  test('allows the atomic vote batch exactly once', async () => {
+    const db = testEnv.authenticatedContext('voter').firestore();
+
+    await assertSucceeds(commitVoteBatch(db, 'voter'));
+    await assertFails(
+      setDoc(doc(db, 'elections/election-1/votes/election-1_voter'), {
+        electionId: 'election-1',
+        userId: 'voter',
+        candidateId: 'candidate-1',
+        votedAt: new Date(),
+      }),
+    );
+  });
+
+  test('allows VOTER with active member to create vote when requireAttendance is false', async () => {
+    const db = testEnv.authenticatedContext('voter').firestore();
+    await assertSucceeds(commitVoteBatch(db, 'voter'));
+  });
+
+  test('blocks VOTER with inactive member from creating vote', async () => {
+    await seed('members/member-inactive', inactiveMember);
+    await seed('users/inactive-member-voter', {
+      ...userData('VOTER'),
+      memberId: 'member-inactive',
+      employeeNumber: 'W-201',
+    });
+
+    const db = testEnv.authenticatedContext('inactive-member-voter').firestore();
+    await assertFails(commitVoteBatch(db, 'inactive-member-voter'));
+  });
+
+  test('blocks VOTER with inactive member even when attendance would be required', async () => {
+    await seed('members/member-inactive', inactiveMember);
+    await seed('users/inactive-member-voter', {
+      ...userData('VOTER'),
+      memberId: 'member-inactive',
+      employeeNumber: 'W-201',
+    });
+
+    const db = testEnv.authenticatedContext('inactive-member-voter').firestore();
+    await assertFails(commitVoteBatch(db, 'inactive-member-voter'));
+  });
+
+  test('blocks VOTER without memberId from creating vote', async () => {
+    await seed('users/no-member-voter', userData('VOTER'));
+
+    const db = testEnv.authenticatedContext('no-member-voter').firestore();
+    await assertFails(commitVoteBatch(db, 'no-member-voter'));
+  });
+
+  test('blocks vote when memberId points to a missing member', async () => {
+    await seed('users/missing-member-voter', {
+      ...userData('VOTER'),
+      memberId: 'member-missing',
+      employeeNumber: 'W-999',
+    });
+
+    const db = testEnv.authenticatedContext('missing-member-voter').firestore();
+    await assertFails(commitVoteBatch(db, 'missing-member-voter'));
+  });
+
+  test('blocks vote payload that tries to use another user id', async () => {
+    const db = testEnv.authenticatedContext('voter').firestore();
+    const voteRef = doc(db, 'elections/election-1/votes/election-1_voter');
+
+    await assertFails(
+      setDoc(voteRef, {
+        electionId: 'election-1',
+        userId: 'other',
+        candidateId: 'candidate-1',
+        votedAt: serverTimestamp(),
+      }),
+    );
   });
 
   test('allows own vote read and blocks another voter vote read', async () => {
@@ -354,19 +450,29 @@ describe('votes', () => {
       ...userData('VOTER'),
       email: 'inactive@test.local',
       isActive: false,
+      memberId: 'member-active',
+      employeeNumber: 'W-200',
     });
 
     const db = testEnv.authenticatedContext('inactive-voter').firestore();
-    const voteRef = doc(db, 'elections/election-1/votes/election-1_inactive-voter');
+
+    await assertFails(commitVoteBatch(db, 'inactive-voter'));
+  });
+
+  test('blocks vote update and delete', async () => {
+    await seed('elections/election-1/votes/election-1_voter', {
+      electionId: 'election-1',
+      userId: 'voter',
+      candidateId: 'candidate-1',
+      votedAt: new Date(),
+    });
+    const db = testEnv.authenticatedContext('voter').firestore();
+    const voteRef = doc(db, 'elections/election-1/votes/election-1_voter');
 
     await assertFails(
-      setDoc(voteRef, {
-        electionId: 'election-1',
-        userId: 'inactive-voter',
-        candidateId: 'candidate-1',
-        votedAt: serverTimestamp(),
-      }),
+      updateDoc(voteRef, { candidateId: 'candidate-1' }),
     );
+    await assertFails(deleteDoc(voteRef));
   });
 });
 
