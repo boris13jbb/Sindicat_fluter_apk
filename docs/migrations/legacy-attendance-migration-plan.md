@@ -2,8 +2,9 @@
 
 Documento operativo para migrar datos legacy de asistencia sin romper producción.
 
-**Versión de migración:** `legacy-attendance-v1`  
-**Checkpoint previo:** tag Git `v1.4-attendance-consolidated` (`334dee0`)
+**Versión de migración:** `legacy-attendance-v1`
+**Checkpoint documental:** `v1.4.5-production-inventory`
+**Checkpoint tooling:** `v1.4.4-readonly-adc` (`b596d42`)
 
 ---
 
@@ -148,43 +149,46 @@ Salida en `migration-reports/` (gitignored):
 
 ---
 
-## 8. Backup plan (antes de 4.1B — NO ejecutado aún)
+## 8. Backup plan y registro verificado
 
 ### Proyecto Firebase
 
 - **Project ID:** `sistema-integrado-sindicato`
-- **Colecciones a respaldar:** `personas`, `eventos`, `asistencias`, `members`, `users`, `attendance_events` (+ subcolecciones `asistencias`)
+- **Base:** `(default)` — ubicación `nam5`
+- **Export:** completo (sin `--collection-ids`)
 
-### Opción A — Export gestionado (recomendado)
+### Backup ejecutado y verificado (2026-08-28)
 
-Requisitos: permisos `roles/datastore.importExportAdmin`, bucket GCS.
+| Campo | Valor |
+|-------|-------|
+| Bucket | `gs://sistema-integrado-sindicato-firestore-backups-2026` |
+| Prefijo | `pre-4-1c-20260828-224919` |
+| Output URI | `gs://sistema-integrado-sindicato-firestore-backups-2026/pre-4-1c-20260828-224919` |
+| Metadata | `.../pre-4-1c-20260828-224919.overall_export_metadata` |
+| Operation ID | `projects/sistema-integrado-sindicato/databases/(default)/operations/ASAwYTkyODgxMWQ3YmYtYTIxOC1hY2U0LTE1YzUtZTAwMDk3OTckGnNlbmlsZXBpcAkKMxI` |
+| Estado | `SUCCESSFUL` |
+| Documentos exportados | 651 |
+| Objetos GCS | 6 |
+| Firestore modificado durante export | 0 (sin import/restore) |
 
 ```bash
-gcloud firestore export gs://<BUCKET>/backups/pre-legacy-migration-YYYYMMDD \
-  --project=sistema-integrado-sindicato \
-  --collection-ids=personas,eventos,asistencias,members,users,attendance_events
+gcloud firestore export gs://sistema-integrado-sindicato-firestore-backups-2026/pre-4-1c-20260828-224919 --database='(default)'
 ```
 
-Verificación: listar objetos en GCS y metadata del export en consola Firebase.
-
-Restauración (solo emergencia, entorno controlado):
+Restauración (solo emergencia, entorno controlado — **no autorizada en 4.1B/4.1C sin aprobación explícita**):
 
 ```bash
-gcloud firestore import gs://<BUCKET>/backups/pre-legacy-migration-YYYYMMDD \
+gcloud firestore import gs://sistema-integrado-sindicato-firestore-backups-2026/pre-4-1c-20260828-224919 \
   --project=sistema-integrado-sindicato
 ```
 
-### Opción B — Export JSON por script (lectura)
-
-Usar el mismo lector del dry-run en modo read-only y guardar snapshot cifrado fuera del repo.
-
 ### Checklist pre-migración real
 
-- [ ] Backup exportado y verificado
-- [ ] Dry-run en emulador con datos representativos
-- [ ] Dry-run read-only en producción (métricas, sin escrituras)
+- [x] Backup exportado y verificado (2026-08-28, GCS, metadata confirmado)
+- [x] Dry-run en emulador con datos representativos
+- [x] Dry-run read-only en producción (métricas, sin escrituras) — 2026-08-28, 0 escrituras
 - [ ] Ventana de mantenimiento acordada
-- [ ] Plan de rollback documentado
+- [x] Plan de rollback documentado
 
 ---
 
@@ -231,14 +235,47 @@ Ver también: `docs/architecture/attendance-consolidation.md`
 
 ---
 
-## 13. Fase 4.1A — estado
+## 13. Estado por fase
+
+### 4.1A — completada
 
 - [x] Inventario y mapeo definidos
 - [x] Script dry-run (default seguro)
-- [x] Tests (13/13) incl. 0 escrituras en dry-run
+- [x] Tests locales en verde (dry-run, 0 escrituras)
 - [x] Fixtures emulador
 - [x] Backup plan documentado
 - [x] CI Gate con Migration Tests (4.1B-0)
-- [ ] Inventario read-only producción (4.1B — requiere SA `roles/datastore.viewer`)
-- [ ] Migración real (4.1C)
-- [ ] Retiro legacy (fase posterior)
+
+### 4.1B — completada (inventario producción)
+
+- [x] Tooling ADC + impersonación (`v1.4.4-readonly-adc`)
+- [x] Inventario read-only producción (2026-08-28): 557 docs raíz, 0 escrituras
+- [x] Identidad: `sindicat-migration-readonly@sistema-integrado-sindicato.iam.gserviceaccount.com`
+- [x] Fingerprint estable (`--double-run`: `sameFingerprint=true`, `dataChangedDuringAnalysis=false`)
+- [x] Hallazgo: sin `eventos`/`asistencias` legacy; modelo moderno activo
+
+Detalle: `docs/migrations/production-readonly-inventory.md`
+
+### 4.1C — lista para solicitar autorización (NO ejecutada)
+
+| Gate | Estado |
+|------|--------|
+| `backupVerified` | `true` — GCS `pre-4-1c-20260828-224919`, `SUCCESSFUL` |
+| `migrationAuthorized` | `false` — requiere autorización explícita del propietario |
+| `blockedUntilBackupVerified` | `false` — backup ya verificado |
+| Migración real ejecutada | **NO** |
+| `--apply` ejecutado | **NO** |
+
+- [x] Backup Firestore exportado y verificado en GCS
+- [ ] Autorización explícita para migración
+- [ ] Migración real (`--apply` aún no habilitado en tooling)
+
+**NO ejecutar migración automáticamente. NO ejecutar `--apply` sin autorización explícita.**
+
+**Alcance estimado post-inventario:** mínimo (posible backfill `users.memberId` en 1 usuario).
+
+**Estado:** LISTO PARA SOLICITAR AUTORIZACIÓN EXPLÍCITA 4.1C
+
+### Fases posteriores
+
+- [ ] Retiro legacy (tras estabilidad operativa)

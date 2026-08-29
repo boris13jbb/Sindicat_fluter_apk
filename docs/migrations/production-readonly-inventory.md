@@ -1,8 +1,12 @@
 # Fase 4.1B — Inventario read-only de Firestore producción
 
-**Checkpoint previo:** `v1.4.3-readonly-tooling` (`7e5fadd`)
-**Proyecto Firebase:** `sistema-integrado-sindicato`  
+**Checkpoint tooling:** `v1.4.4-readonly-adc` (`b596d42`)
+**Checkpoint documental:** `v1.4.5-production-inventory`
+**Proyecto Firebase:** `sistema-integrado-sindicato`
 **Versión análisis:** `production-readonly-v1`
+**Estado 4.1B:** inventario producción ejecutado y documentado (2026-08-28) — 0 escrituras
+**Estado backup pre-4.1C:** verificado en GCS (2026-08-28)
+**Estado 4.1C:** `backupVerified=true`, `migrationAuthorized=false` — **NO ejecutar migración ni `--apply`**
 
 ---
 
@@ -92,13 +96,121 @@ roles/datastore.importExportAdmin
 
 ### Procedimiento de backup (antes de 4.1C)
 
+Export **completo** de la base `(default)` (sin `--collection-ids`):
+
 ```bash
-gcloud firestore export gs://<BUCKET>/backups/pre-legacy-migration-YYYYMMDD \
-  --project=sistema-integrado-sindicato \
-  --collection-ids=personas,eventos,asistencias,members,users,attendance_events
+gcloud firestore export gs://<BUCKET>/<prefijo> --database='(default)'
 ```
 
-**Estado actual:** backup debe verificarse manualmente antes de 4.1C. Sin backup verificado → **4.1C BLOQUEADA**.
+**Estado actual:** backup **ejecutado y verificado** (2026-08-28). Ver sección [Backup verificado](#backup-verificado-pre-41c-2026-08-28).
+
+El backup ya no bloquea técnicamente 4.1C (`backupVerified=true`), pero la migración sigue **bloqueada** hasta autorización explícita del propietario (`migrationAuthorized=false`).
+
+**NO ejecutar migración automáticamente. NO ejecutar `--apply` sin autorización explícita.**
+
+### Runbook de backup (referencia)
+
+1. **Identidad:** usuario o SA con `roles/datastore.importExportAdmin` (no usar la SA read-only de inventario).
+2. **Bucket GCS:** crear o reutilizar bucket en el mismo proyecto; anotar URI, p. ej. `gs://sindicat-firestore-backups`.
+3. **Export:**
+
+```bash
+gcloud firestore export gs://<BUCKET>/<prefijo> --database='(default)'
+```
+
+4. **Verificar:** presencia de `*.overall_export_metadata` bajo el prefijo exportado.
+5. **Registrar:** fecha, URI, Operation ID y responsable antes de autorizar 4.1C.
+
+---
+
+## Backup verificado pre-4.1C (2026-08-28)
+
+| Campo | Valor |
+|-------|-------|
+| Bucket | `gs://sistema-integrado-sindicato-firestore-backups-2026` |
+| Prefijo | `pre-4-1c-20260828-224919` |
+| Output URI | `gs://sistema-integrado-sindicato-firestore-backups-2026/pre-4-1c-20260828-224919` |
+| Metadata | `.../pre-4-1c-20260828-224919.overall_export_metadata` |
+| Operation ID | `projects/sistema-integrado-sindicato/databases/(default)/operations/ASAwYTkyODgxMWQ3YmYtYTIxOC1hY2U0LTE1YzUtZTAwMDk3OTckGnNlbmlsZXBpcAkKMxI` |
+| Estado | `SUCCESSFUL` (`done: true`) |
+| Inicio | `2026-08-29T03:51:30.482430Z` |
+| Fin | `2026-08-29T03:52:02.502551Z` |
+| Documentos exportados | 651 |
+| Objetos GCS | 6 |
+| `.overall_export_metadata` | Sí |
+| Verificación física | Sí |
+
+**Comando ejecutado:**
+
+```bash
+gcloud firestore export gs://sistema-integrado-sindicato-firestore-backups-2026/pre-4-1c-20260828-224919 --database='(default)'
+```
+
+**Efecto en Firestore:** 0 documentos creados, 0 actualizados, 0 eliminados. Sin import ni restore.
+
+---
+
+## Resultado del inventario (2026-08-28)
+
+Primera ejecución autorizada con ADC + impersonación read-only.
+
+### Identidad y autenticación
+
+| Campo | Valor |
+|-------|-------|
+| Proyecto | `sistema-integrado-sindicato` |
+| Service Account (impersonada) | `sindicat-migration-readonly@sistema-integrado-sindicato.iam.gserviceaccount.com` |
+| Método | ADC + Service Account Impersonation (`applicationDefault`) |
+| Rol SA | `roles/datastore.viewer` |
+
+### Conteos por colección
+
+| Colección | Documentos |
+|-----------|------------|
+| `users` | 4 |
+| `members` | 273 |
+| `personas` | 273 |
+| `eventos` | 0 |
+| `attendance_events` | 7 |
+| `asistencias` (legacy raíz) | 0 |
+| Asistencias modernas | 5 |
+| **Total docs raíz observados** | **557** |
+
+### Clasificación y consistencia
+
+| Métrica | Valor |
+|---------|-------|
+| Personas `MATCH_EXACT` | 273 / 273 |
+| Casos ambiguos | 0 |
+| Casos manuales | 0 |
+| Auto-migrables (plan 4.1C) | 0 |
+| Fingerprint | `7b2f43e48af9365f6b616e5dd0f8bffd271b517f5f836bf5022026a6cef7071c` |
+| Double-run `sameFingerprint` | `true` |
+| Double-run `sameCounts` | `true` |
+| `dataChangedDuringAnalysis` | `false` |
+
+**Hallazgos:** sin `eventos`/`asistencias` legacy; producción operativa en modelo moderno; 1 usuario sin `memberId` (1 match exacto posible).
+
+### Seguridad del inventario
+
+```text
+writesAttempted: 0
+deletesAttempted: 0
+--apply: NO
+migración: NO
+```
+
+Reportes locales (gitignored): `tool/migrations/migration-reports/production-readonly-inventory-20260828-2113.{json,csv}`
+
+### Puerta 4.1C
+
+```text
+backupVerified: true
+migrationAuthorized: false
+blockedUntilBackupVerified: false   # backup ya verificado
+```
+
+**LISTO PARA SOLICITAR AUTORIZACIÓN EXPLÍCITA 4.1C** — no ejecutar migración ni `--apply` sin ella.
 
 ---
 
