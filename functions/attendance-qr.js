@@ -10,7 +10,7 @@
  */
 
 const {initializeApp, getApps} = require("firebase-admin/app");
-const {FieldValue, Timestamp, getFirestore} = require("firebase-admin/firestore");
+const {FieldValue, FieldPath, Timestamp, getFirestore} = require("firebase-admin/firestore");
 const {getAuth} = require("firebase-admin/auth");
 const {logger} = require("firebase-functions");
 const {onRequest} = require("firebase-functions/v2/https");
@@ -33,6 +33,27 @@ const METODO_SECURE = "SECURE_QR_V2";
 const KEY_VERSION = "v1";
 const CREDENTIAL_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 const BATCH_MAX = 50;
+
+/** Pagination size for active member-device queries (deterministic orderBy __name__). */
+const DEVICE_PAGE_SIZE = 200;
+/** Admin SDK getAll() chunk size for members/{id} batch reads. */
+const MEMBER_GETALL_CHUNK = 100;
+/**
+ * Operational max participants (devices) in one offline package.
+ * Minimum guaranteed capacity: 5000 active devices (requirement).
+ * Headroom to 7500 (~1.74 MB full HTTP package in fixture measurements;
+ * participants JSON alone ~1.74 MB at 7500) stays under Cloud Functions v2 /
+ * Hosting proxy comfort with margin vs MAX_PARTICIPANTS_JSON_BYTES.
+ * Exceeding this yields HTTP 413 offline-package-too-large (never silent trim).
+ */
+const MAX_OFFLINE_PACKAGE_DEVICES = 7500;
+/** Absolute scan ceiling while paginating active devices (DoS / memory guard). */
+const MAX_ACTIVE_DEVICE_SCAN = 20000;
+/**
+ * JSON size guard on participants array alone (UTF-8 bytes).
+ * ~2.32 MB at 10k fixture participants; 7500 ≈ 1.74 MB measured.
+ */
+const MAX_PARTICIPANTS_JSON_BYTES = 3 * 1024 * 1024;
 
 const ENROLL_LIMIT = {maximum: 10, windowMs: 60 * 60 * 1000};
 const PREP_LIMIT = {maximum: 30, windowMs: 60 * 60 * 1000};
@@ -190,6 +211,180 @@ function participantsHash(participants) {
   return cryptoHelpers.hashSha256Hex(normalized);
 }
 
+/**
+ * Loads ALL active attendance_member_devices with deterministic pagination.
+ * Never silently truncates: throws offline-package-too-large / scan-too-large.
+ *
+ * @param {FirebaseFirestore.Firestore} [firestore]
+ * @param {{pageSize?: number, maxScan?: number}} [opts]
+ * @return {Promise<FirebaseFirestore.QueryDocumentSnapshot[]>}
+ */
+async function loadActiveAttendanceMemberDevices(
+  firestore = db,
+  {
+    pageSize = DEVICE_PAGE_SIZE,
+    maxScan = MAX_ACTIVE_DEVICE_SCAN,
+  } = {},
+) {
+  const docs = [];
+  let lastDoc = null;
+  let pageHasMore = true;
+  while (pageHasMore) {
+    let query = firestore
+      .collection(MEMBER_DEVICES)
+      .where("status", "==", "active")
+      .orderBy(FieldPath.documentId())
+      .limit(pageSize);
+    if (lastDoc) {
+      query = query.startAfter(lastDoc);
+    }
+    const snap = await query.get();
+    if (snap.empty) {
+      pageHasMore = false;
+      break;
+    }
+    for (const doc of snap.docs) {
+      docs.push(doc);
+      if (docs.length > maxScan) {
+        throw new HttpError(
+          413,
+          "offline-package-scan-too-large",
+          `Active device scan exceeded ${maxScan}`,
+        );
+      }
+    }
+    if (snap.size < pageSize) {
+      pageHasMore = false;
+    } else {
+      lastDoc = snap.docs[snap.docs.length - 1];
+    }
+  }
+  return docs;
+}
+
+/**
+ * Batch-loads members by id via Admin getAll (chunked). No per-device N+1.
+ * Missing docs are omitted from the map (caller skips those devices).
+ *
+ * @param {Iterable<string>} memberIds
+ * @param {FirebaseFirestore.Firestore} [firestore]
+ * @param {{chunkSize?: number}} [opts]
+ * @return {Promise<Map<string, object>>}
+ */
+async function loadMembersByIds(
+  memberIds,
+  firestore = db,
+  {chunkSize = MEMBER_GETALL_CHUNK} = {},
+) {
+  const unique = [...new Set([...memberIds].map((id) => String(id || "").trim()).filter(Boolean))];
+  const map = new Map();
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize);
+    const refs = chunk.map((id) => firestore.collection("members").doc(id));
+    const snaps = await firestore.getAll(...refs);
+    for (const snap of snaps) {
+      if (snap.exists) {
+        map.set(snap.id, snap.data() || {});
+      }
+    }
+  }
+  return map;
+}
+
+/**
+ * Builds offline package participants from device docs + member map.
+ * Preserves multi-device-per-member. Missing members are skipped (no 500).
+ * Inactive members are included with status "inactive" (existing policy).
+ *
+ * @param {FirebaseFirestore.QueryDocumentSnapshot[]} deviceDocs
+ * @param {Map<string, object>} memberMap
+ * @param {object} event
+ * @return {object[]}
+ */
+function buildOfflineParticipants(deviceDocs, memberMap, event) {
+  const convocados = Array.isArray(event.miembrosConvocados)
+    ? event.miembrosConvocados.map((id) => String(id))
+    : [];
+  const convocadosSet = convocados.length > 0 ? new Set(convocados) : null;
+
+  const participants = [];
+  for (const doc of deviceDocs) {
+    const d = doc.data() || {};
+    const memberId = String(d.memberId || "");
+    if (!memberId) continue;
+    if (convocadosSet && !convocadosSet.has(memberId)) continue;
+
+    const m = memberMap.get(memberId);
+    if (!m) continue;
+
+    const status = memberIsActive(m) ? "active" : "inactive";
+    participants.push({
+      memberId,
+      memberDeviceId: doc.id,
+      memberPublicKey: String(d.publicKey || ""),
+      credentialId: String(d.lastCredentialId || ""),
+      status,
+      displayName: String(m.fullName || `${m.firstName || ""} ${m.lastName || ""}`.trim()),
+      memberNumber: String(m.memberNumber || ""),
+      workerCode: String(m.workerCode || ""),
+    });
+  }
+  return participants;
+}
+
+/**
+ * Asserts package participant count / JSON size are within operational bounds.
+ * Never truncates — fails closed with offline-package-too-large.
+ */
+function assertOfflinePackageSize(participants) {
+  const count = participants.length;
+  if (count > MAX_OFFLINE_PACKAGE_DEVICES) {
+    const err = new HttpError(
+      413,
+      "offline-package-too-large",
+      `Participant device count ${count} exceeds max ${MAX_OFFLINE_PACKAGE_DEVICES}`,
+    );
+    err.participantDeviceCount = count;
+    throw err;
+  }
+  const jsonBytes = Buffer.byteLength(JSON.stringify(participants), "utf8");
+  if (jsonBytes > MAX_PARTICIPANTS_JSON_BYTES) {
+    const err = new HttpError(
+      413,
+      "offline-package-too-large",
+      `Participants JSON ${jsonBytes} bytes exceeds max ${MAX_PARTICIPANTS_JSON_BYTES}`,
+    );
+    err.participantDeviceCount = count;
+    throw err;
+  }
+}
+
+/**
+ * Full pipeline: paginate devices → filter convocados → batch members → participants.
+ */
+async function collectOfflinePackageParticipants(event, firestore = db) {
+  const deviceDocs = await loadActiveAttendanceMemberDevices(firestore);
+  const convocados = Array.isArray(event.miembrosConvocados)
+    ? event.miembrosConvocados.map((id) => String(id))
+    : [];
+  const convocadosSet = convocados.length > 0 ? new Set(convocados) : null;
+
+  const candidateDocs = [];
+  const memberIds = [];
+  for (const doc of deviceDocs) {
+    const memberId = String((doc.data() || {}).memberId || "");
+    if (!memberId) continue;
+    if (convocadosSet && !convocadosSet.has(memberId)) continue;
+    candidateDocs.push(doc);
+    memberIds.push(memberId);
+  }
+
+  const memberMap = await loadMembersByIds(memberIds, firestore);
+  const participants = buildOfflineParticipants(candidateDocs, memberMap, event);
+  assertOfflinePackageSize(participants);
+  return participants;
+}
+
 function jsonOk(res, body) {
   res.status(200).json({ok: true, ...body});
 }
@@ -197,11 +392,15 @@ function jsonOk(res, body) {
 function jsonErr(res, error) {
   const status = error.status || 500;
   if (status >= 500) logger.error("attendance-qr error", error);
-  res.status(status).json({
+  const body = {
     ok: false,
     code: error.code || "internal",
     message: error.message || "error",
-  });
+  };
+  if (typeof error.participantDeviceCount === "number") {
+    body.participantDeviceCount = error.participantDeviceCount;
+  }
+  res.status(status).json(body);
 }
 
 /**
@@ -359,37 +558,7 @@ async function handlePrepareOfflineEvent(req, res) {
     if (!eventSnap.exists) throw new HttpError(404, "event-missing");
     const event = eventSnap.data() || {};
 
-    const devicesSnap = await db.collection(MEMBER_DEVICES)
-      .where("status", "==", "active")
-      .limit(500)
-      .get();
-
-    const participants = [];
-    for (const doc of devicesSnap.docs) {
-      const d = doc.data() || {};
-      const memberId = String(d.memberId || "");
-      if (!memberId) continue;
-      // If event has explicit convocados, filter; empty = all active devices.
-      const convocados = Array.isArray(event.miembrosConvocados)
-        ? event.miembrosConvocados
-        : [];
-      if (convocados.length > 0 && !convocados.includes(memberId)) continue;
-
-      const memberSnap = await db.collection("members").doc(memberId).get();
-      if (!memberSnap.exists) continue;
-      const m = memberSnap.data() || {};
-      const status = memberIsActive(m) ? "active" : "inactive";
-      participants.push({
-        memberId,
-        memberDeviceId: doc.id,
-        memberPublicKey: String(d.publicKey || ""),
-        credentialId: String(d.lastCredentialId || ""),
-        status,
-        displayName: String(m.fullName || `${m.firstName || ""} ${m.lastName || ""}`.trim()),
-        memberNumber: String(m.memberNumber || ""),
-        workerCode: String(m.workerCode || ""),
-      });
-    }
+    const participants = await collectOfflinePackageParticipants(event, db);
 
     const serverKey = resolveServerKeyPair();
     const nowMs = Date.now();
@@ -818,5 +987,15 @@ module.exports = {
     setVerifyAppCheckTokenForTests,
     resetVerifyAppCheckTokenForTests,
     HttpError,
+    loadActiveAttendanceMemberDevices,
+    loadMembersByIds,
+    buildOfflineParticipants,
+    collectOfflinePackageParticipants,
+    assertOfflinePackageSize,
+    DEVICE_PAGE_SIZE,
+    MEMBER_GETALL_CHUNK,
+    MAX_OFFLINE_PACKAGE_DEVICES,
+    MAX_ACTIVE_DEVICE_SCAN,
+    MAX_PARTICIPANTS_JSON_BYTES,
   },
 };

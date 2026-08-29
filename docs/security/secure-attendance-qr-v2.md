@@ -156,6 +156,19 @@ La site key **no** se hardcodea en el repositorio.
 
 **No se afirma** “ENFORCED IN PRODUCTION” hasta que exista deploy real + providers registrados en Console.
 
+### Offline package scalability
+
+| Campo | Valor |
+|-------|--------|
+| Device query | Paginada (`status==active` + `orderBy(__name__)`, page 200) |
+| Member loads | `getAll` por chunks de 100 (sin N+1) |
+| Límite silencioso 500 | **Eliminado** |
+| Capacidad mínima probada | **≥ 5000** dispositivos activos (`attendance_member_devices`) |
+| Máximo operativo | `MAX_OFFLINE_PACKAGE_DEVICES = 7500` (headroom sobre 5000) |
+| Si se supera | HTTP **413** `offline-package-too-large` (nunca recorte parcial) |
+| Tamaño JSON participants (medido fixture) | ~0.14 MB @600 · ~1.16 MB @5000 · ~1.74 MB @7500 |
+| Multi-device | Varios `memberDeviceId` por socio permitidos |
+
 ### Debug Web
 
 El plugin `firebase_app_check` 0.3.x no expone un `DebugProvider` web.

@@ -607,3 +607,208 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
     assert.equal(res.body.code, "batch-too-large");
   });
 });
+
+describe("HTTP E2E attendancePrepareOfflineEvent scale (>500 devices)", () => {
+  let db;
+  let operatorToken;
+  let operatorUid;
+
+  function prepareUrl() {
+    const host = FUNCTIONS_HOST.includes("://")
+      ? FUNCTIONS_HOST
+      : `http://${FUNCTIONS_HOST}`;
+    return `${host}/${PROJECT}/${REGION}/attendancePrepareOfflineEvent`;
+  }
+
+  async function wipeScaleCollections() {
+    for (const col of [
+      "attendance_member_devices",
+      "members",
+      "attendance_scanner_devices",
+      "attendance_events",
+    ]) {
+      const snap = await db.collection(col).get();
+      const docs = snap.docs;
+      for (let i = 0; i < docs.length; i += 400) {
+        const batch = db.batch();
+        docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    }
+  }
+
+  async function seedScaleDevices({memberCount, devicesPerMember, memberIdPrefix = "http-scale-m"}) {
+    const kp = cryptoHelpers.generateEd25519KeyPair();
+    const bulkWriter = db.bulkWriter();
+    for (let m = 0; m < memberCount; m++) {
+      const memberId = `${memberIdPrefix}-${m}`;
+      bulkWriter.set(db.collection("members").doc(memberId), {
+        fullName: `Scale ${m}`,
+        status: "activo",
+        memberNumber: String(m),
+        workerCode: `W${m}`,
+      });
+      for (let d = 0; d < devicesPerMember; d++) {
+        const deviceId = `${memberId}-d${d}`;
+        bulkWriter.set(db.collection("attendance_member_devices").doc(deviceId), {
+          deviceId,
+          memberId,
+          publicKey: kp.publicKeyBase64Url,
+          status: "active",
+          lastCredentialId: `cred-${m}-${d}`,
+        });
+      }
+    }
+    await bulkWriter.close();
+    return kp;
+  }
+
+  async function seedScannerAndEvent(scannerId, eventId) {
+    const scannerKp = cryptoHelpers.generateEd25519KeyPair();
+    await db.collection("attendance_scanner_devices").doc(scannerId).set({
+      scannerId,
+      publicKey: scannerKp.publicKeyBase64Url,
+      status: "active",
+      assignedUserId: operatorUid,
+    });
+    await db.collection("attendance_events").doc(eventId).set({
+      nombre: "HTTP Scale Package",
+      fecha: Date.now(),
+      fechaFin: Date.now() + 3_600_000,
+      activo: true,
+    });
+  }
+
+  before(async () => {
+    if (!emulatorsReady()) {
+      console.warn("SKIP HTTP prepare scale: emulators not ready");
+      return;
+    }
+    process.env.GCLOUD_PROJECT = PROJECT;
+    process.env.GOOGLE_CLOUD_PROJECT = PROJECT;
+    process.env.FUNCTIONS_EMULATOR = "true";
+    process.env.ATTENDANCE_QR_SKIP_APPCHECK = "1";
+    if (!admin.apps.length) {
+      admin.initializeApp({projectId: PROJECT});
+    }
+    db = admin.firestore();
+    const op = await authSignUp(
+      `pkg-op-${Date.now()}@test.emulator`,
+      "Password123!",
+    );
+    operatorUid = op.uid;
+    operatorToken = op.idToken;
+    await db.collection("users").doc(operatorUid).set({
+      role: "OPERADOR_ASISTENCIA",
+      isActive: true,
+      email: "pkg-op@test.emulator",
+    });
+  });
+
+  it("600 active devices → package.participants.length === 600", async (t) => {
+    if (!emulatorsReady()) {
+      t.skip("emulators not ready");
+      return;
+    }
+
+    await wipeScaleCollections();
+    const scannerId = "http-pkg-scanner-600";
+    const eventId = "http-pkg-event-600";
+    await seedScaleDevices({memberCount: 300, devicesPerMember: 2});
+    await seedScannerAndEvent(scannerId, eventId);
+
+    const t0 = Date.now();
+    const res = await fetch(prepareUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${operatorToken}`,
+      },
+      body: JSON.stringify({eventId, scannerId}),
+    });
+    const body = await res.json();
+    const ms = Date.now() - t0;
+    console.log(`PERF HTTP prepareOfflineEvent 600 devices: ${ms}ms status=${res.status}`);
+
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.ok, true);
+    assert.equal(body.package.participants.length, 600);
+    assert.ok(body.package.participantsHash);
+    assert.ok(body.package.signature);
+  });
+
+  it("5000 active devices → package.participants.length === 5000", async (t) => {
+    if (!emulatorsReady()) {
+      t.skip("emulators not ready");
+      return;
+    }
+
+    await wipeScaleCollections();
+    const scannerId = "http-pkg-scanner-5k";
+    const eventId = "http-pkg-event-5k";
+    const seedT0 = Date.now();
+    await seedScaleDevices({memberCount: 2500, devicesPerMember: 2});
+    console.log(`PERF HTTP seed 5000 devices: ${Date.now() - seedT0}ms`);
+    await seedScannerAndEvent(scannerId, eventId);
+
+    const t0 = Date.now();
+    const res = await fetch(prepareUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${operatorToken}`,
+      },
+      body: JSON.stringify({eventId, scannerId}),
+    });
+    const body = await res.json();
+    const ms = Date.now() - t0;
+    console.log(`PERF HTTP prepareOfflineEvent 5000 devices: ${ms}ms status=${res.status}`);
+
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.equal(body.ok, true);
+    assert.equal(body.package.participants.length, 5000);
+    assert.equal(
+      new Set(body.package.participants.map((p) => p.memberDeviceId)).size,
+      5000,
+    );
+    assert.ok(body.package.participantsHash);
+    assert.ok(body.package.signature);
+    const pkgBytes = Buffer.byteLength(JSON.stringify(body.package), "utf8");
+    console.log(`PACKAGE_SIZE HTTP 5000 full: ${pkgBytes} bytes (${(pkgBytes / 1024 / 1024).toFixed(3)} MB)`);
+  });
+
+  it("MAX+1 active devices → HTTP 413 offline-package-too-large", async (t) => {
+    if (!emulatorsReady()) {
+      t.skip("emulators not ready");
+      return;
+    }
+    const {MAX_OFFLINE_PACKAGE_DEVICES} = require("./attendance-qr")._test;
+    const over = MAX_OFFLINE_PACKAGE_DEVICES + 1;
+
+    await wipeScaleCollections();
+    const scannerId = "http-pkg-scanner-over";
+    const eventId = "http-pkg-event-over";
+    await seedScaleDevices({
+      memberCount: over,
+      devicesPerMember: 1,
+      memberIdPrefix: "http-over-m",
+    });
+    await seedScannerAndEvent(scannerId, eventId);
+
+    const res = await fetch(prepareUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${operatorToken}`,
+      },
+      body: JSON.stringify({eventId, scannerId}),
+    });
+    const body = await res.json();
+
+    assert.equal(res.status, 413, JSON.stringify(body));
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "offline-package-too-large");
+    assert.equal(body.participantDeviceCount, over);
+    assert.equal(body.package, undefined);
+  });
+});
