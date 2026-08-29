@@ -143,6 +143,105 @@ describe('users', () => {
       }),
     );
   });
+
+  test('allows superadmin to link VOTER to active member', async () => {
+    await seed('members/member-active', {
+      memberNumber: '101',
+      firstName: 'Luis',
+      lastName: 'Activo',
+      fullName: 'Luis Activo',
+      workerCode: 'W-101',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const superDb = testEnv.authenticatedContext('superadmin').firestore();
+
+    await assertSucceeds(
+      updateDoc(doc(superDb, 'users/voter'), {
+        memberId: 'member-active',
+        employeeNumber: 'W-101',
+        role: 'VOTER',
+        updatedAt: 2,
+      }),
+    );
+  });
+
+  test('blocks superadmin from linking VOTER to inactive member', async () => {
+    await seed('members/member-inactive', {
+      memberNumber: '102',
+      firstName: 'Ina',
+      lastName: 'Ctiva',
+      fullName: 'Ina Ctiva',
+      workerCode: 'W-102',
+      status: 'inactive',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const superDb = testEnv.authenticatedContext('superadmin').firestore();
+
+    await assertFails(
+      updateDoc(doc(superDb, 'users/voter'), {
+        memberId: 'member-inactive',
+        employeeNumber: 'W-102',
+        role: 'VOTER',
+        updatedAt: 2,
+      }),
+    );
+  });
+
+  test('allows superadmin to link non-voter to inactive member', async () => {
+    await seed('members/member-inactive', {
+      memberNumber: '103',
+      firstName: 'Admin',
+      lastName: 'Socio',
+      fullName: 'Admin Socio',
+      workerCode: 'W-103',
+      status: 'inactive',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const superDb = testEnv.authenticatedContext('superadmin').firestore();
+
+    await assertSucceeds(
+      updateDoc(doc(superDb, 'users/admin'), {
+        memberId: 'member-inactive',
+        employeeNumber: 'W-103',
+        role: 'ADMIN',
+        updatedAt: 2,
+      }),
+    );
+  });
+
+  test('allows superadmin to unlink memberId from user', async () => {
+    await seed('members/member-active', {
+      memberNumber: '104',
+      firstName: 'Un',
+      lastName: 'Link',
+      fullName: 'Un Link',
+      workerCode: 'W-104',
+      status: 'active',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await seed('users/voter', {
+      ...userData('VOTER'),
+      memberId: 'member-active',
+      employeeNumber: 'W-104',
+    });
+
+    const superDb = testEnv.authenticatedContext('superadmin').firestore();
+
+    await assertSucceeds(
+      updateDoc(doc(superDb, 'users/voter'), {
+        memberId: null,
+        updatedAt: 2,
+      }),
+    );
+  });
 });
 
 describe('attendance permissions', () => {

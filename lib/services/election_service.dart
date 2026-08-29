@@ -7,6 +7,7 @@ import '../core/models/audit_log.dart';
 import '../core/models/member.dart';
 import '../core/security/election_visibility.dart';
 import '../core/security/account_status.dart';
+import '../core/security/voter_member_policy.dart';
 import 'audit_service.dart';
 import 'asistencia_service.dart';
 import 'members_service.dart';
@@ -599,9 +600,33 @@ class VoteService {
       final requireAttendance =
           electionData['requireAttendance'] as bool? ?? false;
 
-      // Si no requiere asistencia, todos los socios activos pueden votar
+      final trimmedMemberId = memberId.trim();
+      if (trimmedMemberId.isEmpty) {
+        debugPrint('❌ memberId vacío - usuario no elegible');
+        return false;
+      }
+
+      final memberDoc = await _firestore
+          .collection('members')
+          .doc(trimmedMemberId)
+          .get();
+      if (!memberDoc.exists) {
+        debugPrint('❌ Socio vinculado no encontrado: $trimmedMemberId');
+        return false;
+      }
+
+      final linkedMember = Member.fromMap(memberDoc.data()!, memberDoc.id);
+      if (!VoterMemberPolicy.isMemberActiveForVoting(linkedMember.status)) {
+        debugPrint(
+          '❌ Socio inactivo (${linkedMember.status.displayName}) - no elegible',
+        );
+        return false;
+      }
+
       if (!requireAttendance) {
-        debugPrint('✅ Elección sin requisito de asistencia - Votante elegible');
+        debugPrint(
+          '✅ Socio activo y elección sin requisito de asistencia - elegible',
+        );
         return true;
       }
 
@@ -774,37 +799,32 @@ class VoteService {
 
     // Validar elegibilidad antes de permitir el voto
     final memberRequiredMessage = VoteEligibilityPolicy.memberIdRequiredMessage(
-      requireAttendance: election.requireAttendance,
       memberId: memberId,
     );
     if (memberRequiredMessage != null) {
-      debugPrint(
-        '   ❌ Voto bloqueado: falta memberId con asistencia requerida',
-      );
+      debugPrint('   ❌ Voto bloqueado: falta memberId');
       throw Exception(memberRequiredMessage);
     }
 
-    if (election.requireAttendance) {
-      debugPrint('   🔍 Validando elegibilidad...');
-      try {
-        final isEligible = await isUserEligibleToVote(
-          electionId: electionId,
-          userId: userId,
-          memberId: memberId!.trim(),
-        );
+    debugPrint('   🔍 Validando elegibilidad...');
+    try {
+      final isEligible = await isUserEligibleToVote(
+        electionId: electionId,
+        userId: userId,
+        memberId: memberId!.trim(),
+      );
 
-        if (!isEligible) {
-          debugPrint('   ❌ Usuario NO es elegible para votar');
-          throw Exception(
-            'No tienes permiso para votar en esta elección. '
-            'Verifica que cumplas con los requisitos de elegibilidad.',
-          );
-        }
-        debugPrint('   ✅ Usuario es elegible - Continuando con votación');
-      } catch (e) {
-        debugPrint('   ❌ Error durante validación de elegibilidad: $e');
-        rethrow;
+      if (!isEligible) {
+        debugPrint('   ❌ Usuario NO es elegible para votar');
+        throw Exception(
+          'No tienes permiso para votar en esta elección. '
+          'Verifica que cumplas con los requisitos de elegibilidad.',
+        );
       }
+      debugPrint('   ✅ Usuario es elegible - Continuando con votación');
+    } catch (e) {
+      debugPrint('   ❌ Error durante validación de elegibilidad: $e');
+      rethrow;
     }
 
     final batch = _firestore.batch();

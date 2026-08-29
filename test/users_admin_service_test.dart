@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fluter_apk/core/models/member.dart';
 import 'package:fluter_apk/core/models/user_role.dart';
 import 'package:fluter_apk/services/users_admin_service.dart';
 
@@ -65,6 +66,49 @@ void main() {
           newActive: false,
           targetRole: UserRole.superadmin,
           activeSuperAdminCount: 1,
+        ),
+        throwsA(isA<UsersAdminException>()),
+      );
+    });
+
+    test('allows linking VOTER to active member', () {
+      expect(
+        () => UsersAdminPolicy.ensureCanLinkMember(
+          targetRole: UserRole.voter,
+          memberStatus: MemberStatus.active,
+          memberId: 'member-1',
+          targetUserId: 'user-1',
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('blocks linking VOTER to inactive member', () {
+      expect(
+        () => UsersAdminPolicy.ensureCanLinkMember(
+          targetRole: UserRole.voter,
+          memberStatus: MemberStatus.inactive,
+          memberId: 'member-1',
+          targetUserId: 'user-1',
+        ),
+        throwsA(
+          isA<UsersAdminException>().having(
+            (error) => error.message,
+            'message',
+            contains('inactivo'),
+          ),
+        ),
+      );
+    });
+
+    test('blocks linking member already owned by another user', () {
+      expect(
+        () => UsersAdminPolicy.ensureCanLinkMember(
+          targetRole: UserRole.voter,
+          memberStatus: MemberStatus.active,
+          memberId: 'member-1',
+          existingOwnerUserId: 'other-user',
+          targetUserId: 'user-1',
         ),
         throwsA(isA<UsersAdminException>()),
       );
