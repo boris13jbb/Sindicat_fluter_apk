@@ -895,12 +895,19 @@ class _RegistroManualScreenState extends State<RegistroManualScreen> {
           return;
         }
         final nota = _justificacionController.text.trim();
+        if (nota.length < 3) {
+          _mostrarError(
+            'El registro manual excepcional requiere un motivo (mín. 3 caracteres)',
+          );
+          setState(() => _loading = false);
+          return;
+        }
         await _attendanceService.registerAttendance(
           eventId: attId,
           personaId: memberId,
           asistio: _asistio,
-          metodo: MetodoRegistro.manual,
-          observaciones: nota.isEmpty ? null : nota,
+          metodo: MetodoRegistro.manualOverride,
+          observaciones: nota,
         );
         if (!mounted) return;
         _mostrarExito('Asistencia registrada correctamente');

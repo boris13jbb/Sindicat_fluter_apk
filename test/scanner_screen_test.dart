@@ -65,7 +65,7 @@ EventoAsistencia _evento() => EventoAsistencia(
 );
 
 void main() {
-  testWidgets('muestra nombre y modalidad al registrar por código', (
+  testWidgets('rechaza JSON legacy en override manual (camino separado)', (
     WidgetTester tester,
   ) async {
     final service = _FakeAsistenciaService(
@@ -90,65 +90,75 @@ void main() {
       find.byKey(const Key('scanner_manual_codigo')),
       '{"identificador":"123"}',
     );
-    await tester.ensureVisible(find.text('Registrar asistencia'));
-    await tester.tap(find.text('Registrar asistencia'));
+    await tester.enterText(
+      find.byKey(const Key('scanner_manual_motivo')),
+      'motivo de prueba largo',
+    );
+    await tester.ensureVisible(find.text('Registrar override manual'));
+    await tester.tap(find.text('Registrar override manual'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
 
-    expect(find.text('Asistencia registrada'), findsOneWidget);
-    expect(find.text('¡Registro confirmado!'), findsOneWidget);
-    expect(
-      find.text('La asistencia fue registrada correctamente.'),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.text('Continuar escaneando'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(find.byKey(const Key('scanner_manual_codigo')), findsOneWidget);
-    expect(find.textContaining('Juan Pérez'), findsWidgets);
+    expect(find.textContaining('no acepta QR'), findsOneWidget);
+    expect(find.text('Asistencia registrada'), findsNothing);
   });
 
-  testWidgets(
-    'registro con modalidad null abre confirmación y vuelve al escáner',
-    (WidgetTester tester) async {
-      final service = _FakeAsistenciaService(
-        RegistroAsistenciaResult(
-          asistenciaId: 'a1',
-          member: _member(modalidad: null),
-        ),
-      );
+  testWidgets('exige motivo obligatorio en override manual', (
+    WidgetTester tester,
+  ) async {
+    final service = _FakeAsistenciaService(
+      RegistroAsistenciaResult(
+        asistenciaId: 'a1',
+        member: _member(modalidad: null),
+      ),
+    );
 
-      await tester.pumpWidget(
-        ChangeNotifierProvider<AuthProvider>(
-          create: (_) => AuthProvider(),
-          child: MaterialApp(
-            home: ScannerAsistenciaScreen(evento: _evento(), service: service),
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AuthProvider>(
+        create: (_) => AuthProvider(),
+        child: MaterialApp(
+          home: ScannerAsistenciaScreen(evento: _evento(), service: service),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.enterText(
+      find.byKey(const Key('scanner_manual_codigo')),
+      '123',
+    );
+    await tester.ensureVisible(find.text('Registrar override manual'));
+    await tester.tap(find.text('Registrar override manual'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.textContaining('motivo'), findsWidgets);
+    expect(find.text('Asistencia registrada'), findsNothing);
+  });
+
+  testWidgets('expone botón Secure QR V2 separado del override', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AuthProvider>(
+        create: (_) => AuthProvider(),
+        child: MaterialApp(
+          home: ScannerAsistenciaScreen(
+            evento: _evento(),
+            service: _FakeAsistenciaService(
+              RegistroAsistenciaResult(
+                asistenciaId: 'a1',
+                member: _member(modalidad: Modalidad.A),
+              ),
+            ),
           ),
         ),
-      );
-
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-      await tester.enterText(
-        find.byKey(const Key('scanner_manual_codigo')),
-        '{"identificador":"123"}',
-      );
-      await tester.ensureVisible(find.text('Registrar asistencia'));
-      await tester.tap(find.text('Registrar asistencia'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
-
-      expect(find.text('Asistencia registrada'), findsOneWidget);
-      expect(find.text('¡Registro confirmado!'), findsOneWidget);
-
-      await tester.tap(find.text('Continuar escaneando'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(find.byKey(const Key('scanner_manual_codigo')), findsOneWidget);
-      expect(find.textContaining('Juan Pérez'), findsWidgets);
-    },
-  );
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byKey(const Key('scanner_secure_qr_v2')), findsOneWidget);
+    expect(find.text('Registro manual excepcional'), findsOneWidget);
+  });
 }

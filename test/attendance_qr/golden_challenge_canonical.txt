@@ -1,0 +1,9 @@
+v=2
+type=SATT2C
+eventId=golden-event
+scannerId=golden-scanner
+challengeId=golden-challenge
+challengeNonce=golden-nonce
+issuedAtTrusted=1700000000000
+expiresAtTrusted=1700000015000
+protocolVersion=2

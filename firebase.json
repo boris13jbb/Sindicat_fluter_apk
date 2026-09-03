@@ -79,6 +79,55 @@
         }
       },
       {
+        "source": "/api/attendance-enroll-member-device",
+        "function": {
+          "functionId": "attendanceEnrollMemberDevice",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/attendance-prepare-offline-credential",
+        "function": {
+          "functionId": "attendancePrepareOfflineCredential",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/attendance-list-member-qr-events",
+        "function": {
+          "functionId": "attendanceListMemberQrEvents",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/attendance-prepare-offline-event",
+        "function": {
+          "functionId": "attendancePrepareOfflineEvent",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/attendance-register-scanner-device",
+        "function": {
+          "functionId": "attendanceRegisterScannerDevice",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/attendance-approve-scanner-device",
+        "function": {
+          "functionId": "attendanceApproveScannerDevice",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/attendance-sync-offline-batch",
+        "function": {
+          "functionId": "attendanceSyncOfflineBatch",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -110,6 +159,9 @@
     },
     "firestore": {
       "port": 8081
+    },
+    "functions": {
+      "port": 5001
     },
     "storage": {
       "port": 9199

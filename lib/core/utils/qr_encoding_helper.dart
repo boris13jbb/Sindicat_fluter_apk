@@ -15,9 +15,14 @@ class QREncodingHelper {
     return jsonEncode(qrData);
   }
 
-  /// Genera un código QR en formato JSON para Member (socio)
-  /// Formato: {"nombres":"Juan","apellidos":"Pérez","identificador":"12345"}
-  /// IMPORTANTE: El identificador es SIEMPRE el workerCode (Número de Trabajador)
+  /// Genera un código QR LEGACY en formato JSON para Member (socio).
+  ///
+  /// **NO usar para Secure Attendance QR V2.** El path seguro usa SATT2
+  /// (challenge/response Ed25519). Conservado solo por compatibilidad técnica
+  /// (PDF admin / sync personas) hasta cutover completo.
+  @Deprecated(
+    'Use Secure Attendance QR V2 (SATT2). Legacy workerCode QR is not secure.',
+  )
   static String generateMemberQRCode(Member member) {
     // Validar que el workerCode exista
     if (member.workerCode == null || member.workerCode!.isEmpty) {

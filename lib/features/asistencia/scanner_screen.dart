@@ -13,9 +13,10 @@ import '../../providers/auth_provider.dart';
 import '../../services/asistencia_service.dart';
 import '../../services/asistencia_registro_api.dart';
 import '../../services/attendance_service.dart';
+import '../../services/members_service.dart';
 import '../elections/widgets/voto_premium_chrome.dart';
-
 import 'asistencia_confirmada_screen.dart';
+import 'secure_scanner_screen.dart';
 
 /// Usa la cámara cuando el dispositivo y sus permisos lo permiten.
 /// La entrada manual queda disponible como respaldo.
@@ -48,7 +49,11 @@ class ScannerAsistenciaScreen extends StatefulWidget {
 
 class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
   final _codigoController = TextEditingController();
+  final _motivoController = TextEditingController();
   late final AsistenciaRegistroApi _service;
+  MembersService? _membersService;
+  AttendanceService? _attendanceService;
+  AsistenciaService? _asistenciaConcrete;
   bool _loading = false;
   bool _autoEscaneoLanzado = false;
   String? _mensaje;
@@ -81,6 +86,13 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
         _iniciarEscaneo();
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _codigoController.dispose();
+    _motivoController.dispose();
+    super.dispose();
   }
 
   Future<void> _sincronizarMiembros() async {
@@ -166,12 +178,6 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
 
   void _onRegistrarLectura() {
     _iniciarEscaneo();
-  }
-
-  @override
-  void dispose() {
-    _codigoController.dispose();
-    super.dispose();
   }
 
   @override
@@ -359,8 +365,30 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                           onPressed: (_puedeRegistrar && !_loading)
                               ? _onRegistrarLectura
                               : null,
-                          label: 'Registrar lectura',
+                          label: 'Registrar lectura (legacy)',
                           icon: Icons.qr_code_scanner_rounded,
+                        ),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          key: const Key('scanner_secure_qr_v2'),
+                          onPressed: !_puedeRegistrar
+                              ? null
+                              : () {
+                                  final eventId =
+                                      widget.attendanceEventId ??
+                                      _eventoLegacy?.id;
+                                  if (eventId == null || eventId.isEmpty) {
+                                    return;
+                                  }
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) =>
+                                          SecureScannerScreen(eventId: eventId),
+                                    ),
+                                  );
+                                },
+                          icon: const Icon(Icons.shield_outlined),
+                          label: const Text('Secure QR V2 (offline)'),
                         ),
                         if (!_puedeRegistrar) ...[
                           const SizedBox(height: 8),
@@ -385,7 +413,7 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                   ],
                   const SizedBox(height: 22),
                   Text(
-                    'Entrada manual',
+                    'Registro manual excepcional',
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                       color: AppDesignTokens.primaryDark,
@@ -393,7 +421,9 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Pega el código escaneado (QR o código de barras), o escribe identificador / Nombre,Apellido,ID.',
+                    'Camino separado de Secure QR. Busca un socio del padrón '
+                    '(ID / Nº socio / workerCode) y escribe un motivo obligatorio. '
+                    'No pegues JSON legacy ni SATT2 aquí.',
                     style: AppDesignTokens.bodyMuted(context),
                   ),
                   const SizedBox(height: 10),
@@ -401,13 +431,23 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                     key: const Key('scanner_manual_codigo'),
                     controller: _codigoController,
                     decoration: const InputDecoration(
-                      labelText: 'Código o identificador',
-                      hintText:
-                          'Pega el contenido del QR o escribe: Nombre,Apellido,ID',
+                      labelText: 'Socio del padrón (ID / Nº / workerCode)',
+                      hintText: 'No pegues QR JSON ni SATT2',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setState(() => _mensaje = null),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    key: const Key('scanner_manual_motivo'),
+                    controller: _motivoController,
+                    decoration: const InputDecoration(
+                      labelText: 'Motivo del override (obligatorio)',
+                      hintText: 'Ej.: cámara falló — verificación visual',
                       border: OutlineInputBorder(),
                       alignLabelWithHint: true,
                     ),
-                    maxLines: 3,
+                    maxLines: 2,
                     onChanged: (_) => setState(() => _mensaje = null),
                   ),
                   if (_mensaje != null) ...[
@@ -415,7 +455,10 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                     Text(
                       _mensaje!,
                       style: TextStyle(
-                        color: _mensaje!.startsWith('Error')
+                        color:
+                            _mensaje!.startsWith('Error') ||
+                                _mensaje!.startsWith('❌') ||
+                                _mensaje!.contains('ya no es válido')
                             ? Theme.of(context).colorScheme.error
                             : Theme.of(context).colorScheme.primary,
                       ),
@@ -426,9 +469,11 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                     const Center(child: CircularProgressIndicator())
                   else
                     PrimaryButton(
-                      onPressed: _puedeRegistrar ? _registrar : null,
+                      onPressed: _puedeRegistrar
+                          ? _registrarOverrideManual
+                          : null,
                       label: _puedeRegistrar
-                          ? 'Registrar asistencia'
+                          ? 'Registrar override manual'
                           : 'Selecciona un evento',
                     ),
                 ],
@@ -440,7 +485,8 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
     );
   }
 
-  Future<void> _registrar() async {
+  /// Override excepcional: member del padrón + motivo. Nunca Secure QR / legacy JSON.
+  Future<void> _registrarOverrideManual() async {
     final leg = _eventoLegacy;
     final attId = widget.attendanceEventId;
     final eventoFirestoreId = attId ?? leg?.id;
@@ -449,36 +495,92 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
       return;
     }
 
-    final codigo = _codigoController.text.trim();
-    if (codigo.isEmpty) {
-      setState(() => _mensaje = 'Escribe o pega un código');
+    final rawLookup = _codigoController.text.trim();
+    final motivo = _motivoController.text.trim();
+    if (rawLookup.isEmpty) {
+      setState(() => _mensaje = 'Indica el socio del padrón');
       return;
     }
+    if (rawLookup.startsWith('{') ||
+        rawLookup.startsWith('SATT2') ||
+        rawLookup.contains('"identificador"')) {
+      setState(() {
+        _mensaje =
+            'Código QR antiguo o SATT2. Este campo no acepta QR. '
+            'Usa Secure QR V2 o selecciona un socio del padrón.';
+      });
+      return;
+    }
+    if (motivo.length < 3) {
+      setState(() => _mensaje = 'El motivo del override es obligatorio');
+      return;
+    }
+
     setState(() {
       _loading = true;
       _mensaje = null;
     });
     try {
-      final metodo = codigo.startsWith('{')
-          ? MetodoRegistro.escaneoQr
-          : MetodoRegistro.escaneoBarcode;
-      final result = await _service.registrarAsistenciaDesdeEscaneo(
-        codigo,
-        eventoFirestoreId,
-        metodo,
-        registrosAttendanceEvents: attId != null,
-      );
-      if (!mounted) return;
-      if (result.ok) {
-        _applyUltimaLecturaExito(result);
+      Member? member = await (_membersService ??= MembersService())
+          .getMemberById(rawLookup);
+      member ??= await _membersService!.getMemberByWorkerCode(rawLookup);
+      member ??= await _membersService!.getMemberByNumber(rawLookup);
+      if (member == null) {
+        setState(() {
+          _mensaje =
+              'Socio no encontrado en padrón. No se crea member/persona desde este campo.';
+        });
+        return;
+      }
+
+      if (attId != null) {
+        await (_attendanceService ??= AttendanceService()).registerAttendance(
+          eventId: attId,
+          personaId: member.id,
+          asistio: true,
+          metodo: MetodoRegistro.manualOverride,
+          observaciones: motivo,
+        );
+        if (!mounted) return;
+        _applyUltimaLecturaExito(
+          RegistroAsistenciaResult(asistenciaId: member.id, member: member),
+        );
         _codigoController.clear();
+        _motivoController.clear();
         await _mostrarConfirmacionPremium();
       } else {
-        setState(
-          () => _mensaje = attId != null
-              ? '⚠️ Ya está registrado o el QR no coincide con socio en `members`.'
-              : '⚠️ Ya estaba registrado o no se pudo crear la persona',
+        // Legacy eventos: requiere persona ya sincronizada; no crear desde QR.
+        final concrete = _asistenciaConcrete ??= AsistenciaService();
+        final persona =
+            await concrete.getPersonaPorIdentificador(
+              member.workerCode ?? member.id,
+            ) ??
+            await concrete.getPersonaById(member.id);
+        if (persona == null) {
+          setState(() {
+            _mensaje =
+                'Persona legacy no encontrada. Sincroniza members→personas antes del override.';
+          });
+          return;
+        }
+        final id = await concrete.registrarAsistenciaManual(
+          persona.id,
+          eventoFirestoreId,
+          true,
+          motivo,
+          excepcionalOverride: true,
         );
+        if (!mounted) return;
+        if (id != null) {
+          _applyUltimaLecturaExito(
+            RegistroAsistenciaResult(asistenciaId: id, member: member),
+          );
+          _codigoController.clear();
+          _motivoController.clear();
+          await _mostrarConfirmacionPremium();
+        } else {
+          setState(() => _mensaje = '⚠️ Ya estaba registrado en este evento');
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _mensaje = '❌ Error: $e');

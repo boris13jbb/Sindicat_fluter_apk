@@ -38,6 +38,10 @@ migrate_working_dir/
 /firestore-debug.log
 /storage-debug.log
 /ui-debug.log
+/functions/.secret.local
+**/.secret.local
+/database-debug.log
+/pubsub-debug.log
 
 # Symbolication related
 app.*.symbols

@@ -1,10 +1,6 @@
 import 'dart:async';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../core/design/app_design_tokens.dart';
 import '../../core/design/widgets/premium_card.dart';
 import '../../core/models/asistencia/evento.dart';
@@ -12,8 +8,8 @@ import '../../core/models/member.dart';
 import '../../core/models/user.dart';
 import '../../core/models/user_avatar_prefs.dart';
 import '../../core/models/user_role.dart';
-import '../../core/utils/qr_encoding_helper.dart';
 import '../../features/home/widgets/dashboard_welcome_avatar.dart';
+import '../../features/profile/secure_attendance_qr_tab.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/attendance_service.dart';
@@ -49,8 +45,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   Object? _attendanceSummaryError;
   bool _isLoadingAttendanceSummary = false;
   bool _isLoadingMember = true;
-  bool _noMembersInDatabase =
-      false; // Flag para detectar si no hay miembros en BD
 
   @override
   void initState() {
@@ -108,7 +102,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           _attendanceSummaryError = null;
           _isLoadingAttendanceSummary = foundMember != null;
           _isLoadingMember = false;
-          _noMembersInDatabase = false;
         });
         _syncFormFields(user, foundMember);
       }
@@ -349,88 +342,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     }
   }
 
-  /// Genera PNG del QR (misma apariencia que en pantalla) y abre la hoja de
-  /// compartir con imagen + texto descriptivo y payload escaneable.
-  Future<void> _shareMemberAttendanceQr({
-    required BuildContext context,
-    required String qrData,
-    required Member member,
-  }) async {
-    try {
-      final validation = QrValidator.validate(
-        data: qrData,
-        version: QrVersions.auto,
-      );
-      if (!validation.isValid || validation.qrCode == null) {
-        throw Exception(
-          validation.error?.toString() ?? 'No se pudo validar el código QR',
-        );
-      }
-
-      const double exportSize = 768;
-      final painter = QrPainter.withQr(
-        qr: validation.qrCode!,
-        gapless: false,
-        eyeStyle: const QrEyeStyle(
-          eyeShape: QrEyeShape.square,
-          color: Colors.black,
-        ),
-        dataModuleStyle: const QrDataModuleStyle(
-          dataModuleShape: QrDataModuleShape.square,
-          color: Colors.black,
-        ),
-      );
-
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(recorder);
-      final size = const Size(exportSize, exportSize);
-      canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
-      painter.paint(canvas, size);
-      final picture = recorder.endRecording();
-      final image = await picture.toImage(
-        exportSize.toInt(),
-        exportSize.toInt(),
-      );
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData == null) {
-        throw Exception('No se pudo generar la imagen PNG');
-      }
-
-      final pngBytes = byteData.buffer.asUint8List();
-      final safeSlug = member.workerCode?.trim().isNotEmpty == true
-          ? member.workerCode!.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_')
-          : member.id.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
-      final fileName = 'qr_asistencia_$safeSlug.png';
-
-      final socioNum = member.memberNumber.trim().isEmpty
-          ? 'No registrado'
-          : member.memberNumber.trim();
-      final worker = member.workerCode?.trim().isNotEmpty == true
-          ? member.workerCode!.trim()
-          : 'Sin asignar';
-
-      final shareText = StringBuffer()
-        ..writeln('Código QR de asistencia')
-        ..writeln(member.fullName)
-        ..writeln('N° Socio: $socioNum')
-        ..writeln('WorkerCode: $worker')
-        ..writeln()
-        ..writeln('Datos del código (escáner):')
-        ..writeln(qrData);
-
-      await Share.shareXFiles(
-        [XFile.fromData(pngBytes, mimeType: 'image/png', name: fileName)],
-        text: shareText.toString(),
-        subject: 'QR asistencia — ${member.fullName}',
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('No se pudo compartir: $e')));
-    }
-  }
-
   static String _displayNameForCard(AppUser user) {
     final raw = user.displayName?.trim();
     final fallback = user.email.trim().isEmpty ? 'Usuario' : user.email.trim();
@@ -518,7 +429,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     tabAlignment: TabAlignment.fill,
                     tabs: const [
                       Tab(text: 'Información'),
-                      Tab(text: 'Código QR'),
+                      Tab(text: 'Asistencia segura'),
                     ],
                   ),
                 ),
@@ -1060,461 +971,23 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
   }
 
-  /// Pestaña de Código QR
+  /// Pestaña de asistencia segura (SATT2). Reemplaza el QR estático legacy.
   Widget _buildQRCodeTab() {
     return Consumer<AuthProvider>(
       builder: (context, auth, _) {
-        final user = auth.user;
-        if (user == null) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Text(
-                'No hay usuario autenticado',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppDesignTokens.primaryDark,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          );
+        if (auth.user == null) {
+          return const Center(child: Text('No hay usuario autenticado'));
         }
-
         if (_isLoadingMember && _currentMember == null) {
           return const Center(child: CircularProgressIndicator());
         }
-
-        if (!_isLoadingMember && _currentMember == null) {
-          return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              AppDesignTokens.horizontalPadding,
-              16,
-              AppDesignTokens.horizontalPadding,
-              100,
-            ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.qr_code_2_rounded,
-                  size: 72,
-                  color: AppDesignTokens.primary.withValues(alpha: 0.45),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Código QR no disponible',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: AppDesignTokens.primaryDark,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                PremiumCard(
-                  margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (_noMembersInDatabase) ...[
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.warning_amber_rounded,
-                              color: Colors.red.shade700,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'No hay socios importados',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 16,
-                                  color: Colors.red.shade900,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'La base de datos no contiene ningún socio importado.\n\n'
-                          'Para generar códigos QR, primero debes importar los socios:\n\n'
-                          '1. Ve al panel de administración\n'
-                          '2. Selecciona "Importar Socios"\n'
-                          '3. Carga un archivo CSV o Excel con los datos\n'
-                          '4. Asegúrate de incluir las columnas obligatorias:\n'
-                          '   • numero_socio\n'
-                          '   • nombres\n'
-                          '   • apellidos\n'
-                          '   • modalidad\n'
-                          '   • worker_code (código de trabajador, recomendado para QR)\n'
-                          '   • documento (opcional)\n'
-                          '   • email (opcional pero recomendado)',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.red.shade800,
-                            height: 1.5,
-                          ),
-                        ),
-                      ] else ...[
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline_rounded,
-                              color: Colors.orange.shade800,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Posibles causas',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.orange.shade900,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          '• Tu email no coincide con el registrado en el sistema\n'
-                          '• Falta el campo workerCode en tu registro\n'
-                          '• Aún no has sido importado como socio\n'
-                          '• El campo status de tu registro no es "active"',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.orange.shade900,
-                            height: 1.45,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Contacta al administrador para verificar tu registro.',
-                  textAlign: TextAlign.center,
-                  style: AppDesignTokens.bodyMuted(context),
-                ),
-              ],
-            ),
-          );
-        }
-
-        // Si hay socio, mostrar su código QR
-        if (_currentMember != null) {
-          // Verificar que workerCode existe antes de generar QR
-          if (_currentMember!.workerCode == null ||
-              _currentMember!.workerCode!.isEmpty) {
-            debugPrint('⚠️ Socio encontrado pero sin workerCode:');
-            debugPrint('   Member ID: ${_currentMember!.id}');
-            debugPrint('   Nombre: ${_currentMember!.fullName}');
-            debugPrint('   Email: ${_currentMember!.email ?? "N/A"}');
-            debugPrint(
-              '   workerCode: ${_currentMember!.workerCode ?? "NULO"}',
-            );
-            debugPrint('   workerCode en DB: "${_currentMember!.workerCode}"');
-            debugPrint(
-              '   💡 SOLUCIÓN: Actualiza el campo workerCode en Firestore para este socio',
-            );
-            debugPrint('=' * 60 + '\n');
-
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                AppDesignTokens.horizontalPadding,
-                16,
-                AppDesignTokens.horizontalPadding,
-                100,
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    size: 56,
-                    color: Colors.orange.shade700,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Código QR no disponible',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.orange.shade800,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  PremiumCard(
-                    margin: EdgeInsets.zero,
-                    padding: const EdgeInsets.all(18),
-                    child: Text(
-                      'Tu registro de socio está incompleto. El campo '
-                      '"workerCode" (Número de Trabajador) es requerido para '
-                      'generar el código QR.\n\n'
-                      'Datos detectados:\n'
-                      '• Nombre: ${_currentMember!.fullName}\n'
-                      '• Email: ${_currentMember!.email?.trim().isNotEmpty == true ? _currentMember!.email!.trim() : "No registrado"}\n'
-                      '• workerCode: Sin asignar\n\n'
-                      '¿Cómo solucionarlo?\n'
-                      '1. Si eres administrador: importa el CSV con la columna '
-                      '"worker_code"\n'
-                      '2. Contacta al admin para que asigne tu Número de Trabajador',
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.45,
-                        color: AppDesignTokens.primaryDark.withValues(
-                          alpha: 0.88,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Sin workerCode no se puede generar el código QR. El admin '
-                    'debe actualizar tu registro con el Número de Trabajador.',
-                    textAlign: TextAlign.center,
-                    style: AppDesignTokens.bodyMuted(context),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          // Generar QR de forma segura
-          String qrData;
-          try {
-            qrData = QREncodingHelper.generateMemberQRCode(_currentMember!);
-          } catch (e) {
-            debugPrint('❌ Error generando QR: $e');
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                AppDesignTokens.horizontalPadding,
-                16,
-                AppDesignTokens.horizontalPadding,
-                100,
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.error_outline_rounded,
-                    size: 56,
-                    color: Colors.red.shade700,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Error generando QR',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.red.shade800,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  PremiumCard(
-                    margin: EdgeInsets.zero,
-                    padding: const EdgeInsets.all(18),
-                    child: SelectableText(
-                      '$e',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppDesignTokens.primaryDark.withValues(
-                          alpha: 0.9,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final m = _currentMember!;
-          final active = m.status == MemberStatus.active;
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(
-              AppDesignTokens.horizontalPadding,
-              12,
-              AppDesignTokens.horizontalPadding,
-              100,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                PremiumCard(
-                  margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
-                  child: Column(
-                    children: [
-                      Text(
-                        'Código QR del socio',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: AppDesignTokens.primaryDark,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Escanéalo para registrar asistencia',
-                        textAlign: TextAlign.center,
-                        style: AppDesignTokens.bodyMuted(context),
-                      ),
-                      const SizedBox(height: 22),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: AppDesignTokens.primary.withValues(
-                              alpha: 0.2,
-                            ),
-                          ),
-                        ),
-                        child: QrImageView(
-                          data: qrData,
-                          version: QrVersions.auto,
-                          size: 240,
-                          gapless: false,
-                          eyeStyle: const QrEyeStyle(
-                            eyeShape: QrEyeShape.square,
-                            color: Colors.black,
-                          ),
-                          dataModuleStyle: const QrDataModuleStyle(
-                            dataModuleShape: QrDataModuleShape.square,
-                            color: Colors.black,
-                          ),
-                          backgroundColor: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      Text(
-                        m.fullName,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: AppDesignTokens.primaryDark,
-                              fontWeight: FontWeight.w800,
-                            ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'N° Socio: ${_displayOr(m.memberNumber)}',
-                        textAlign: TextAlign.center,
-                        style: AppDesignTokens.bodyMuted(context),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'WorkerCode: ${_displayOr(m.workerCode ?? '', useSinAsignar: true)}',
-                        textAlign: TextAlign.center,
-                        style: AppDesignTokens.bodyMuted(context),
-                      ),
-                      const SizedBox(height: 14),
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: active
-                                ? Colors.green.shade50
-                                : Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: active
-                                  ? Colors.green.shade200
-                                  : Colors.orange.shade200,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                active
-                                    ? Icons.check_circle_rounded
-                                    : Icons.info_rounded,
-                                color: active
-                                    ? Colors.green.shade800
-                                    : Colors.orange.shade800,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                m.status.displayName,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  color: active
-                                      ? Colors.green.shade900
-                                      : Colors.orange.shade900,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                FilledButton.icon(
-                  onPressed: () async {
-                    await _shareMemberAttendanceQr(
-                      context: context,
-                      qrData: qrData,
-                      member: m,
-                    );
-                  },
-                  icon: const Icon(Icons.share_rounded),
-                  label: const Text('Descargar o compartir código QR'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppDesignTokens.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                PremiumCard(
-                  margin: EdgeInsets.zero,
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.info_outline_rounded,
-                        color: AppDesignTokens.primary,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Este código QR contiene tu información de '
-                          'identificación. Preséntalo al escáner de asistencia '
-                          'para registrar tu presencia en eventos.',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: AppDesignTokens.primaryDark.withValues(
-                                  alpha: 0.75,
-                                ),
-                                height: 1.4,
-                              ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        // Loading state
-        return const Center(child: CircularProgressIndicator());
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
+          child: SecureAttendanceQrTab(
+            hasLinkedMember: _currentMember != null,
+            memberDisplayName: _currentMember?.fullName.trim() ?? '',
+          ),
+        );
       },
     );
   }
