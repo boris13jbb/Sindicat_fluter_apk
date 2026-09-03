@@ -40,6 +40,7 @@ initializeApp();
 const {
   attendanceEnrollMemberDevice,
   attendancePrepareOfflineCredential,
+  attendanceListMemberQrEvents,
   attendancePrepareOfflineEvent,
   attendanceRegisterScannerDevice,
   attendanceApproveScannerDevice,
@@ -827,6 +828,7 @@ exports.lookupMemberByEmployee = onRequest(
 
 exports.attendanceEnrollMemberDevice = attendanceEnrollMemberDevice;
 exports.attendancePrepareOfflineCredential = attendancePrepareOfflineCredential;
+exports.attendanceListMemberQrEvents = attendanceListMemberQrEvents;
 exports.attendancePrepareOfflineEvent = attendancePrepareOfflineEvent;
 exports.attendanceRegisterScannerDevice = attendanceRegisterScannerDevice;
 exports.attendanceApproveScannerDevice = attendanceApproveScannerDevice;

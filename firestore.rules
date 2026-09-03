@@ -59,17 +59,18 @@ service cloud.firestore {
     
     // Verificar si es superadmin
     function isSuperAdmin() {
-      return isAuthenticated() && getUserRole() == 'SUPERADMIN';
+      return isActiveUser() && getUserRole() == 'SUPERADMIN';
     }
     
     // Verificar si es admin o superadmin
     function isAdmin() {
-      return isAuthenticated() && getUserRole() in ['SUPERADMIN', 'ADMIN'];
+      return isActiveUser() && getUserRole() in ['SUPERADMIN', 'ADMIN'];
     }
     
     // Verificar si es operador de asistencia
     function isOperator() {
-      return isAuthenticated() && getUserRole() in ['SUPERADMIN', 'ADMIN', 'OPERADOR_ASISTENCIA'];
+      return isActiveUser()
+        && getUserRole() in ['SUPERADMIN', 'ADMIN', 'OPERADOR_ASISTENCIA'];
     }
 
     function isActiveUser() {
@@ -93,7 +94,35 @@ service cloud.firestore {
     }
 
     function canReadMember(memberId) {
-      return isAdmin() || isOperator() || isLinkedToMember(memberId);
+      return isAdmin()
+        || isOperator()
+        || (isActiveUser() && isLinkedToMember(memberId));
+    }
+
+    function isActiveVoter() {
+      return isActiveUser() && getUserRole() == 'VOTER';
+    }
+
+    function electionVisibleToVoters(data) {
+      return data.isActive == true
+        && data.isVisibleToVoters == true
+        && ('isArchived' in data)
+        && data.isArchived == false;
+    }
+
+    function canReadElectionData(data) {
+      return isAdmin()
+        || (isActiveVoter() && electionVisibleToVoters(data));
+    }
+
+    function canReadElectionById(electionId) {
+      let electionPath = /databases/$(database)/documents/elections/$(electionId);
+      return isAdmin()
+        || (
+          isActiveVoter()
+          && exists(electionPath)
+          && electionVisibleToVoters(get(electionPath).data)
+        );
     }
 
     function memberPath(memberId) {
@@ -335,7 +364,7 @@ service cloud.firestore {
     match /members/{memberId} {
       // get: admin, operador o socio vinculado a su propia ficha.
       // list: solo roles con funciones administrativas/operativas.
-      allow get: if isAuthenticated() && canReadMember(memberId);
+      allow get: if canReadMember(memberId);
       allow list: if isAdmin() || isOperator();
       allow create: if isAdmin();
       allow update: if isSuperAdmin() || isAdmin();
@@ -345,7 +374,7 @@ service cloud.firestore {
     // ==================== ELECCIONES ====================
 
     match /elections/{electionId} {
-      allow read: if isAuthenticated();
+      allow read: if canReadElectionData(resource.data);
       allow create: if isAdmin();
       
       // Permitir actualización parcial solo para campos de conteo de votos
@@ -364,7 +393,7 @@ service cloud.firestore {
 
       // Candidatos
       match /candidates/{candidateId} {
-        allow read: if isAuthenticated();
+        allow read: if canReadElectionById(electionId);
         allow create: if isAdmin();
         
         // Permitir actualización parcial solo para campo voteCount
@@ -387,7 +416,7 @@ service cloud.firestore {
         // Cualquier usuario autenticado puede verificar si ya votó (leer su propio voto)
         // Admin/superadmin pueden leer todos los votos para reportes
         allow read: if isAdmin() || (
-          isAuthenticated() &&
+          isActiveUser() &&
           voteId == userVoteId(electionId)
         );
         allow create: if isActiveUser()
@@ -462,7 +491,7 @@ service cloud.firestore {
     
     // Sistema nuevo: attendance_events con subcolecciones
     match /attendance_events/{eventId} {
-      allow read: if isAuthenticated();
+      allow read: if isOperator();
       // Alta alineada con eventos legacy: admin y operador de asistencia
       allow create: if isOperator();
       allow update: if isOperator();
@@ -470,7 +499,7 @@ service cloud.firestore {
 
       // Asistencias del evento
       match /asistencias/{asistenciaId} {
-        allow read: if isAuthenticated();
+        allow read: if isOperator();
         allow create: if canClientCreateAttendance();
         allow update: if canClientUpdateAttendance();
         allow delete: if isSuperAdmin();
@@ -481,12 +510,12 @@ service cloud.firestore {
     // Colecciones legacy para compatibilidad con Android
     
     match /eventos/{eventoId} {
-      allow read: if isAuthenticated();
+      allow read: if isOperator();
       allow create, update: if isOperator();
       allow delete: if isSuperAdmin();
 
       match /asistencias/{asistenciaId} {
-        allow read: if isAuthenticated();
+        allow read: if isOperator();
         allow create: if canClientCreateAttendance();
         allow update: if canClientUpdateAttendance();
         allow delete: if isSuperAdmin();
@@ -494,13 +523,13 @@ service cloud.firestore {
     }
 
     match /personas/{personaId} {
-      allow read: if isAuthenticated();
+      allow read: if isOperator();
       allow create, update: if isOperator();
       allow delete: if isSuperAdmin();
     }
 
     match /asistencias/{asistenciaId} {
-      allow read: if isAuthenticated();
+      allow read: if isOperator();
       allow create: if canClientCreateAttendance();
       allow update: if canClientUpdateAttendance();
       allow delete: if isSuperAdmin();
@@ -508,18 +537,18 @@ service cloud.firestore {
 
     // Secure Attendance QR V2 — device registries (backend-only writes)
     match /attendance_member_devices/{deviceId} {
-      allow read: if isAuthenticated()
-        && (
-          isAdmin()
-          || isOperator()
-          || (exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.memberId == resource.data.memberId)
+      allow read: if isAdmin()
+        || isOperator()
+        || (
+          isActiveUser()
+          && resource.data.memberId is string
+          && isLinkedToMember(resource.data.memberId)
         );
       allow create, update, delete: if false;
     }
 
     match /attendance_scanner_devices/{scannerId} {
-      allow read: if isAuthenticated() && (isAdmin() || isOperator());
+      allow read: if isAdmin() || isOperator();
       allow create, update, delete: if false;
     }
 
@@ -527,11 +556,11 @@ service cloud.firestore {
     // por resúmenes de asistencia. Las escrituras permanecen restringidas en
     // las reglas específicas de cada colección/subcolección.
     match /{path=**}/asistencias/{asistenciaId} {
-      allow read: if isAuthenticated();
+      allow read: if isOperator();
     }
 
     match /events/{eventId} {
-      allow read: if isAuthenticated();
+      allow read: if isOperator();
       allow create, update: if isOperator();
       allow delete: if isSuperAdmin();
     }
@@ -540,7 +569,7 @@ service cloud.firestore {
     
     match /audit_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated() && isValidAuditLogCreate(); // Solo append
+      allow create: if isActiveUser() && isValidAuditLogCreate(); // Solo append
       allow update, delete: if false; // Inmutables
     }
 
@@ -555,7 +584,7 @@ service cloud.firestore {
     // ==================== CONFIGURACIÓN APP (marca PDF, solo superadmin) ====================
 
     match /app_settings/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if isActiveUser();
       allow create, update: if isSuperAdmin()
         && docId == 'branding'
         && request.resource.data.keys().hasOnly(['reportLogoUrl', 'updatedAt', 'updatedBy'])

@@ -27,9 +27,12 @@ class SecureAttendanceQrTab extends StatefulWidget {
   final bool hasLinkedMember;
   final String memberDisplayName;
   final SecureAttendanceQrService? service;
+
+  /// Deprecated test hook kept for compatibility; production event listing uses
+  /// [SecureAttendanceQrService.listMemberQrEvents].
   final AttendanceService? attendanceService;
 
-  /// Test/prod override: when set, used instead of [AttendanceService.getAllEvents].
+  /// Test override: when set, used instead of the sanitized backend endpoint.
   final Stream<List<AttendanceEvent>> Function()? eventsLoader;
 
   @override
@@ -38,7 +41,6 @@ class SecureAttendanceQrTab extends StatefulWidget {
 
 class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
   late final SecureAttendanceQrService _service;
-  AttendanceService? _attendance;
 
   Map<String, dynamic>? _credential;
   List<AttendanceEvent> _events = const [];
@@ -61,12 +63,6 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
   void initState() {
     super.initState();
     _service = widget.service ?? SecureAttendanceQrService();
-    // Avoid constructing AttendanceService (Firebase) when a loader is injected.
-    if (widget.eventsLoader == null) {
-      _attendance = widget.attendanceService ?? AttendanceService();
-    } else {
-      _attendance = widget.attendanceService;
-    }
     _bootstrap();
   }
 
@@ -103,13 +99,19 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
   Future<void> _loadEvents() async {
     List<AttendanceEvent> events = const [];
     try {
-      final Stream<List<AttendanceEvent>> stream;
       if (widget.eventsLoader != null) {
-        stream = widget.eventsLoader!();
+        events = await widget.eventsLoader!().first.timeout(
+          const Duration(seconds: 8),
+        );
       } else {
-        stream = (_attendance ?? AttendanceService()).getAllEvents();
+        final eventMaps = await _service.listMemberQrEvents().timeout(
+          const Duration(seconds: 8),
+        );
+        events = eventMaps
+            .map((m) => AttendanceEvent.fromMap(m, m['id']?.toString() ?? ''))
+            .where((e) => e.id.isNotEmpty)
+            .toList();
       }
-      events = await stream.first.timeout(const Duration(seconds: 8));
     } catch (_) {
       final cached = await _service.loadCachedEvents();
       events = cached
@@ -123,7 +125,7 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
 
     if (eligible.isNotEmpty) {
       await _service.cacheRecentEvents([
-        for (final e in eligible.take(20)) {...e.toMap(), 'id': e.id},
+        for (final e in eligible.take(20)) _eventToMemberQrCacheMap(e),
       ]);
     }
 
@@ -155,6 +157,23 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
 
   bool _isChallengeMode(AttendanceEvent e) =>
       e.secureQrMode == kSecureQrModeChallengeResponse;
+
+  Map<String, dynamic> _eventToMemberQrCacheMap(AttendanceEvent e) {
+    final data = <String, dynamic>{
+      'id': e.id,
+      'nombre': e.nombre,
+      'fecha': e.fecha,
+      'lugar': e.lugar,
+      'tipo': e.tipo,
+      'activo': e.activo,
+      'estado': e.estado,
+      'secureQrMode': e.secureQrMode,
+    };
+    if (e.fechaFin != null) {
+      data['fechaFin'] = e.fechaFin;
+    }
+    return data;
+  }
 
   Future<void> _activateCredential({bool silent = false}) async {
     setState(() {

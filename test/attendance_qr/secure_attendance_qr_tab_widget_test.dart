@@ -25,24 +25,35 @@ class _FakeAuth extends Fake implements FirebaseAuth {
 }
 
 class _FakeSecureService extends SecureAttendanceQrService {
-  _FakeSecureService({required this.credential})
-    : super(
-        auth: _FakeAuth(),
-        httpClient: MockClient(
-          (_) async => http.Response(
-            '{}',
-            200,
-            headers: {'content-type': 'application/json'},
-          ),
-        ),
-        apiBaseUrl: 'http://test.local/api',
-        requireAppCheckHeader: false,
-        appCheckTokenProvider: () async => null,
-      );
+  _FakeSecureService({
+    required this.credential,
+    List<Map<String, dynamic>>? memberEventMaps,
+    List<Map<String, dynamic>>? cachedEventMaps,
+    this.listError,
+  }) : memberEventMaps = memberEventMaps ?? const [],
+       cachedEventMaps = cachedEventMaps ?? const [],
+       super(
+         auth: _FakeAuth(),
+         httpClient: MockClient(
+           (_) async => http.Response(
+             '{}',
+             200,
+             headers: {'content-type': 'application/json'},
+           ),
+         ),
+         apiBaseUrl: 'http://test.local/api',
+         requireAppCheckHeader: false,
+         appCheckTokenProvider: () async => null,
+       );
 
   final Map<String, dynamic> credential;
+  final List<Map<String, dynamic>> memberEventMaps;
+  final List<Map<String, dynamic>> cachedEventMaps;
+  final Object? listError;
+  final cachedWrites = <List<Map<String, dynamic>>>[];
   Satt2MemberQr? memberQr;
   int buildCalls = 0;
+  int listCalls = 0;
 
   @override
   Future<Map<String, dynamic>?> loadStoredCredential() async => credential;
@@ -63,10 +74,21 @@ class _FakeSecureService extends SecureAttendanceQrService {
   }) async => credential;
 
   @override
-  Future<void> cacheRecentEvents(List<Map<String, dynamic>> events) async {}
+  Future<List<Map<String, dynamic>>> listMemberQrEvents() async {
+    listCalls++;
+    final error = listError;
+    if (error != null) throw error;
+    return memberEventMaps;
+  }
 
   @override
-  Future<List<Map<String, dynamic>>> loadCachedEvents() async => [];
+  Future<void> cacheRecentEvents(List<Map<String, dynamic>> events) async {
+    cachedWrites.add(events);
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> loadCachedEvents() async =>
+      cachedEventMaps;
 
   @override
   Future<Satt2MemberQr> buildMemberDynamicQr({
@@ -85,6 +107,26 @@ class _FakeSecureService extends SecureAttendanceQrService {
     );
     return memberQr!;
   }
+}
+
+Map<String, dynamic> _eventMap({
+  required String id,
+  required String nombre,
+  String mode = kSecureQrModeDynamicMember,
+}) {
+  return {
+    'id': id,
+    'nombre': nombre,
+    'fecha': DateTime.now().millisecondsSinceEpoch,
+    'fechaFin': DateTime.now()
+        .add(const Duration(hours: 2))
+        .millisecondsSinceEpoch,
+    'lugar': 'Sede',
+    'tipo': 'reunion',
+    'activo': true,
+    'estado': 'en_curso',
+    'secureQrMode': mode,
+  };
 }
 
 AttendanceEvent _event({
@@ -226,5 +268,83 @@ void main() {
       find.byType(DropdownButtonFormField<AttendanceEvent>),
       findsOneWidget,
     );
+  });
+
+  testWidgets(
+    'sanitized endpoint events render member QR without Firestore loader',
+    (tester) async {
+      final service = _FakeSecureService(
+        credential: credential,
+        memberEventMaps: [
+          {
+            ..._eventMap(id: 'evt-api', nombre: 'Asamblea endpoint'),
+            'miembrosConvocados': ['member-1'],
+            'creadoPor': 'admin',
+            'geofenceEnabled': true,
+          },
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: SecureAttendanceQrTab(
+                hasLinkedMember: true,
+                memberDisplayName: 'Juan Pérez',
+                service: service,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+
+      expect(service.listCalls, 1);
+      expect(find.text('MI CÓDIGO DE ASISTENCIA'), findsOneWidget);
+      expect(find.byType(QrImageView), findsOneWidget);
+      expect(find.text('Asamblea endpoint'), findsOneWidget);
+      expect(service.cachedWrites, isNotEmpty);
+      final cached = service.cachedWrites.single.single;
+      expect(cached.containsKey('miembrosConvocados'), isFalse);
+      expect(cached.containsKey('creadoPor'), isFalse);
+      expect(cached.containsKey('geofenceEnabled'), isFalse);
+    },
+  );
+
+  testWidgets('offline cache keeps member QR working when endpoint is down', (
+    tester,
+  ) async {
+    final service = _FakeSecureService(
+      credential: credential,
+      listError: SecureAttendanceApiException('backend-unavailable'),
+      cachedEventMaps: [_eventMap(id: 'evt-cache', nombre: 'Asamblea cache')],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: SecureAttendanceQrTab(
+              hasLinkedMember: true,
+              memberDisplayName: 'Juan Pérez',
+              service: service,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+
+    expect(service.listCalls, 1);
+    expect(find.text('MI CÓDIGO DE ASISTENCIA'), findsOneWidget);
+    expect(find.byType(QrImageView), findsOneWidget);
+    expect(find.text('Asamblea cache'), findsOneWidget);
   });
 }

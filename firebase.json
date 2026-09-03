@@ -93,6 +93,13 @@
         }
       },
       {
+        "source": "/api/attendance-list-member-qr-events",
+        "function": {
+          "functionId": "attendanceListMemberQrEvents",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/api/attendance-prepare-offline-event",
         "function": {
           "functionId": "attendancePrepareOfflineEvent",

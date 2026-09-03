@@ -269,6 +269,10 @@ class SecureAttendanceQrService {
         case 'unauthorized':
           return 'Debes iniciar sesión para activar tu código de asistencia.';
         case 'forbidden':
+        case 'user-inactive':
+        case 'missing-memberId':
+        case 'member-missing':
+        case 'member-inactive':
           return 'No tienes permiso para activar el código de asistencia.';
         case 'app-check-unavailable':
         case 'missing-app-check':
@@ -412,6 +416,19 @@ class SecureAttendanceQrService {
 
   Future<List<Map<String, dynamic>>> loadCachedEvents() =>
       _store.loadRecentEvents();
+
+  /// Member: list only sanitized attendance event metadata usable for QR UX.
+  Future<List<Map<String, dynamic>>> listMemberQrEvents() async {
+    final result = await _post('/attendance-list-member-qr-events', const {});
+    final rawEvents = result['events'];
+    if (rawEvents is! List) {
+      throw SecureAttendanceApiException('invalid-response');
+    }
+    return rawEvents
+        .whereType<Map>()
+        .map((event) => Map<String, dynamic>.from(event))
+        .toList(growable: false);
+  }
 
   /// Operator: download signed offline package for an event + scanner.
   Future<Map<String, dynamic>> prepareOfflineEvent({

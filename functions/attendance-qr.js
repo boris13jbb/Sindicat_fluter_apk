@@ -76,10 +76,10 @@ function requestIp(req) {
   return forwarded ? forwarded.split(",")[0].trim() : req.ip || "unknown";
 }
 
-async function enforceNamedRateLimit(bucket, key, limit) {
-  const ref = db.collection(RATE_LIMIT_COLLECTION).doc(`${bucket}-${hash(key)}`);
+async function enforceNamedRateLimit(bucket, key, limit, firestore = db) {
+  const ref = firestore.collection(RATE_LIMIT_COLLECTION).doc(`${bucket}-${hash(key)}`);
   const nowMs = Date.now();
-  await db.runTransaction(async (tx) => {
+  await firestore.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const current = snap.exists ? snap.data() : null;
     const windowStart = current?.windowStart?.toMillis?.() || 0;
@@ -165,8 +165,8 @@ async function assertAuthenticatedRequest(req) {
   return assertBearerUid(req);
 }
 
-async function loadActiveUser(uid) {
-  const snap = await db.collection("users").doc(uid).get();
+async function loadActiveUser(uid, firestore = db) {
+  const snap = await firestore.collection("users").doc(uid).get();
   if (!snap.exists) throw new HttpError(403, "user-missing");
   const data = snap.data() || {};
   if (data.isActive === false) throw new HttpError(403, "user-inactive");
@@ -179,6 +179,53 @@ function isOperatorRole(role) {
 
 function isAdminRole(role) {
   return ["SUPERADMIN", "ADMIN"].includes(role);
+}
+
+function activeMemberIdForUser(user) {
+  const memberId = String(user?.memberId || "").trim();
+  if (!memberId) throw new HttpError(403, "missing-memberId");
+  return memberId;
+}
+
+async function loadRequiredActiveMember(firestore, memberId) {
+  const memberSnap = await firestore.collection("members").doc(memberId).get();
+  if (!memberSnap.exists) throw new HttpError(404, "member-missing");
+  if (!memberIsActive(memberSnap.data())) {
+    throw new HttpError(403, "member-inactive");
+  }
+  return memberSnap.data() || {};
+}
+
+function eventAllowsMemberQr(event, memberId) {
+  if (event.activo !== true) return false;
+  const estado = String(event.estado || "").trim().toLowerCase();
+  if (estado === "finalizado" || estado === "cancelado") return false;
+
+  const convocados = Array.isArray(event.miembrosConvocados)
+    ? event.miembrosConvocados.map((id) => String(id))
+    : [];
+  return convocados.length === 0 || convocados.includes(memberId);
+}
+
+function sanitizeMemberQrEvent(id, event) {
+  const sanitized = {
+    id,
+    nombre: String(event.nombre || ""),
+    fecha: Number(event.fecha || 0) || 0,
+    lugar: String(event.lugar || ""),
+    tipo: String(event.tipo || "reunion"),
+    activo: event.activo === true,
+    estado: String(event.estado || "programado"),
+    secureQrMode: String(event.secureQrMode || "dynamic_member_qr"),
+  };
+  if (event.fechaFin != null) {
+    sanitized.fechaFin = Number(event.fechaFin || 0) || 0;
+  }
+  return sanitized;
+}
+
+function sortMemberQrEventsDesc(a, b) {
+  return Number(b.fecha || 0) - Number(a.fecha || 0);
 }
 
 function resolveServerKeyPair() {
@@ -525,6 +572,44 @@ async function handlePrepareOfflineCredential(req, res) {
         audit,
       },
     });
+  } catch (error) {
+    jsonErr(res, error);
+  }
+}
+
+/**
+ * POST /api/attendance-list-member-qr-events
+ * Body: {}
+ *
+ * Member endpoint. Reads attendance_events with Admin SDK and returns only the
+ * minimal metadata required to generate/select a member QR. The client-supplied
+ * body is intentionally ignored for member scoping.
+ */
+async function handleListMemberQrEvents(req, res, deps = {}) {
+  const firestore = deps.firestore || db;
+  const authenticate = deps.authenticate || assertAuthenticatedRequest;
+  const rateLimit = deps.enforceRateLimit || enforceNamedRateLimit;
+
+  try {
+    if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
+    const uid = await authenticate(req);
+    await rateLimit("att-list-events", uid, PREP_LIMIT, firestore);
+
+    const user = await loadActiveUser(uid, firestore);
+    const memberId = activeMemberIdForUser(user);
+    await loadRequiredActiveMember(firestore, memberId);
+
+    const snap = await firestore
+      .collection("attendance_events")
+      .where("activo", "==", true)
+      .get();
+
+    const events = snap.docs
+      .filter((doc) => eventAllowsMemberQr(doc.data() || {}, memberId))
+      .map((doc) => sanitizeMemberQrEvent(doc.id, doc.data() || {}))
+      .sort(sortMemberQrEventsDesc);
+
+    jsonOk(res, {events});
   } catch (error) {
     jsonErr(res, error);
   }
@@ -937,6 +1022,11 @@ const attendancePrepareOfflineCredential = onRequest(
   handlePrepareOfflineCredential,
 );
 
+const attendanceListMemberQrEvents = onRequest(
+  createAttendanceQrHttpsOptions(),
+  handleListMemberQrEvents,
+);
+
 const attendancePrepareOfflineEvent = onRequest(
   createAttendanceQrHttpsOptions({secrets: [attendanceQrSigningKey]}),
   handlePrepareOfflineEvent,
@@ -964,6 +1054,7 @@ const attendanceSyncOfflineBatch = onRequest(
 module.exports = {
   attendanceEnrollMemberDevice,
   attendancePrepareOfflineCredential,
+  attendanceListMemberQrEvents,
   attendancePrepareOfflineEvent,
   attendanceRegisterScannerDevice,
   attendanceApproveScannerDevice,
@@ -972,6 +1063,7 @@ module.exports = {
   _test: {
     handleEnrollMemberDevice,
     handlePrepareOfflineCredential,
+    handleListMemberQrEvents,
     handlePrepareOfflineEvent,
     handleRegisterScannerDevice,
     handleApproveScannerDevice,
@@ -987,6 +1079,11 @@ module.exports = {
     setVerifyAppCheckTokenForTests,
     resetVerifyAppCheckTokenForTests,
     HttpError,
+    activeMemberIdForUser,
+    loadRequiredActiveMember,
+    eventAllowsMemberQr,
+    sanitizeMemberQrEvent,
+    sortMemberQrEventsDesc,
     loadActiveAttendanceMemberDevices,
     loadMembersByIds,
     buildOfflineParticipants,

@@ -94,6 +94,9 @@ class ElectionService {
     return _firestore
         .collection('elections')
         .where('isVisibleToVoters', isEqualTo: true)
+        .where('isActive', isEqualTo: true)
+        // Reglas Firestore fallan cerrado si el campo legacy isArchived falta.
+        .where('isArchived', isEqualTo: false)
         .snapshots(includeMetadataChanges: true)
         .map((snap) {
           final now = DateTime.now();

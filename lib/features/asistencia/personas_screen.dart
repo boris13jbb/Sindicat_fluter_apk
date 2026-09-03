@@ -7,6 +7,7 @@ import '../../core/design/widgets/premium_card.dart';
 import '../../core/design/widgets/primary_button.dart';
 import '../../core/models/asistencia/persona.dart';
 import '../../core/models/member.dart';
+import '../../core/security/route_access.dart';
 import '../../core/models/user_role.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/asistencia_service.dart';
@@ -14,7 +15,9 @@ import '../../services/members_service.dart';
 import '../elections/widgets/voto_premium_chrome.dart';
 
 class PersonasAsistenciaScreen extends StatefulWidget {
-  const PersonasAsistenciaScreen({super.key});
+  const PersonasAsistenciaScreen({super.key, this.combinedItemsLoader});
+
+  final Stream<List<Map<String, dynamic>>> Function()? combinedItemsLoader;
 
   @override
   State<PersonasAsistenciaScreen> createState() =>
@@ -22,9 +25,18 @@ class PersonasAsistenciaScreen extends StatefulWidget {
 }
 
 class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
-  final _membersService = MembersService();
-  final _asistenciaService = AsistenciaService();
+  MembersService? _membersService;
+  AsistenciaService? _asistenciaService;
   String _busqueda = '';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.combinedItemsLoader == null) {
+      _membersService = MembersService();
+      _asistenciaService = AsistenciaService();
+    }
+  }
 
   void _openPersonDetail(Map<String, dynamic> item) {
     if (item['source'] == 'member') {
@@ -78,6 +90,7 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final role = auth.user?.role ?? UserRole.user;
+    final canManageMembers = adminRouteRoles.contains(role);
 
     return Scaffold(
       backgroundColor: AppDesignTokens.background,
@@ -112,13 +125,15 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                     );
                   },
                 ),
-                const SizedBox(width: 6),
-                VotoCircleIconButton(
-                  icon: Icons.group_add_outlined,
-                  onTap: () {
-                    Navigator.pushNamed(context, '/members');
-                  },
-                ),
+                if (canManageMembers) ...[
+                  const SizedBox(width: 6),
+                  VotoCircleIconButton(
+                    icon: Icons.group_add_outlined,
+                    onTap: () {
+                      Navigator.pushNamed(context, '/members');
+                    },
+                  ),
+                ],
               ],
             ),
           ),
@@ -253,15 +268,17 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
                       ),
                       child: Row(
                         children: [
-                          Expanded(
-                            child: PrimaryButton(
-                              onPressed: () =>
-                                  Navigator.pushNamed(context, '/members'),
-                              label: 'Nueva persona',
-                              icon: Icons.add_rounded,
+                          if (canManageMembers) ...[
+                            Expanded(
+                              child: PrimaryButton(
+                                onPressed: () =>
+                                    Navigator.pushNamed(context, '/members'),
+                                label: 'Nueva persona',
+                                icon: Icons.add_rounded,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
+                            const SizedBox(width: 10),
+                          ],
                           Expanded(
                             child: Material(
                               color: AppDesignTokens.lavanda,
@@ -382,7 +399,10 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
   }
 
   Stream<List<Map<String, dynamic>>> _buildCombinedStream() {
-    return _membersService.getAllMembers().asyncExpand((members) {
+    final loader = widget.combinedItemsLoader;
+    if (loader != null) return loader();
+
+    return _membersService!.getAllMembers().asyncExpand((members) {
       return _combinarPersonasYMembers(members).asStream();
     });
   }
@@ -422,7 +442,7 @@ class _PersonasAsistenciaScreenState extends State<PersonasAsistenciaScreen> {
       debugPrint('   ✅ Agregados ${result.length} members');
 
       try {
-        final legacyPersonas = await _asistenciaService
+        final legacyPersonas = await _asistenciaService!
             .fetchAllLegacyPersonas();
 
         debugPrint(
