@@ -340,14 +340,22 @@ class MyApp extends StatelessWidget {
           '/asistencia': (_) =>
               _roleGuard(const AsistenciaHomeScreen(), attendanceRouteRoles),
           // Ruta antigua conservada como alias del flujo actual.
-          '/asistencia/crear_evento': (_) => _roleGuard(
-            const CrearAttendanceEventScreen(),
-            attendanceRouteRoles,
-          ),
-          '/asistencia/crear_attendance_event': (_) => _roleGuard(
-            const CrearAttendanceEventScreen(),
-            attendanceRouteRoles,
-          ),
+          '/asistencia/crear_evento': (ctx) {
+            final args = ModalRoute.of(ctx)?.settings.arguments;
+            final eventId = args is String ? args : null;
+            return _roleGuard(
+              CrearAttendanceEventScreen(eventId: eventId),
+              attendanceRouteRoles,
+            );
+          },
+          '/asistencia/crear_attendance_event': (ctx) {
+            final args = ModalRoute.of(ctx)?.settings.arguments;
+            final eventId = args is String ? args : null;
+            return _roleGuard(
+              CrearAttendanceEventScreen(eventId: eventId),
+              attendanceRouteRoles,
+            );
+          },
           '/asistencia/evento_detail': (ctx) {
             final evento =
                 ModalRoute.of(ctx)?.settings.arguments as EventoAsistencia?;

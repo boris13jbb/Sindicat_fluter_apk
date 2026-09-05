@@ -253,11 +253,35 @@ La site key **no** se hardcodea en el repositorio.
 
 **No se afirma** “ENFORCED IN PRODUCTION” hasta que exista deploy real + providers registrados en Console.
 
-### Offline package scalability
+### Eventos archivados (`archivado`)
 
-| Campo | Valor |
-|-------|--------|
-| Device query | Paginada (`status==active` + `orderBy(__name__)`, page 200) |
+| Acción | Comportamiento |
+|--------|----------------|
+| List member QR | Eventos con `archivado === true` **excluidos** (`eventAllowsMemberQr`) |
+| prepareOfflineEvent | HTTP **403** `event-archived` — no emite paquetes nuevos |
+| Paquete offline ya emitido | Conserva vigencia criptográfica hasta `expiresAt` |
+| syncOfflineBatch | Si el evento está archivado al sincronizar → `status: review`, `code: event-archived` (no rechazo automático de firmas válidas) |
+| Soft archive | No borra subcolección `asistencias`; no cambia `activo`/`estado` |
+
+**Decisión:** archivar **no** revoca instantáneamente un paquete ya descargado. Bloquea nuevas preparaciones online y la lista QR del socio; el sync deja recibos en `review` para criterio operativo.
+
+### `asistenciaCount` (integridad histórica — fail-closed)
+
+| Estado | Semántica |
+|--------|-----------|
+| `asistenciaCount: 0` | Confirmado sin asistencias; permite edición de campos históricos (Rules) |
+| `asistenciaCount > 0` | Tiene asistencias; histórico bloqueado |
+| **campo ausente** | Legacy / desconocido — **nunca** se trata como 0 |
+
+**Garantías:**
+
+- Nuevos eventos: `createEvent` / Rules exigen `asistenciaCount: 0`.
+- Cliente no puede seedear ni poner a 0 el contador (solo bump +1 si el campo ya existe).
+- Sync Secure QR y registro manual rechazan eventos sin count confirmado (`legacy-count-missing` / `AttendanceLegacyCountException`).
+- Delete seguro sigue basándose en la subcolección `asistencias` (no solo en el contador).
+
+**Backfill futuro (NO ejecutado en este gate):** script dry-run por defecto que cuente docs en `asistencias/` y escriba `asistenciaCount` solo tras revisión/autorización. Sin escrituras a producción en esta fase.
+
 | Member loads | `getAll` por chunks de 100 (sin N+1) |
 | Límite silencioso 500 | **Eliminado** |
 | Capacidad mínima probada | **≥ 5000** dispositivos activos (`attendance_member_devices`) |

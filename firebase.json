@@ -128,6 +128,13 @@
         }
       },
       {
+        "source": "/api/attendance-delete-event",
+        "function": {
+          "functionId": "attendanceDeleteEvent",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

@@ -30,6 +30,128 @@ function emulatorsReady() {
   return Boolean(AUTH_HOST && FS_HOST);
 }
 
+function isLocalEmulatorHost(host) {
+  const h = String(host || "");
+  return h.includes("127.0.0.1") || h.includes("localhost");
+}
+
+function assertLocalAuthHost(authHost = AUTH_HOST) {
+  if (!isLocalEmulatorHost(authHost)) {
+    throw new Error(
+      `Refusing non-local Auth emulator host for waitForEmulatorAuthReady: ${authHost}`,
+    );
+  }
+}
+
+/**
+ * TEST-ONLY: poll Auth Emulator until Admin verifyIdToken accepts the token.
+ * Closes the race where accounts:signUp returns an idToken before the
+ * Functions emulator Admin SDK can verify it (HTTP 401 invalid-auth flake).
+ *
+ * Never logs tokens. Never targets production hosts.
+ */
+async function waitForEmulatorAuthReady({
+  idToken,
+  expectedUid,
+  authHost = AUTH_HOST,
+  verifyIdToken,
+  delaysMs = [25, 50, 100, 200, 400, 800, 1600, 3200],
+  maxWaitMs = 10000,
+} = {}) {
+  assertLocalAuthHost(authHost);
+  if (typeof idToken !== "string" || !idToken.trim()) {
+    throw new Error("AUTH_EMULATOR_NOT_READY: missing idToken");
+  }
+  if (typeof expectedUid !== "string" || !expectedUid.trim()) {
+    throw new Error("AUTH_EMULATOR_NOT_READY: missing expectedUid");
+  }
+
+  const verify =
+    verifyIdToken ||
+    (async (token) => admin.auth().verifyIdToken(token));
+
+  const started = Date.now();
+  let lastError = null;
+  for (let i = 0; i < delaysMs.length; i++) {
+    if (Date.now() - started > maxWaitMs) break;
+    try {
+      const decoded = await verify(idToken);
+      if (decoded && decoded.uid === expectedUid) {
+        return decoded;
+      }
+      lastError = new Error(
+        `AUTH_EMULATOR_NOT_READY: uid mismatch (expected bound uid)`,
+      );
+      // Wrong UID is definitive — do not keep polling forever.
+      throw lastError;
+    } catch (err) {
+      if (
+        err &&
+        typeof err.message === "string" &&
+        err.message.includes("uid mismatch")
+      ) {
+        throw err;
+      }
+      lastError = err;
+      const delay = delaysMs[i];
+      if (Date.now() - started + delay > maxWaitMs) break;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  const detail =
+    lastError && lastError.message ? String(lastError.message) : "unknown";
+  // Never include token material in the error.
+  throw new Error(`AUTH_EMULATOR_NOT_READY: ${detail}`);
+}
+
+/**
+ * TEST-ONLY: ensure the Functions emulator Admin SDK can verify the token.
+ * Admin verifyIdToken in the test process can succeed slightly before the
+ * Functions runtime accepts the same Bearer token (cross-process Auth lag).
+ */
+async function waitForFunctionsAuthReady({
+  idToken,
+  authHost = AUTH_HOST,
+  httpPost = httpSync,
+  delaysMs = [25, 50, 100, 200, 400, 800, 1600, 3200],
+  maxWaitMs = 10000,
+} = {}) {
+  assertLocalAuthHost(authHost);
+  if (typeof idToken !== "string" || !idToken.trim()) {
+    throw new Error("AUTH_EMULATOR_NOT_READY: missing idToken");
+  }
+  const started = Date.now();
+  let lastStatus = null;
+  let lastCode = null;
+  for (let i = 0; i < delaysMs.length; i++) {
+    if (Date.now() - started > maxWaitMs) break;
+    const res = await httpPost({
+      idToken,
+      scannerId: "auth-ready-probe",
+      receipts: [],
+    });
+    lastStatus = res.status;
+    lastCode = res.body && res.body.code;
+    // Auth accepted: endpoint validates payload (400 empty-batch) or other
+    // non-auth business errors — never treat unexpected 401 as success.
+    if (res.status !== 401) {
+      return res;
+    }
+    const delay = delaysMs[i];
+    if (Date.now() - started + delay > maxWaitMs) break;
+    await new Promise((r) => setTimeout(r, delay));
+  }
+  throw new Error(
+    `AUTH_EMULATOR_NOT_READY: functions still rejecting auth ` +
+      `(lastStatus=${lastStatus} lastCode=${lastCode || "n/a"})`,
+  );
+}
+
+async function stabilizeEmulatorAuthSession({idToken, expectedUid}) {
+  await waitForEmulatorAuthReady({idToken, expectedUid});
+  await waitForFunctionsAuthReady({idToken});
+}
+
 function syncUrl() {
   // Cloud Functions emulator HTTP shape
   const host = FUNCTIONS_HOST.includes("://")
@@ -175,10 +297,10 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
     }
 
     // Hard guard: refuse if pointing at production hosts.
-    if (!AUTH_HOST.includes("127.0.0.1") && !AUTH_HOST.includes("localhost")) {
+    if (!isLocalEmulatorHost(AUTH_HOST)) {
       throw new Error(`Refusing non-local Auth emulator host: ${AUTH_HOST}`);
     }
-    if (!FS_HOST.includes("127.0.0.1") && !FS_HOST.includes("localhost")) {
+    if (!isLocalEmulatorHost(FS_HOST)) {
       throw new Error(`Refusing non-local Firestore emulator host: ${FS_HOST}`);
     }
 
@@ -206,6 +328,16 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
     );
     voterUid = voter.uid;
     voterToken = voter.idToken;
+
+    // Fail-fast: Auth Emulator + Functions must accept tokens before HTTP cases.
+    await stabilizeEmulatorAuthSession({
+      idToken: operatorToken,
+      expectedUid: operatorUid,
+    });
+    await stabilizeEmulatorAuthSession({
+      idToken: voterToken,
+      expectedUid: voterUid,
+    });
 
     await db.collection("users").doc(operatorUid).set({
       email: "operator@test.emulator",
@@ -259,6 +391,7 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
       fecha: Date.now(),
       activo: true,
       creadoPor: operatorUid,
+      asistenciaCount: 0,
     });
 
     // Smoke: Functions emulator must be reachable.
@@ -332,6 +465,7 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
       nombre: "HTTP E2E Dual Scanner",
       fecha: Date.now(),
       activo: true,
+      asistenciaCount: 0,
     });
 
     const receiptA = buildSignedReceipt({
@@ -462,6 +596,7 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
       nombre: "revoked test",
       fecha: Date.now(),
       activo: true,
+      asistenciaCount: 0,
     });
     const scannerR = "http-scanner-revoked";
     const scannerRKp = cryptoHelpers.generateEd25519KeyPair();
@@ -525,6 +660,7 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
       nombre: "inactive sync",
       fecha: Date.now(),
       activo: true,
+      asistenciaCount: 0,
     });
 
     const receipt = buildSignedReceipt({
@@ -676,6 +812,7 @@ describe("HTTP E2E attendancePrepareOfflineEvent scale (>500 devices)", () => {
       fecha: Date.now(),
       fechaFin: Date.now() + 3_600_000,
       activo: true,
+      asistenciaCount: 0,
     });
   }
 
@@ -698,6 +835,10 @@ describe("HTTP E2E attendancePrepareOfflineEvent scale (>500 devices)", () => {
     );
     operatorUid = op.uid;
     operatorToken = op.idToken;
+    await stabilizeEmulatorAuthSession({
+      idToken: operatorToken,
+      expectedUid: operatorUid,
+    });
     await db.collection("users").doc(operatorUid).set({
       role: "OPERADOR_ASISTENCIA",
       isActive: true,
@@ -810,5 +951,112 @@ describe("HTTP E2E attendancePrepareOfflineEvent scale (>500 devices)", () => {
     assert.equal(body.code, "offline-package-too-large");
     assert.equal(body.participantDeviceCount, over);
     assert.equal(body.package, undefined);
+  });
+});
+
+describe("waitForEmulatorAuthReady (test-only helper)", () => {
+  it("refuses non-local Auth host", async () => {
+    await assert.rejects(
+      () =>
+        waitForEmulatorAuthReady({
+          idToken: "tok",
+          expectedUid: "uid",
+          authHost: "securetoken.googleapis.com",
+          delaysMs: [1],
+          maxWaitMs: 100,
+          verifyIdToken: async () => ({uid: "uid"}),
+        }),
+      /Refusing non-local Auth emulator host/,
+    );
+  });
+
+  it("valid token + correct uid → PASS", async () => {
+    const decoded = await waitForEmulatorAuthReady({
+      idToken: "tok-ok",
+      expectedUid: "uid-1",
+      authHost: "127.0.0.1:9099",
+      delaysMs: [1],
+      maxWaitMs: 1000,
+      verifyIdToken: async () => ({uid: "uid-1"}),
+    });
+    assert.equal(decoded.uid, "uid-1");
+  });
+
+  it("valid token + wrong uid → FAIL", async () => {
+    await assert.rejects(
+      () =>
+        waitForEmulatorAuthReady({
+          idToken: "tok-ok",
+          expectedUid: "uid-expected",
+          authHost: "localhost:9099",
+          delaysMs: [1],
+          maxWaitMs: 1000,
+          verifyIdToken: async () => ({uid: "uid-other"}),
+        }),
+      /AUTH_EMULATOR_NOT_READY: uid mismatch/,
+    );
+  });
+
+  it("invalid token → controlled FAIL (timeout path)", async () => {
+    await assert.rejects(
+      () =>
+        waitForEmulatorAuthReady({
+          idToken: "not-a-jwt",
+          expectedUid: "uid-1",
+          authHost: "127.0.0.1:9099",
+          delaysMs: [5, 5],
+          maxWaitMs: 50,
+          verifyIdToken: async () => {
+            throw new Error("Decoding Firebase ID token failed");
+          },
+        }),
+      /AUTH_EMULATOR_NOT_READY/,
+    );
+  });
+
+  it("timeout → AUTH_EMULATOR_NOT_READY", async () => {
+    let calls = 0;
+    await assert.rejects(
+      () =>
+        waitForEmulatorAuthReady({
+          idToken: "tok-slow",
+          expectedUid: "uid-1",
+          authHost: "127.0.0.1:9099",
+          delaysMs: [10, 10, 10, 10],
+          maxWaitMs: 25,
+          verifyIdToken: async () => {
+            calls += 1;
+            throw new Error("auth/id-token-expired");
+          },
+        }),
+      /AUTH_EMULATOR_NOT_READY/,
+    );
+    assert.ok(calls >= 1);
+  });
+
+  it("functions probe refuses persistent 401", async () => {
+    await assert.rejects(
+      () =>
+        waitForFunctionsAuthReady({
+          idToken: "tok",
+          authHost: "127.0.0.1:9099",
+          delaysMs: [5, 5],
+          maxWaitMs: 40,
+          httpPost: async () => ({status: 401, body: {code: "invalid-auth"}}),
+        }),
+      /AUTH_EMULATOR_NOT_READY: functions still rejecting auth/,
+    );
+  });
+
+  it("functions probe accepts non-401 business response", async () => {
+    const res = await waitForFunctionsAuthReady({
+      idToken: "tok",
+      authHost: "localhost:9099",
+      delaysMs: [1],
+      maxWaitMs: 1000,
+      httpPost: async () => ({status: 400, body: {code: "empty-batch"}}),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, "empty-batch");
   });
 });

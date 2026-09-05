@@ -45,6 +45,7 @@ const {
   attendanceRegisterScannerDevice,
   attendanceApproveScannerDevice,
   attendanceSyncOfflineBatch,
+  attendanceDeleteEvent,
 } = require("./attendance-qr");
 
 const smtpUser = defineSecret("SMTP_USER");
@@ -833,6 +834,7 @@ exports.attendancePrepareOfflineEvent = attendancePrepareOfflineEvent;
 exports.attendanceRegisterScannerDevice = attendanceRegisterScannerDevice;
 exports.attendanceApproveScannerDevice = attendanceApproveScannerDevice;
 exports.attendanceSyncOfflineBatch = attendanceSyncOfflineBatch;
+exports.attendanceDeleteEvent = attendanceDeleteEvent;
 
 exports.syncUserAuthAccess = onDocumentUpdated(
   {

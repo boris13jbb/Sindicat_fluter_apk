@@ -65,11 +65,21 @@ const MAX_ACTIVE_DEVICE_SCAN = 20000;
  */
 const MAX_PARTICIPANTS_JSON_BYTES = 3 * 1024 * 1024;
 
+/**
+ * Confirmed non-negative integer asistenciaCount (never coerce missing → 0).
+ * @param {*} value
+ * @return {boolean}
+ */
+function isConfirmedAsistenciaCount(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
 const ENROLL_LIMIT = {maximum: 10, windowMs: 60 * 60 * 1000};
 const PREP_LIMIT = {maximum: 30, windowMs: 60 * 60 * 1000};
 const SYNC_LIMIT = {maximum: 60, windowMs: 60 * 60 * 1000};
 const SCANNER_REGISTER_LIMIT = {maximum: 30, windowMs: 60 * 60 * 1000};
 const SCANNER_APPROVE_LIMIT = {maximum: 60, windowMs: 60 * 60 * 1000};
+const DELETE_EVENT_LIMIT = {maximum: 20, windowMs: 60 * 60 * 1000};
 
 class HttpError extends Error {
   constructor(status, code, message) {
@@ -193,6 +203,10 @@ function isAdminRole(role) {
   return ["SUPERADMIN", "ADMIN"].includes(role);
 }
 
+function isSuperAdminRole(role) {
+  return role === "SUPERADMIN";
+}
+
 function assertScannerAssignment(scanner, uid, role) {
   if (!isAdminRole(role) && scanner.assignedUserId !== uid) {
     throw new HttpError(403, "scanner-not-assigned");
@@ -271,6 +285,7 @@ async function loadRequiredActiveMember(firestore, memberId) {
 }
 
 function eventAllowsMemberQr(event, memberId) {
+  if (event.archivado === true) return false;
   if (event.activo !== true) return false;
   const estado = String(event.estado || "").trim().toLowerCase();
   if (estado === "finalizado" || estado === "cancelado") return false;
@@ -756,6 +771,9 @@ async function handlePrepareOfflineEvent(req, res) {
     const eventSnap = await db.collection("attendance_events").doc(eventId).get();
     if (!eventSnap.exists) throw new HttpError(404, "event-missing");
     const event = eventSnap.data() || {};
+    if (event.archivado === true) {
+      throw new HttpError(403, "event-archived");
+    }
 
     const participants = await collectOfflinePackageParticipants(event, db);
     for (const participant of participants) {
@@ -1157,6 +1175,15 @@ async function syncOneReceipt({raw, scannerId, scannerPub, operatorUid}) {
       return {localReceiptId, status: "rejected", code: "invalid-member-signature"};
     }
 
+    // Archive policy applies only after cryptographic validation succeeds.
+    const eventSnap = await db.collection("attendance_events").doc(eventId).get();
+    if (!eventSnap.exists) {
+      return {localReceiptId, status: "rejected", code: "event-missing"};
+    }
+    if (eventSnap.data()?.archivado === true) {
+      return {localReceiptId, status: "review", code: "event-archived"};
+    }
+
     const docId = attendanceDocId(eventId, memberId);
     const ref = db
       .collection("attendance_events")
@@ -1168,6 +1195,19 @@ async function syncOneReceipt({raw, scannerId, scannerPub, operatorUid}) {
       const existing = await tx.get(ref);
       if (existing.exists) {
         return {status: "already_synced", code: "duplicate"};
+      }
+      const eventRef = db.collection("attendance_events").doc(eventId);
+      const eventLive = await tx.get(eventRef);
+      if (!eventLive.exists) {
+        return {status: "rejected", code: "event-missing"};
+      }
+      const liveData = eventLive.data() || {};
+      if (liveData.archivado === true) {
+        return {status: "review", code: "event-archived"};
+      }
+      // Fail-closed: Admin SDK bypasses Rules; never invent count for legacy.
+      if (!isConfirmedAsistenciaCount(liveData.asistenciaCount)) {
+        return {status: "rejected", code: "legacy-count-missing"};
       }
       tx.set(ref, {
         id: docId,
@@ -1191,6 +1231,9 @@ async function syncOneReceipt({raw, scannerId, scannerPub, operatorUid}) {
           status: raw.locationStatus || "unknown",
         },
       });
+      tx.update(eventRef, {
+        asistenciaCount: FieldValue.increment(1),
+      });
       return {status: "synced", code: "created"};
     });
 
@@ -1202,6 +1245,78 @@ async function syncOneReceipt({raw, scannerId, scannerPub, operatorUid}) {
       status: "rejected",
       code: error.code || "sync-error",
     };
+  }
+}
+
+/**
+ * POST /api/attendance-delete-event
+ * Body: { eventId }
+ *
+ * SUPERADMIN only. Hard delete is backend-only (Rules deny client delete).
+ * Uses asistenciaCount + post-delete orphan recovery to close TOCTOU.
+ */
+async function handleDeleteEvent(req, res, deps = {}) {
+  try {
+    if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
+    const authenticate = deps.authenticate || assertAuthenticatedRequest;
+    const rateLimit = deps.enforceRateLimit || enforceNamedRateLimit;
+    const firestore = deps.firestore || db;
+
+    const uid = await authenticate(req);
+    await rateLimit("att-delete-event", uid, DELETE_EVENT_LIMIT, firestore);
+    const user = await loadActiveUser(uid, firestore);
+    if (!isSuperAdminRole(user.role)) throw new HttpError(403, "forbidden");
+
+    const rawId = req.body?.eventId;
+    if (typeof rawId !== "string") throw new HttpError(400, "missing-fields");
+    const eventId = rawId.trim();
+    if (
+      !eventId ||
+      eventId.length > 128 ||
+      /[\/\\.]/.test(eventId) ||
+      /[\u0000-\u001f\u007f]/.test(eventId)
+    ) {
+      throw new HttpError(400, "invalid-eventId");
+    }
+
+    const eventRef = firestore.collection("attendance_events").doc(eventId);
+
+    // Cheap pre-check (UX); authoritative empty check happens in the transaction.
+    const preAttendance = await eventRef.collection("asistencias").limit(1).get();
+    if (!preAttendance.empty) {
+      throw new HttpError(409, "event-has-attendance");
+    }
+
+    let deletedSnapshot = null;
+    await firestore.runTransaction(async (tx) => {
+      const eventSnap = await tx.get(eventRef);
+      if (!eventSnap.exists) throw new HttpError(404, "event-missing");
+      const rawCount = eventSnap.data()?.asistenciaCount;
+      // Count is advisory; subcollection pre/post checks are authoritative.
+      // Reject when confirmed count > 0; missing count alone does not block
+      // if the subcollection is empty (verified outside this transaction).
+      if (isConfirmedAsistenciaCount(rawCount) && rawCount > 0) {
+        throw new HttpError(409, "event-has-attendance");
+      }
+      deletedSnapshot = {id: eventSnap.id, data: eventSnap.data() || {}};
+      tx.delete(eventRef);
+    });
+
+    // Orphan recovery if a concurrent write created asistencias during delete.
+    const postAttendance = await eventRef.collection("asistencias").limit(5).get();
+    if (!postAttendance.empty && deletedSnapshot) {
+      await eventRef.set({
+        ...deletedSnapshot.data,
+        asistenciaCount: postAttendance.size,
+        orphanRecovery: true,
+        orphanRecoveryAt: Date.now(),
+      }, {merge: false});
+      throw new HttpError(409, "event-has-attendance");
+    }
+
+    jsonOk(res, {deleted: true, eventId});
+  } catch (error) {
+    jsonErr(res, error);
   }
 }
 
@@ -1254,6 +1369,11 @@ const attendanceSyncOfflineBatch = onRequest(
   handleSyncOfflineBatch,
 );
 
+const attendanceDeleteEvent = onRequest(
+  createAttendanceQrHttpsOptions(),
+  handleDeleteEvent,
+);
+
 module.exports = {
   attendanceEnrollMemberDevice,
   attendancePrepareOfflineCredential,
@@ -1262,6 +1382,7 @@ module.exports = {
   attendanceRegisterScannerDevice,
   attendanceApproveScannerDevice,
   attendanceSyncOfflineBatch,
+  attendanceDeleteEvent,
   // test exports
   _test: {
     handleEnrollMemberDevice,
@@ -1271,9 +1392,11 @@ module.exports = {
     handleRegisterScannerDevice,
     handleApproveScannerDevice,
     handleSyncOfflineBatch,
+    handleDeleteEvent,
     syncOneReceipt,
     participantsHash,
     attendanceDocId,
+    isConfirmedAsistenciaCount,
     METODO_SECURE,
     shouldEnforceAttendanceAppCheck,
     assertAppCheck,
@@ -1301,6 +1424,7 @@ module.exports = {
     parseScannerRegistration,
     parseScannerApproval,
     assertScannerAssignment,
+    isSuperAdminRole,
     DEVICE_PAGE_SIZE,
     MEMBER_GETALL_CHUNK,
     MAX_OFFLINE_PACKAGE_DEVICES,

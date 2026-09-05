@@ -10,6 +10,8 @@ import '../../providers/auth_provider.dart';
 import '../../services/asistencia_service.dart';
 import '../../services/attendance_service.dart';
 import '../elections/widgets/voto_premium_chrome.dart';
+import 'attendance_event_actions.dart';
+import 'attendance_event_list_filters.dart';
 import 'widgets/attendance_operational_dashboard.dart';
 
 /// Listado premium de eventos de asistencia (`02_asistencia_eventos`).
@@ -22,11 +24,14 @@ class AsistenciasListScreen extends StatefulWidget {
   State<AsistenciasListScreen> createState() => _AsistenciasListScreenState();
 }
 
+enum _ArchiveListFilter { activos, archivados, todos }
+
 class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
   final AsistenciaService _legacyService = AsistenciaService();
   final AttendanceService _attendanceService = AttendanceService();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
+  _ArchiveListFilter _archiveFilter = _ArchiveListFilter.activos;
 
   @override
   void dispose() {
@@ -50,43 +55,15 @@ class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
     'dic',
   ];
 
-  static int _countHoy(List<AttendanceEvent> events) {
-    final now = DateTime.now();
-    final startToday = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).millisecondsSinceEpoch;
-    final endToday = DateTime(
-      now.year,
-      now.month,
-      now.day,
-      23,
-      59,
-      59,
-      999,
-    ).millisecondsSinceEpoch;
-    return events
-        .where((e) => e.fecha <= endToday && e.fechaFinVigenciaMs >= startToday)
-        .length;
-  }
-
-  static int _countActivos(List<AttendanceEvent> events) {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    return events
-        .where(
-          (e) =>
-              e.activo &&
-              e.estado.toLowerCase().trim() != 'finalizado' &&
-              e.fechaFinVigenciaMs >= now,
-        )
-        .length;
-  }
-
-  static int _countFinalizados(List<AttendanceEvent> events) {
-    return events
-        .where((e) => e.estado.toLowerCase().trim() == 'finalizado')
-        .length;
+  AttendanceArchiveListFilter get _mappedFilter {
+    switch (_archiveFilter) {
+      case _ArchiveListFilter.activos:
+        return AttendanceArchiveListFilter.activos;
+      case _ArchiveListFilter.archivados:
+        return AttendanceArchiveListFilter.archivados;
+      case _ArchiveListFilter.todos:
+        return AttendanceArchiveListFilter.todos;
+    }
   }
 
   static List<AttendanceEvent> _filterEvents(
@@ -106,28 +83,37 @@ class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
   }
 
   static _EventVisual _visualFor(AttendanceEvent e) {
-    final st = e.estado.toLowerCase().trim();
-    if (!e.activo) {
+    final badge = attendanceEventBadgeLabel(e);
+    if (badge == 'Archivado') {
       return (
-        badge: 'Borrador',
+        badge: badge,
+        badgeBg: const Color(0xFFECEFF1),
+        badgeFg: const Color(0xFF546E7A),
+        iconBg: const Color(0xFFECEFF1),
+        iconFg: const Color(0xFF607D8B),
+      );
+    }
+    if (badge == 'Borrador') {
+      return (
+        badge: badge,
         badgeBg: const Color(0xFFFFF8E1),
         badgeFg: const Color(0xFFE65100),
         iconBg: const Color(0xFFFFF8E1),
         iconFg: const Color(0xFFE65100),
       );
     }
-    if (st == 'finalizado') {
+    if (badge == 'Finalizado') {
       return (
-        badge: 'Finalizado',
+        badge: badge,
         badgeBg: const Color(0xFFF5F5F5),
         badgeFg: const Color(0xFF424242),
         iconBg: const Color(0xFFECEFF1),
         iconFg: const Color(0xFF546E7A),
       );
     }
-    if (st == 'en_curso') {
+    if (badge == 'En curso') {
       return (
-        badge: 'En curso',
+        badge: badge,
         badgeBg: const Color(0xFFE8F5E9),
         badgeFg: const Color(0xFF2E7D32),
         iconBg: const Color(0xFFE8F5E9),
@@ -135,7 +121,7 @@ class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
       );
     }
     return (
-      badge: 'Programado',
+      badge: badge,
       badgeBg: const Color(0xFFE3F2FD),
       badgeFg: const Color(0xFF1565C0),
       iconBg: const Color(0xFFE3F2FD),
@@ -331,10 +317,11 @@ class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
           } else if (sinEventosFirebase) {
             cuerpo = _listaVaciaPremium(context);
           } else {
-            final filtered = _filterEvents(events, _searchController.text);
-            final hoy = _countHoy(events);
-            final activos = _countActivos(events);
-            final finalizados = _countFinalizados(events);
+            final scoped = applyAttendanceArchiveFilter(events, _mappedFilter);
+            final filtered = _filterEvents(scoped, _searchController.text);
+            final hoy = countAttendanceEventsHoy(events);
+            final activos = countAttendanceEventsActivos(events);
+            final finalizados = countAttendanceEventsFinalizados(events);
 
             cuerpo = CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -384,59 +371,91 @@ class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
                       AppDesignTokens.horizontalPadding,
                       10,
                     ),
-                    child: TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocus,
-                      onChanged: (_) => setState(() {}),
-                      textInputAction: TextInputAction.search,
-                      decoration: InputDecoration(
-                        hintText: 'Buscar o filtrar registros…',
-                        filled: true,
-                        fillColor: Colors.white,
-                        prefixIcon: Icon(
-                          Icons.search_rounded,
-                          color: AppDesignTokens.primaryDark.withValues(
-                            alpha: 0.45,
-                          ),
-                        ),
-                        suffixIcon: _searchController.text.isEmpty
-                            ? null
-                            : IconButton(
-                                tooltip: 'Limpiar',
-                                icon: const Icon(Icons.close_rounded),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() {});
-                                },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SegmentedButton<_ArchiveListFilter>(
+                          segments: const [
+                            ButtonSegment(
+                              value: _ArchiveListFilter.activos,
+                              label: Text('Activos'),
+                              icon: Icon(
+                                Icons.event_available_outlined,
+                                size: 18,
                               ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: AppDesignTokens.primary.withValues(
-                              alpha: 0.14,
+                            ),
+                            ButtonSegment(
+                              value: _ArchiveListFilter.archivados,
+                              label: Text('Archivados'),
+                              icon: Icon(Icons.archive_outlined, size: 18),
+                            ),
+                            ButtonSegment(
+                              value: _ArchiveListFilter.todos,
+                              label: Text('Todos'),
+                              icon: Icon(Icons.list_alt_rounded, size: 18),
+                            ),
+                          ],
+                          selected: {_archiveFilter},
+                          onSelectionChanged: (s) {
+                            setState(() => _archiveFilter = s.first);
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        TextField(
+                          controller: _searchController,
+                          focusNode: _searchFocus,
+                          onChanged: (_) => setState(() {}),
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            hintText: 'Buscar o filtrar registros…',
+                            filled: true,
+                            fillColor: Colors.white,
+                            prefixIcon: Icon(
+                              Icons.search_rounded,
+                              color: AppDesignTokens.primaryDark.withValues(
+                                alpha: 0.45,
+                              ),
+                            ),
+                            suffixIcon: _searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Limpiar',
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {});
+                                    },
+                                  ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                color: AppDesignTokens.primary.withValues(
+                                  alpha: 0.14,
+                                ),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(
+                                color: AppDesignTokens.primary.withValues(
+                                  alpha: 0.14,
+                                ),
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                color: AppDesignTokens.primary,
+                                width: 1.6,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
                             ),
                           ),
                         ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: AppDesignTokens.primary.withValues(
-                              alpha: 0.14,
-                            ),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: const BorderSide(
-                            color: AppDesignTokens.primary,
-                            width: 1.6,
-                          ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                      ),
+                      ],
                     ),
                   ),
                 ),
@@ -509,11 +528,24 @@ class _AsistenciasListScreenState extends State<AsistenciasListScreen> {
                           event: e,
                           visual: v,
                           metaLine: _metaLine(e, v),
+                          role: role,
                           onTap: () => Navigator.pushNamed(
                             context,
                             '/asistencia/attendance_event_detail',
                             arguments: e.id,
                           ),
+                          onActionDone: (result) {
+                            if (result == AttendanceEventActionResult.deleted) {
+                              // Stream refreshes list; no-op.
+                            }
+                            if (result ==
+                                AttendanceEventActionResult.unarchived) {
+                              setState(
+                                () =>
+                                    _archiveFilter = _ArchiveListFilter.activos,
+                              );
+                            }
+                          },
                         );
                       }, childCount: filtered.length),
                     ),
@@ -698,12 +730,16 @@ class _EventoListCard extends StatelessWidget {
     required this.visual,
     required this.metaLine,
     required this.onTap,
+    required this.role,
+    required this.onActionDone,
   });
 
   final AttendanceEvent event;
   final _EventVisual visual;
   final String metaLine;
   final VoidCallback onTap;
+  final UserRole role;
+  final void Function(AttendanceEventActionResult result) onActionDone;
 
   @override
   Widget build(BuildContext context) {
@@ -787,9 +823,10 @@ class _EventoListCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppDesignTokens.primaryDark.withValues(alpha: 0.35),
+                AttendanceEventOverflowButton(
+                  event: event,
+                  role: role,
+                  onDone: onActionDone,
                 ),
               ],
             ),

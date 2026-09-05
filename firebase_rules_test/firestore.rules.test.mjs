@@ -304,12 +304,217 @@ describe('attendance permissions', () => {
     const operatorDb = testEnv.authenticatedContext('operator').firestore();
     const voterDb = testEnv.authenticatedContext('voter').firestore();
     await assertSucceeds(
-      setDoc(doc(operatorDb, 'attendance_events/event-1'), event),
+      setDoc(doc(operatorDb, 'attendance_events/event-1'), {
+        ...event,
+        asistenciaCount: 0,
+      }),
     );
     await assertFails(
       setDoc(doc(voterDb, 'attendance_events/event-2'), {
         ...event,
         creadoPor: 'voter',
+        asistenciaCount: 0,
+      }),
+    );
+  });
+
+  test('denies direct client delete of attendance_events for all roles', async () => {
+    await seed('attendance_events/event-del', {
+      ...event,
+      asistenciaCount: 0,
+    });
+    for (const uid of ['operator', 'admin', 'superadmin']) {
+      const db = testEnv.authenticatedContext(uid).firestore();
+      await assertFails(deleteDoc(doc(db, 'attendance_events/event-del')));
+    }
+  });
+
+  test('allows archive soft update; blocks historical fields when asistenciaCount > 0', async () => {
+    await seed('attendance_events/event-hist', {
+      ...event,
+      asistenciaCount: 1,
+      fecha: 1000,
+    });
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, 'attendance_events/event-hist'), {
+        archivado: true,
+        archivadoAt: 2000,
+        archivadoPor: 'operator',
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-hist'), {
+        fecha: 9999,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-hist'), {
+        miembrosConvocados: ['m1'],
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-hist'), {
+        secureQrMode: 'challenge_response',
+      }),
+    );
+  });
+
+  test('allows historical field update only while asistenciaCount is 0', async () => {
+    await seed('attendance_events/event-empty', {
+      ...event,
+      asistenciaCount: 0,
+    });
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, 'attendance_events/event-empty'), {
+        fecha: 2500,
+        nombre: 'Renombrado',
+      }),
+    );
+  });
+
+  test('fail-closed: missing asistenciaCount blocks historical edits', async () => {
+    await seed('attendance_events/event-legacy-missing', {
+      ...event,
+      fecha: 1000,
+    });
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-legacy-missing'), {
+        fecha: 9999,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-legacy-missing'), {
+        miembrosConvocados: ['m1'],
+      }),
+    );
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, 'attendance_events/event-legacy-missing'), {
+        nombre: 'Soft ok',
+        descripcion: 'soft',
+        lugar: 'Sede 2',
+      }),
+    );
+  });
+
+  test('fail-closed: wrong-type / negative asistenciaCount blocks historical edits', async () => {
+    await seed('attendance_events/event-bad-type', {
+      ...event,
+      asistenciaCount: '0',
+      fecha: 1000,
+    });
+    await seed('attendance_events/event-neg', {
+      ...event,
+      asistenciaCount: -1,
+      fecha: 1000,
+    });
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-bad-type'), {
+        fecha: 2000,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-neg'), {
+        fecha: 2000,
+      }),
+    );
+  });
+
+  test('blocks client from seeding or zeroing asistenciaCount', async () => {
+    await seed('attendance_events/event-lock', {
+      ...event,
+      asistenciaCount: 3,
+    });
+    await seed('attendance_events/event-no-count', {
+      ...event,
+      fecha: 1000,
+    });
+    const adminDb = testEnv.authenticatedContext('admin').firestore();
+    await assertFails(
+      updateDoc(doc(adminDb, 'attendance_events/event-lock'), {
+        asistenciaCount: 0,
+        fecha: 1,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(adminDb, 'attendance_events/event-lock'), {
+        asistenciaCount: 0,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(adminDb, 'attendance_events/event-no-count'), {
+        asistenciaCount: 0,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(adminDb, 'attendance_events/event-no-count'), {
+        asistenciaCount: 1,
+      }),
+    );
+  });
+
+  test('create requires asistenciaCount == 0; bump only +1 when field exists', async () => {
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertFails(
+      setDoc(doc(operatorDb, 'attendance_events/event-create-missing'), {
+        ...event,
+        creadoPor: 'operator',
+      }),
+    );
+    await assertSucceeds(
+      setDoc(doc(operatorDb, 'attendance_events/event-create-ok'), {
+        ...event,
+        creadoPor: 'operator',
+        asistenciaCount: 0,
+      }),
+    );
+    await seed('attendance_events/event-bump', {
+      ...event,
+      asistenciaCount: 1,
+    });
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, 'attendance_events/event-bump'), {
+        asistenciaCount: 2,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-bump'), {
+        asistenciaCount: 4,
+      }),
+    );
+  });
+
+  test('blocks client from zeroing asistenciaCount to unlock historical edits', async () => {
+    await seed('attendance_events/event-lock-legacy-name', {
+      ...event,
+      asistenciaCount: 3,
+    });
+    const adminDb = testEnv.authenticatedContext('admin').firestore();
+    await assertFails(
+      updateDoc(doc(adminDb, 'attendance_events/event-lock-legacy-name'), {
+        asistenciaCount: 0,
+        fecha: 1,
+      }),
+    );
+  });
+
+  test('allows +1 asistenciaCount bump only', async () => {
+    await seed('attendance_events/event-bump-only', {
+      ...event,
+      asistenciaCount: 1,
+    });
+    const operatorDb = testEnv.authenticatedContext('operator').firestore();
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, 'attendance_events/event-bump-only'), {
+        asistenciaCount: 2,
+      }),
+    );
+    await assertFails(
+      updateDoc(doc(operatorDb, 'attendance_events/event-bump-only'), {
+        asistenciaCount: 4,
       }),
     );
   });

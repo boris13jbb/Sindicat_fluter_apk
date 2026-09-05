@@ -106,6 +106,7 @@ describe("attendanceSyncOfflineBatch idempotency (emulator)", () => {
       nombre: "Asamblea",
       fecha: Date.now(),
       activo: true,
+      asistenciaCount: 0,
     });
 
     return {memberKp, scannerKp, scannerId, memberId, deviceId, eventId};
@@ -211,6 +212,9 @@ describe("attendanceSyncOfflineBatch idempotency (emulator)", () => {
     });
     assert.equal(first.status, "synced");
 
+    const afterFirst = await db.collection("attendance_events").doc(fixture.eventId).get();
+    assert.equal(afterFirst.data().asistenciaCount, 1);
+
     const second = await syncOneReceipt({
       raw: receipt,
       scannerId: fixture.scannerId,
@@ -219,6 +223,9 @@ describe("attendanceSyncOfflineBatch idempotency (emulator)", () => {
     });
     assert.equal(second.status, "already_synced");
     assert.equal(second.code, "duplicate");
+
+    const afterSecond = await db.collection("attendance_events").doc(fixture.eventId).get();
+    assert.equal(afterSecond.data().asistenciaCount, 1, "retry must not double-increment");
 
     const docId = attendanceDocId(fixture.eventId, fixture.memberId);
     const snap = await db
@@ -322,6 +329,95 @@ describe("attendanceSyncOfflineBatch idempotency (emulator)", () => {
       .collection("asistencias")
       .get();
     assert.equal(snap.size, 0);
+  });
+
+  it("legacy missing asistenciaCount → rejected; count unchanged; no write", async (t) => {
+    if (skipIfNoEmulator()) {
+      t.skip("FIRESTORE_EMULATOR_HOST not set");
+      return;
+    }
+
+    const {memberKp, scannerKp, ...ids} = await seedActiveFixture({
+      eventId: "event-legacy-count",
+    });
+    await db.collection("attendance_events").doc(ids.eventId).set({
+      nombre: "Legacy",
+      fecha: Date.now(),
+      activo: true,
+    }, {merge: false});
+
+    const fixture = {memberKp, scannerKp, ...ids};
+    const receipt = buildSignedReceipt({
+      fixture,
+      scannerKp,
+      memberKp,
+      localReceiptId: "r-legacy",
+      responseNonce: "rn-legacy",
+    });
+
+    const result = await syncOneReceipt({
+      raw: receipt,
+      scannerId: fixture.scannerId,
+      scannerPub: scannerKp.publicKeyBase64Url,
+      operatorUid: "operator-1",
+    });
+    assert.equal(result.status, "rejected");
+    assert.equal(result.code, "legacy-count-missing");
+
+    const eventSnap = await db.collection("attendance_events").doc(ids.eventId).get();
+    assert.equal(eventSnap.data().asistenciaCount, undefined);
+
+    const snap = await db
+      .collection("attendance_events")
+      .doc(ids.eventId)
+      .collection("asistencias")
+      .get();
+    assert.equal(snap.size, 0);
+  });
+
+  it("invalid scanner signature → count unchanged", async (t) => {
+    if (skipIfNoEmulator()) {
+      t.skip("FIRESTORE_EMULATOR_HOST not set");
+      return;
+    }
+
+    const {memberKp, scannerKp, ...ids} = await seedActiveFixture({
+      eventId: "event-bad-sig",
+    });
+    const fixture = {memberKp, scannerKp, ...ids};
+    const receipt = buildSignedReceipt({
+      fixture,
+      scannerKp,
+      memberKp,
+      localReceiptId: "r-bad-sig",
+      responseNonce: "rn-bad-sig",
+    });
+    receipt.scannerSignature = "AAAA";
+
+    const result = await syncOneReceipt({
+      raw: receipt,
+      scannerId: fixture.scannerId,
+      scannerPub: scannerKp.publicKeyBase64Url,
+      operatorUid: "operator-1",
+    });
+    assert.equal(result.status, "rejected");
+    assert.equal(result.code, "invalid-scanner-signature");
+
+    const eventSnap = await db.collection("attendance_events").doc(ids.eventId).get();
+    assert.equal(eventSnap.data().asistenciaCount, 0);
+  });
+});
+
+describe("isConfirmedAsistenciaCount (unit)", () => {
+  it("accepts only non-negative integers", () => {
+    const {isConfirmedAsistenciaCount} = require("./attendance-qr")._test;
+    assert.equal(isConfirmedAsistenciaCount(0), true);
+    assert.equal(isConfirmedAsistenciaCount(5), true);
+    assert.equal(isConfirmedAsistenciaCount(undefined), false);
+    assert.equal(isConfirmedAsistenciaCount(null), false);
+    assert.equal(isConfirmedAsistenciaCount("0"), false);
+    assert.equal(isConfirmedAsistenciaCount(-1), false);
+    assert.equal(isConfirmedAsistenciaCount(1.5), false);
   });
 });
 

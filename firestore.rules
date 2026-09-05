@@ -488,14 +488,90 @@ service cloud.firestore {
           )
         );
     }
+
+    // Soft fields always editable by operators (archive / labels).
+    function attendanceEventSoftKeys() {
+      return [
+        'nombre',
+        'descripcion',
+        'lugar',
+        'activo',
+        'estado',
+        'archivado',
+        'archivadoAt',
+        'archivadoPor'
+      ].toSet();
+    }
+
+    // Historical / structural fields — only while asistenciaCount is confirmed 0.
+    function attendanceEventHistoricalKeys() {
+      return [
+        'fecha',
+        'fechaFin',
+        'tipo',
+        'miembrosConvocados',
+        'modalidadesNoConvocadas',
+        'secureQrMode',
+        'geofenceEnabled',
+        'latitude',
+        'longitude',
+        'geofenceRadiusMeters',
+        'requireScannerLocation',
+        'requireMemberLocation'
+      ].toSet();
+    }
+
+    function attendanceEventImmutableKeys() {
+      return ['creadoPor', 'createdAt', 'id'].toSet();
+    }
+
+    // FAIL-CLOSED: missing / null / wrong type / negative / >0 => no historical edits.
+    // Never treat missing asistenciaCount as 0 (legacy events may already have asistencias).
+    function attendanceEventHasConfirmedZeroCount() {
+      return ('asistenciaCount' in resource.data)
+        && resource.data.asistenciaCount is int
+        && resource.data.asistenciaCount == 0;
+    }
+
+    function validAttendanceEventUpdate() {
+      let changed = changedKeys();
+      return !changed.hasAny(attendanceEventImmutableKeys())
+        && !changed.hasAny(['asistenciaCount'].toSet())
+        && (
+          changed.hasOnly(attendanceEventSoftKeys())
+          || (
+            attendanceEventHasConfirmedZeroCount()
+            && changed.hasOnly(
+              attendanceEventSoftKeys()
+                .union(attendanceEventHistoricalKeys())
+            )
+          )
+        );
+    }
+
+    // Client may bump counter by exactly +1 only when count already exists as int >= 0.
+    // Missing -> 0 / missing -> 1 / arbitrary sets are DENIED (no client count seeding).
+    function validAsistenciaCountBumpOnly() {
+      let changed = changedKeys();
+      return ('asistenciaCount' in resource.data)
+        && resource.data.asistenciaCount is int
+        && resource.data.asistenciaCount >= 0
+        && changed.hasOnly(['asistenciaCount'].toSet())
+        && request.resource.data.asistenciaCount is int
+        && request.resource.data.asistenciaCount == resource.data.asistenciaCount + 1;
+    }
     
     // Sistema nuevo: attendance_events con subcolecciones
     match /attendance_events/{eventId} {
       allow read: if isOperator();
-      // Alta alineada con eventos legacy: admin y operador de asistencia
-      allow create: if isOperator();
-      allow update: if isOperator();
-      allow delete: if isSuperAdmin();
+      // Nuevos eventos deben nacer con asistenciaCount: 0 (nunca omitido).
+      allow create: if isOperator()
+        && request.resource.data.asistenciaCount is int
+        && request.resource.data.asistenciaCount == 0;
+      // Soft+historical updates with field-level guard; hard delete solo Cloud Function.
+      allow update: if isOperator()
+        && (validAttendanceEventUpdate() || validAsistenciaCountBumpOnly());
+      allow delete: if false;
 
       // Asistencias del evento
       match /asistencias/{asistenciaId} {

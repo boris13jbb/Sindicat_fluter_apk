@@ -515,6 +515,7 @@ describe("offline package pagination + scale (emulator)", () => {
       fecha: Date.now(),
       fechaFin: Date.now() + 3600000,
       activo: true,
+      asistenciaCount: 0,
     });
     await db.collection("users").doc("op-1").set({
       role: "OPERADOR_ASISTENCIA",
