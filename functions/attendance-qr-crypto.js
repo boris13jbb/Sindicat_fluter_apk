@@ -7,6 +7,10 @@
 
 const crypto = require("node:crypto");
 
+const ED25519_KEY_BYTES = 32;
+const ED25519_SIGNATURE_BYTES = 64;
+const CANONICAL_BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
+
 const CHALLENGE_KEYS = [
   "v", "type", "eventId", "scannerId", "challengeId", "challengeNonce",
   "issuedAtTrusted", "expiresAtTrusted", "protocolVersion",
@@ -27,7 +31,8 @@ const PACKAGE_KEYS = [
   "v", "type", "packageId", "eventId", "eventName", "startAt", "endAt",
   "issuedAtServer", "expiresAt", "serverTimeAtPreparation", "scannerId",
   "scannerPublicKey", "geofenceEnabled", "latitude", "longitude",
-  "geofenceRadiusMeters", "participantsHash", "keyVersion",
+  "geofenceRadiusMeters", "requireScannerLocation", "participantsHash",
+  "keyVersion",
 ];
 
 const RECEIPT_KEYS = [
@@ -60,8 +65,25 @@ function bytesToBase64Url(buf) {
   return Buffer.from(buf).toString("base64url");
 }
 
+function canonicalBase64UrlToBuffer(value, expectedByteLength) {
+  if (typeof value !== "string" ||
+      value.length === 0 ||
+      !CANONICAL_BASE64URL_RE.test(value)) {
+    throw new TypeError("Invalid canonical base64url value");
+  }
+
+  const decoded = Buffer.from(value, "base64url");
+  if (expectedByteLength != null && decoded.length !== expectedByteLength) {
+    throw new RangeError("Invalid decoded byte length");
+  }
+  if (bytesToBase64Url(decoded) !== value) {
+    throw new TypeError("Non-canonical base64url value");
+  }
+  return decoded;
+}
+
 function base64UrlToBuffer(value) {
-  return Buffer.from(String(value), "base64url");
+  return canonicalBase64UrlToBuffer(value);
 }
 
 function generateEd25519KeyPair() {
@@ -81,7 +103,7 @@ function generateEd25519KeyPair() {
 }
 
 function keyFromSeedBase64Url(seedB64) {
-  const seed = base64UrlToBuffer(seedB64);
+  const seed = canonicalBase64UrlToBuffer(seedB64, ED25519_KEY_BYTES);
   const privateKey = crypto.createPrivateKey({
     key: Buffer.concat([
       Buffer.from("302e020100300506032b657004220420", "hex"),
@@ -101,7 +123,7 @@ function keyFromSeedBase64Url(seedB64) {
 }
 
 function publicKeyFromBase64Url(pubB64) {
-  const raw = base64UrlToBuffer(pubB64);
+  const raw = canonicalBase64UrlToBuffer(pubB64, ED25519_KEY_BYTES);
   // SPKI prefix for Ed25519 public key
   const spki = Buffer.concat([
     Buffer.from("302a300506032b6570032100", "hex"),
@@ -124,7 +146,7 @@ function verifyUtf8(canonicalPayload, signatureB64, publicKeyOrB64) {
       null,
       Buffer.from(canonicalPayload, "utf8"),
       publicKey,
-      base64UrlToBuffer(signatureB64),
+      canonicalBase64UrlToBuffer(signatureB64, ED25519_SIGNATURE_BYTES),
     );
   } catch (_) {
     return false;
@@ -155,6 +177,7 @@ module.exports = {
   canonicalCredentialPayload: (f) => canonicalKeyValuePayload(CREDENTIAL_KEYS, f),
   bytesToBase64Url,
   base64UrlToBuffer,
+  canonicalBase64UrlToBuffer,
   generateEd25519KeyPair,
   keyFromSeedBase64Url,
   publicKeyFromBase64Url,

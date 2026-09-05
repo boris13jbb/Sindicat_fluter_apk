@@ -7,11 +7,13 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../core/security/attendance_qr/geofence_validator.dart';
+import '../core/security/attendance_qr/server_signed_artifact_verifier.dart';
 import '../core/security/attendance_qr/secure_key_store.dart';
 import '../core/security/attendance_qr/secure_qr_crypto.dart';
 import '../core/security/attendance_qr/secure_qr_models.dart';
 import '../core/security/attendance_qr/secure_qr_protocol.dart';
 import '../core/security/attendance_qr/secure_qr_validator.dart';
+import '../core/security/attendance_qr/trusted_server_keyring.dart';
 import '../core/security/attendance_qr/trusted_offline_clock.dart';
 import 'offline_attendance_store.dart';
 
@@ -45,6 +47,10 @@ class SecureAttendanceQrService {
     String? apiBaseUrl,
     Future<String?> Function()? appCheckTokenProvider,
     bool? requireAppCheckHeader,
+    TrustedServerPublicKeyring? trustedServerKeyring,
+    String trustedServerKeysConfiguration = const String.fromEnvironment(
+      'ATTENDANCE_QR_TRUSTED_SERVER_KEYS',
+    ),
   }) : _auth = auth ?? FirebaseAuth.instance,
        _store = store ?? SecureAttendanceOfflineStore(),
        _keyStore = keyStore ?? SecureKeyStore(),
@@ -54,7 +60,9 @@ class SecureAttendanceQrService {
        _appCheckTokenProvider =
            appCheckTokenProvider ?? _defaultAppCheckTokenProvider,
        _requireAppCheckHeader =
-           requireAppCheckHeader ?? !_talkingToFunctionsEmulator();
+           requireAppCheckHeader ?? !_talkingToFunctionsEmulator(),
+       _trustedServerKeyring = trustedServerKeyring,
+       _trustedServerKeysConfiguration = trustedServerKeysConfiguration;
 
   final FirebaseAuth _auth;
   final SecureAttendanceOfflineStore _store;
@@ -64,6 +72,9 @@ class SecureAttendanceQrService {
   final String _apiBase;
   final Future<String?> Function() _appCheckTokenProvider;
   final bool _requireAppCheckHeader;
+  TrustedServerPublicKeyring? _trustedServerKeyring;
+  final String _trustedServerKeysConfiguration;
+  ServerSignedArtifactVerifier? _serverArtifactVerifier;
   final _uuid = const Uuid();
 
   /// True when compile-time dart-define targets Functions emulator.
@@ -116,6 +127,19 @@ class SecureAttendanceQrService {
   String get apiBaseUrl => _apiBase;
 
   SecureAttendanceAssurance get assurance => _keyStore.detectAssurance();
+
+  ServerSignedArtifactVerifier _requireServerArtifactVerifier() {
+    try {
+      final keyring = _trustedServerKeyring ??=
+          TrustedServerPublicKeyring.parse(_trustedServerKeysConfiguration);
+      return _serverArtifactVerifier ??= ServerSignedArtifactVerifier(
+        keyring: keyring,
+        crypto: _crypto,
+      );
+    } on AttendanceServerTrustException catch (error) {
+      throw SecureAttendanceApiException(error.code);
+    }
+  }
 
   /// Test-only: exercises HTTP JSON/content-type handling of [_post].
   @visibleForTesting
@@ -279,6 +303,14 @@ class SecureAttendanceQrService {
         case 'invalid-app-check':
           return 'No se pudo verificar la seguridad de este dispositivo. '
               'Inténtalo nuevamente.';
+        case 'attendance-server-trust-not-configured':
+        case 'unknown-server-key-version':
+        case 'invalid-server-credential-signature':
+          return 'No se pudo validar la credencial segura de asistencia. '
+              'Conéctate para activarla nuevamente.';
+        case 'invalid-server-package-signature':
+          return 'El paquete seguro de asistencia no es válido. '
+              'Conéctate para descargarlo nuevamente.';
         case 'offline-not-activated':
           return 'Este dispositivo todavía no ha sido activado para asistencia. '
               'Conéctate a Internet una vez para activar tu QR seguro.';
@@ -319,15 +351,8 @@ class SecureAttendanceQrService {
     return id;
   }
 
-  bool isCredentialUsable(Map<String, dynamic>? credential, {int? nowMs}) {
-    if (credential == null) return false;
-    final expiresAt = int.tryParse('${credential['expiresAt']}') ?? 0;
-    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-    return now < expiresAt;
-  }
-
   /// True when credential expires within [withinMs] (default 24h).
-  bool isCredentialNearExpiry(
+  bool _isCredentialNearExpiry(
     Map<String, dynamic>? credential, {
     int withinMs = 24 * 60 * 60 * 1000,
     int? nowMs,
@@ -338,8 +363,42 @@ class SecureAttendanceQrService {
     return expiresAt - now <= withinMs;
   }
 
-  Future<Map<String, dynamic>?> loadStoredCredential() =>
-      _store.loadActiveCredential();
+  /// Loads a credential only after verifying server signature, pinned key,
+  /// local device binding, structure, and expiration.
+  Future<Map<String, dynamic>?> loadVerifiedStoredCredential({
+    int? nowMs,
+  }) async {
+    final verifier = _requireServerArtifactVerifier();
+    final credential = await _store.loadActiveCredential();
+    if (credential == null) return null;
+
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw SecureAttendanceApiException('not-authenticated');
+    }
+    final meta = await _store.loadDeviceMeta();
+    final deviceId = meta?['deviceId']?.toString() ?? '';
+    final enrolledUid = meta?['enrolledUid']?.toString() ?? '';
+    final memberId = meta?['memberId']?.toString() ?? '';
+    if (deviceId.isEmpty || enrolledUid != user.uid || memberId.isEmpty) {
+      throw SecureAttendanceApiException('invalid-server-credential-signature');
+    }
+    final keyPair = await _keyStore.getOrCreateMemberKeyPair(deviceId);
+    final publicKey = await _crypto.publicKeyBase64Url(keyPair);
+    try {
+      await verifier.verifyCredential(
+        credential,
+        nowMs: nowMs ?? DateTime.now().millisecondsSinceEpoch,
+        expectedUid: user.uid,
+        expectedMemberId: memberId,
+        expectedMemberDeviceId: deviceId,
+        expectedMemberPublicKey: publicKey,
+      );
+    } on AttendanceServerTrustException catch (error) {
+      throw SecureAttendanceApiException(error.code);
+    }
+    return credential;
+  }
 
   /// Ensures a usable offline credential: reuse, renew, or enroll automatically.
   ///
@@ -348,20 +407,25 @@ class SecureAttendanceQrService {
   Future<Map<String, dynamic>> ensureCredentialReady({
     bool forceRenew = false,
   }) async {
-    final existing = await _store.loadActiveCredential();
-    final usable = isCredentialUsable(existing);
-    final nearExpiry = isCredentialNearExpiry(existing);
+    _requireServerArtifactVerifier();
+    Map<String, dynamic>? existing;
+    try {
+      existing = await loadVerifiedStoredCredential();
+    } on SecureAttendanceApiException catch (error) {
+      if (error.code != 'invalid-server-credential-signature') rethrow;
+    }
+    final nearExpiry = _isCredentialNearExpiry(existing);
 
-    if (usable && !forceRenew && !nearExpiry) {
-      return existing!;
+    if (existing != null && !forceRenew && !nearExpiry) {
+      return existing;
     }
 
     try {
       await enrollMemberDevice();
       return await prepareOfflineCredential(locationPermission: false);
     } catch (e) {
-      if (usable && existing != null && !forceRenew) {
-        // Keep working offline with existing credential if renew failed.
+      if (existing != null && !forceRenew) {
+        // Existing credential has already passed pinned signature validation.
         return existing;
       }
       if (e is SecureAttendanceApiException) rethrow;
@@ -371,13 +435,36 @@ class SecureAttendanceQrService {
 
   /// Enrolls device public key with backend and stores local meta.
   Future<void> enrollMemberDevice() async {
+    _requireServerArtifactVerifier();
     final deviceId = await ensureLocalDeviceId();
     final pair = await _keyStore.getOrCreateMemberKeyPair(deviceId);
     final publicKey = await _crypto.publicKeyBase64Url(pair);
-    await _post('/attendance-enroll-member-device', {
+    final result = await _post('/attendance-enroll-member-device', {
       'deviceId': deviceId,
       'publicKey': publicKey,
       'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+    });
+    final enrolledDeviceId = result['deviceId'];
+    final memberId = result['memberId'];
+    final status = result['status'];
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw SecureAttendanceApiException('not-authenticated');
+    }
+    if (enrolledDeviceId is! String ||
+        enrolledDeviceId != deviceId ||
+        memberId is! String ||
+        memberId.isEmpty ||
+        memberId.trim() != memberId ||
+        status != 'active') {
+      throw SecureAttendanceApiException('invalid-response');
+    }
+    final meta = await _store.loadDeviceMeta() ?? <String, dynamic>{};
+    await _store.saveDeviceMeta({
+      ...meta,
+      'deviceId': deviceId,
+      'enrolledUid': user.uid,
+      'memberId': memberId,
     });
   }
 
@@ -389,8 +476,10 @@ class SecureAttendanceQrService {
     double? preparedLongitude,
     double? preparedAccuracyMeters,
   }) async {
+    final verifier = _requireServerArtifactVerifier();
     final deviceId = await ensureLocalDeviceId();
-    await _keyStore.getOrCreateMemberKeyPair(deviceId);
+    final keyPair = await _keyStore.getOrCreateMemberKeyPair(deviceId);
+    final memberPublicKey = await _crypto.publicKeyBase64Url(keyPair);
     final result = await _post('/attendance-prepare-offline-credential', {
       'deviceId': deviceId,
       'preparedAtClient':
@@ -403,13 +492,36 @@ class SecureAttendanceQrService {
           ? DateTime.now().millisecondsSinceEpoch
           : null,
     });
-    final credential = Map<String, dynamic>.from(result['credential'] as Map);
+    final rawCredential = result['credential'];
+    if (rawCredential is! Map) {
+      throw SecureAttendanceApiException('invalid-response');
+    }
+    final credential = Map<String, dynamic>.from(rawCredential);
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw SecureAttendanceApiException('not-authenticated');
+    }
+    final meta = await _store.loadDeviceMeta();
+    final enrolledUid = meta?['enrolledUid']?.toString() ?? '';
+    final memberId = meta?['memberId']?.toString() ?? '';
+    if (enrolledUid != user.uid || memberId.isEmpty) {
+      throw SecureAttendanceApiException('invalid-server-credential-signature');
+    }
+    try {
+      await verifier.verifyCredential(
+        credential,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+        expectedUid: user.uid,
+        expectedMemberId: memberId,
+        expectedMemberDeviceId: deviceId,
+        expectedMemberPublicKey: memberPublicKey,
+      );
+    } on AttendanceServerTrustException catch (error) {
+      throw SecureAttendanceApiException(error.code);
+    }
     await _store.saveCredential(credential);
     return credential;
   }
-
-  Future<Map<String, dynamic>?> loadActiveOfflinePackage() =>
-      _store.loadActivePackage();
 
   Future<void> cacheRecentEvents(List<Map<String, dynamic>> events) =>
       _store.saveRecentEvents(events);
@@ -435,16 +547,66 @@ class SecureAttendanceQrService {
     required String eventId,
     required String scannerId,
   }) async {
+    final verifier = _requireServerArtifactVerifier();
+    final scannerKeys = await _keyStore.getOrCreateScannerKeyPair(scannerId);
+    final scannerPublicKey = await _crypto.publicKeyBase64Url(scannerKeys);
     final result = await _post('/attendance-prepare-offline-event', {
       'eventId': eventId,
       'scannerId': scannerId,
     });
-    final package = Map<String, dynamic>.from(result['package'] as Map);
+    final rawPackage = result['package'];
+    if (rawPackage is! Map) {
+      throw SecureAttendanceApiException('invalid-response');
+    }
+    final package = Map<String, dynamic>.from(rawPackage);
+    try {
+      await verifier.verifyPackage(
+        package,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+        expectedEventId: eventId,
+        expectedScannerId: scannerId,
+        expectedScannerPublicKey: scannerPublicKey,
+      );
+    } on AttendanceServerTrustException catch (error) {
+      throw SecureAttendanceApiException(error.code);
+    }
     await _store.savePackage(package);
     return package;
   }
 
-  AttendanceOfflinePackage? packageFromStored(Map<String, dynamic> raw) {
+  /// Returns the active package only after validating its pinned server key,
+  /// signature, participant hash, structure, scope, and expiration.
+  Future<AttendanceOfflinePackage?> loadVerifiedStoredPackage({
+    required String expectedEventId,
+    required String expectedScannerId,
+    int? nowMs,
+  }) async {
+    final verifier = _requireServerArtifactVerifier();
+    final raw = await _store.loadActivePackage();
+    if (raw == null) return null;
+    final scannerKeys = await _keyStore.getOrCreateScannerKeyPair(
+      expectedScannerId,
+    );
+    final scannerPublicKey = await _crypto.publicKeyBase64Url(scannerKeys);
+    try {
+      await verifier.verifyPackage(
+        raw,
+        nowMs: nowMs ?? DateTime.now().millisecondsSinceEpoch,
+        expectedEventId: expectedEventId,
+        expectedScannerId: expectedScannerId,
+        expectedScannerPublicKey: scannerPublicKey,
+      );
+    } on AttendanceServerTrustException catch (error) {
+      throw SecureAttendanceApiException(error.code);
+    }
+    final parsed = _packageFromVerifiedMap(raw);
+    if (parsed == null) {
+      throw SecureAttendanceApiException('invalid-server-package-signature');
+    }
+    return parsed;
+  }
+
+  AttendanceOfflinePackage? _packageFromVerifiedMap(Map<String, dynamic> raw) {
     try {
       final geofenceRaw = raw['geofence'] as Map<String, dynamic>? ?? {};
       final participants = (raw['participants'] as List? ?? [])
@@ -468,7 +630,7 @@ class SecureAttendanceQrService {
         scannerPublicKey: raw['scannerPublicKey']?.toString() ?? '',
         participants: participants,
         signature: raw['signature']?.toString() ?? '',
-        keyVersion: raw['keyVersion']?.toString() ?? 'v1',
+        keyVersion: raw['keyVersion']?.toString() ?? '',
         geofence: GeofenceConfig(
           enabled: geofenceRaw['enabled'] == true,
           latitude: (geofenceRaw['latitude'] as num?)?.toDouble(),
@@ -514,8 +676,8 @@ class SecureAttendanceQrService {
     if (eventId.trim().isEmpty) {
       throw StateError('missing-event');
     }
-    final credential = await _store.loadActiveCredential();
-    if (!isCredentialUsable(credential)) {
+    final credential = await loadVerifiedStoredCredential();
+    if (credential == null) {
       throw StateError('missing-credential');
     }
     final deviceId = await ensureLocalDeviceId();
@@ -523,7 +685,7 @@ class SecureAttendanceQrService {
     return Satt2MemberQr.create(
       eventId: eventId.trim(),
       memberDeviceId: deviceId,
-      credentialId: credential!['credentialId']?.toString() ?? '',
+      credentialId: credential['credentialId']?.toString() ?? '',
       memberKeyPair: keys,
       issuedAtMs: issuedAtMs ?? DateTime.now().millisecondsSinceEpoch,
     );
@@ -543,12 +705,8 @@ class SecureAttendanceQrService {
     final challenge = Satt2Challenge.tryParse(challengeQr);
     if (challenge == null) throw StateError('invalid-challenge');
 
-    final credential = await _store.loadActiveCredential();
+    final credential = await loadVerifiedStoredCredential();
     if (credential == null) throw StateError('missing-credential');
-    final expiresAt = int.tryParse('${credential['expiresAt']}') ?? 0;
-    if (DateTime.now().millisecondsSinceEpoch > expiresAt) {
-      throw StateError('credential-expired');
-    }
 
     final deviceId = await ensureLocalDeviceId();
     final keys = await _keyStore.getOrCreateMemberKeyPair(deviceId);

@@ -1,0 +1,58 @@
+{
+  "warning": "TEST KEY - NEVER USE IN PRODUCTION",
+  "privateSeedBase64Url": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "publicKeyBase64Url": "O2onvM62pC1io6jQKm8Nc2UyFXcd4kOmOsBIoYtZ2ik",
+  "credential": {
+    "fields": {
+      "v": "2",
+      "type": "SATT2CRED",
+      "credentialId": "golden-credential",
+      "uid": "golden-user",
+      "memberId": "golden-member",
+      "memberDeviceId": "golden-member-device",
+      "memberPublicKey": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+      "issuedAtServer": "1700000000000",
+      "expiresAt": "1700604800000",
+      "keyVersion": "v1"
+    },
+    "canonical": "v=2\ntype=SATT2CRED\ncredentialId=golden-credential\nuid=golden-user\nmemberId=golden-member\nmemberDeviceId=golden-member-device\nmemberPublicKey=iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\nissuedAtServer=1700000000000\nexpiresAt=1700604800000\nkeyVersion=v1",
+    "signature": "qaBXF4LDnGtK9VRNVpgzViMphv0MfOncVMLTDQQI-v4QNUVckn1wVCFTlBecaqX2aO1-tPXV91-cT8vx--oZAg"
+  },
+  "package": {
+    "participants": [
+      {
+        "memberId": "golden-member",
+        "memberDeviceId": "golden-member-device",
+        "memberPublicKey": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+        "credentialId": "golden-credential",
+        "status": "active",
+        "displayName": "Golden Member",
+        "memberNumber": "100",
+        "workerCode": "W100"
+      }
+    ],
+    "fields": {
+      "v": "2",
+      "type": "SATT2PKG",
+      "packageId": "golden-package",
+      "eventId": "golden-event",
+      "eventName": "Golden Assembly",
+      "startAt": "1700000000000",
+      "endAt": "1700003600000",
+      "issuedAtServer": "1700000000000",
+      "expiresAt": "1700010800000",
+      "serverTimeAtPreparation": "1700000000000",
+      "scannerId": "golden-scanner",
+      "scannerPublicKey": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+      "geofenceEnabled": "1",
+      "latitude": "-0.1807",
+      "longitude": "-78.4678",
+      "geofenceRadiusMeters": "150",
+      "requireScannerLocation": "1",
+      "participantsHash": "70fb980687c34eab9d7665604c94de77e6208840b205f43f50abf46b78bb19c0",
+      "keyVersion": "v1"
+    },
+    "canonical": "v=2\ntype=SATT2PKG\npackageId=golden-package\neventId=golden-event\neventName=Golden Assembly\nstartAt=1700000000000\nendAt=1700003600000\nissuedAtServer=1700000000000\nexpiresAt=1700010800000\nserverTimeAtPreparation=1700000000000\nscannerId=golden-scanner\nscannerPublicKey=gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q\ngeofenceEnabled=1\nlatitude=-0.1807\nlongitude=-78.4678\ngeofenceRadiusMeters=150\nrequireScannerLocation=1\nparticipantsHash=70fb980687c34eab9d7665604c94de77e6208840b205f43f50abf46b78bb19c0\nkeyVersion=v1",
+    "signature": "7bACtx9DX0nLs4DCZm5YaGq8J5RAPL9Hl-V7k5wF7wxAXRxYdiSaOtz6MiBsB-0fXihYTPXTGekYRh4rPiAlAw"
+  }
+}

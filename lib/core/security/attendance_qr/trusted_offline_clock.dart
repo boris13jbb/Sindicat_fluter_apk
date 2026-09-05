@@ -1,27 +1,31 @@
 /// Trusted offline clock for scanners.
 ///
-/// Authority comes from server time captured during package preparation,
-/// not from the member phone clock.
+/// The anchor is the later of signed server preparation time and the device
+/// time observed when the package passed verification. After that point time
+/// advances with [Stopwatch], so wall-clock changes cannot extend a loaded
+/// package's validity.
 enum ClockTrustState { clockOk, clockSuspicious, clockUntrusted }
 
 class TrustedOfflineClock {
   TrustedOfflineClock({
     required this.serverTimeAtPreparationMs,
     required this.deviceTimeAtPreparationMs,
-  }) : _monotonicStart = DateTime.now().millisecondsSinceEpoch;
+  }) : _trustedTimeAtAnchorMs =
+           serverTimeAtPreparationMs > deviceTimeAtPreparationMs
+           ? serverTimeAtPreparationMs
+           : deviceTimeAtPreparationMs,
+       _elapsed = Stopwatch()..start();
 
   final int serverTimeAtPreparationMs;
   final int deviceTimeAtPreparationMs;
-  final int _monotonicStart;
+  final int _trustedTimeAtAnchorMs;
+  final Stopwatch _elapsed;
 
   /// Offset: trusted ≈ deviceNow + offset.
   int get trustedTimeOffsetMs =>
-      serverTimeAtPreparationMs - deviceTimeAtPreparationMs;
+      _trustedTimeAtAnchorMs - deviceTimeAtPreparationMs;
 
-  int nowTrustedMs({int? deviceNowMs}) {
-    final device = deviceNowMs ?? DateTime.now().millisecondsSinceEpoch;
-    return device + trustedTimeOffsetMs;
-  }
+  int nowTrustedMs() => _trustedTimeAtAnchorMs + _elapsed.elapsedMilliseconds;
 
   /// Detect abrupt jumps between wall clock and expected monotonic progression.
   ClockTrustState evaluate({
@@ -29,18 +33,14 @@ class TrustedOfflineClock {
     int maxDriftMs = 120000,
   }) {
     final elapsedWall = deviceNowMs - deviceTimeAtPreparationMs;
-    final expectedElapsed =
-        DateTime.now().millisecondsSinceEpoch - _monotonicStart;
+    final expectedElapsed = _elapsed.elapsedMilliseconds;
     final drift = (elapsedWall - expectedElapsed).abs();
     if (drift > maxDriftMs * 5) return ClockTrustState.clockUntrusted;
     if (drift > maxDriftMs) return ClockTrustState.clockSuspicious;
     return ClockTrustState.clockOk;
   }
 
-  bool isWithinChallengeWindow({
-    required int expiresAtTrustedMs,
-    int? deviceNowMs,
-  }) {
-    return nowTrustedMs(deviceNowMs: deviceNowMs) <= expiresAtTrustedMs;
+  bool isWithinChallengeWindow({required int expiresAtTrustedMs}) {
+    return nowTrustedMs() <= expiresAtTrustedMs;
   }
 }

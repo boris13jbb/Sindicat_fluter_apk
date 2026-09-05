@@ -125,6 +125,7 @@ class AttendanceOfflinePackage {
     if (geofence.latitude != null) 'latitude': '${geofence.latitude}',
     if (geofence.longitude != null) 'longitude': '${geofence.longitude}',
     'geofenceRadiusMeters': '${geofence.radiusMeters}',
+    'requireScannerLocation': geofence.requireScannerLocation ? '1' : '0',
     'participantsHash': participantsHash,
     'keyVersion': keyVersion,
   };

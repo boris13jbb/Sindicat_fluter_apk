@@ -12,17 +12,40 @@ import 'secure_qr_protocol.dart';
 class SecureQrCrypto {
   SecureQrCrypto({Ed25519? algorithm}) : _ed25519 = algorithm ?? Ed25519();
 
+  static final RegExp _canonicalBase64Url = RegExp(r'^[A-Za-z0-9_-]+$');
+  static const int ed25519KeyBytes = 32;
+  static const int ed25519SignatureBytes = 64;
+
   final Ed25519 _ed25519;
 
   static String bytesToBase64Url(List<int> bytes) =>
       base64Url.encode(bytes).replaceAll('=', '');
 
-  static Uint8List base64UrlToBytes(String value) {
-    var normalized = value.trim();
-    final pad = (4 - normalized.length % 4) % 4;
-    normalized = normalized + ('=' * pad);
-    return Uint8List.fromList(base64Url.decode(normalized));
+  static Uint8List canonicalBase64UrlToBytes(
+    String value, {
+    int? expectedLength,
+  }) {
+    if (value.isEmpty || !_canonicalBase64Url.hasMatch(value)) {
+      throw const FormatException('Invalid canonical base64url value');
+    }
+    final pad = (4 - value.length % 4) % 4;
+    late final Uint8List decoded;
+    try {
+      decoded = Uint8List.fromList(base64Url.decode(value + ('=' * pad)));
+    } on FormatException {
+      throw const FormatException('Invalid canonical base64url value');
+    }
+    if (expectedLength != null && decoded.length != expectedLength) {
+      throw const FormatException('Invalid decoded byte length');
+    }
+    if (bytesToBase64Url(decoded) != value) {
+      throw const FormatException('Non-canonical base64url value');
+    }
+    return decoded;
   }
+
+  static Uint8List base64UrlToBytes(String value) =>
+      canonicalBase64UrlToBytes(value);
 
   Future<SimpleKeyPair> generateKeyPair() => _ed25519.newKeyPair();
 
@@ -37,12 +60,18 @@ class SecureQrCrypto {
   }
 
   Future<SimpleKeyPair> keyPairFromSeedBase64Url(String seedB64) async {
-    final seed = base64UrlToBytes(seedB64);
+    final seed = canonicalBase64UrlToBytes(
+      seedB64,
+      expectedLength: ed25519KeyBytes,
+    );
     return _ed25519.newKeyPairFromSeed(seed);
   }
 
   Future<SimplePublicKey> publicKeyFromBase64Url(String publicB64) async {
-    final bytes = base64UrlToBytes(publicB64);
+    final bytes = canonicalBase64UrlToBytes(
+      publicB64,
+      expectedLength: ed25519KeyBytes,
+    );
     return SimplePublicKey(bytes, type: KeyPairType.ed25519);
   }
 
@@ -64,13 +93,23 @@ class SecureQrCrypto {
       final data = utf8.encode(canonicalPayload);
       final publicKey = await publicKeyFromBase64Url(publicKeyBase64Url);
       final signature = Signature(
-        base64UrlToBytes(signatureBase64Url),
+        canonicalBase64UrlToBytes(
+          signatureBase64Url,
+          expectedLength: ed25519SignatureBytes,
+        ),
         publicKey: publicKey,
       );
       return await _ed25519.verify(data, signature: signature);
     } catch (_) {
       return false;
     }
+  }
+
+  Future<String> hashSha256Hex(String value) async {
+    final hash = await Sha256().hash(utf8.encode(value));
+    return hash.bytes
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join();
   }
 
   /// Signs a challenge map using protocol canonicalization.

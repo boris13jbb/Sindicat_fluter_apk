@@ -189,8 +189,13 @@ class _SecureAttendanceQrTabState extends State<SecureAttendanceQrTab> {
         _statusMessage = null;
       });
     } catch (e) {
-      final existing = await _service.loadStoredCredential();
-      if (_service.isCredentialUsable(existing)) {
+      Map<String, dynamic>? existing;
+      try {
+        existing = await _service.loadVerifiedStoredCredential();
+      } catch (_) {
+        existing = null;
+      }
+      if (existing != null) {
         if (!mounted) return;
         setState(() {
           _credential = existing;

@@ -148,6 +148,7 @@ const List<String> kPackageCanonicalKeys = [
   'latitude',
   'longitude',
   'geofenceRadiusMeters',
+  'requireScannerLocation',
   'participantsHash',
   'keyVersion',
 ];

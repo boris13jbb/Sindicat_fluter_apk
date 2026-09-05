@@ -56,17 +56,9 @@ class _FakeSecureService extends SecureAttendanceQrService {
   int listCalls = 0;
 
   @override
-  Future<Map<String, dynamic>?> loadStoredCredential() async => credential;
-
-  @override
-  bool isCredentialUsable(Map<String, dynamic>? c, {int? nowMs}) => true;
-
-  @override
-  bool isCredentialNearExpiry(
-    Map<String, dynamic>? c, {
-    int withinMs = 24 * 60 * 60 * 1000,
+  Future<Map<String, dynamic>?> loadVerifiedStoredCredential({
     int? nowMs,
-  }) => false;
+  }) async => credential;
 
   @override
   Future<Map<String, dynamic>> ensureCredentialReady({
