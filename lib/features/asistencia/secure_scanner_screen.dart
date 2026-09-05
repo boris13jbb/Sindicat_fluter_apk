@@ -80,8 +80,13 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
   Future<void> _loadPackage() async {
     setState(() => _busy = true);
     try {
-      final pkgMap = await _service.loadActiveOfflinePackage();
-      if (pkgMap == null) {
+      final scannerId =
+          widget.scannerId ?? await _service.ensureLocalDeviceId();
+      final package = await _service.loadVerifiedStoredPackage(
+        expectedEventId: widget.eventId,
+        expectedScannerId: scannerId,
+      );
+      if (package == null) {
         setState(() {
           _message =
               'Sin paquete offline. Prepáralo con Internet antes del evento.';
@@ -89,32 +94,25 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
         });
         return;
       }
-      final package = _service.packageFromStored(pkgMap);
-      if (package == null || package.eventId != widget.eventId) {
-        setState(() {
-          _message = 'Paquete offline no corresponde a este evento.';
-          _busy = false;
-        });
-        return;
-      }
       final clock = _service.clockForPackage(package);
-      final expired = clock.nowTrustedMs() > package.expiresAt;
       setState(() {
         _package = package;
         _clock = clock;
         _busy = false;
-        _message = expired
-            ? 'Paquete offline vencido. Vuelve a prepararlo.'
-            : null;
+        _message = null;
         _scanMode = !_challengeMode;
       });
-      if (!expired && _challengeMode) {
+      if (_challengeMode) {
         await _startChallengeRotation();
       }
-    } catch (e) {
+    } catch (_) {
       setState(() {
+        _package = null;
+        _clock = null;
         _busy = false;
-        _message = 'Error cargando paquete: $e';
+        _message =
+            'El paquete seguro de asistencia no es válido. '
+            'Conéctate para descargarlo nuevamente.';
       });
     }
   }

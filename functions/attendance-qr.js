@@ -33,6 +33,16 @@ const METODO_SECURE = "SECURE_QR_V2";
 const KEY_VERSION = "v1";
 const CREDENTIAL_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 const BATCH_MAX = 50;
+const PARTICIPANT_HASH_KEYS = [
+  "memberId",
+  "memberDeviceId",
+  "memberPublicKey",
+  "credentialId",
+  "status",
+  "displayName",
+  "memberNumber",
+  "workerCode",
+];
 
 /** Pagination size for active member-device queries (deterministic orderBy __name__). */
 const DEVICE_PAGE_SIZE = 200;
@@ -228,31 +238,66 @@ function sortMemberQrEventsDesc(a, b) {
   return Number(b.fecha || 0) - Number(a.fecha || 0);
 }
 
+function serverKeyPairFromSecretValue(seed) {
+  if (seed == null || seed === "") {
+    throw new HttpError(
+      503,
+      "signing-key-missing",
+      "Attendance signing key is not configured",
+    );
+  }
+  try {
+    return cryptoHelpers.keyFromSeedBase64Url(seed);
+  } catch (_) {
+    throw new HttpError(
+      503,
+      "signing-key-invalid",
+      "Attendance signing key configuration is invalid",
+    );
+  }
+}
+
+function emulatorTestSigningSeed(env = process.env) {
+  const isEmulator =
+    String(env.FUNCTIONS_EMULATOR || "") === "true" ||
+    Boolean(env.FIRESTORE_EMULATOR_HOST) ||
+    Boolean(env.FIREBASE_AUTH_EMULATOR_HOST);
+  return isEmulator ? env.ATTENDANCE_QR_TEST_SEED : undefined;
+}
+
 function resolveServerKeyPair() {
-  // Prefer secret; tests may set process.env.ATTENDANCE_QR_TEST_SEED.
-  const seed = process.env.ATTENDANCE_QR_TEST_SEED ||
+  // Test seed injection is accepted only in an explicitly emulated process.
+  const seed = emulatorTestSigningSeed() ||
     (typeof attendanceQrSigningKey.value === "function"
       ? (() => {
         try {
           return attendanceQrSigningKey.value();
         } catch (_) {
-          return "";
+          return undefined;
         }
       })()
-      : "");
-  if (!seed || !String(seed).trim()) {
-    throw new HttpError(
-      503,
-      "signing-key-missing",
-      "ATTENDANCE_QR_SIGNING_PRIVATE_KEY not configured",
-    );
+      : undefined);
+  return serverKeyPairFromSecretValue(seed);
+}
+
+function assertCanonicalPublicKey(value, status, code) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new HttpError(status, code);
   }
-  return cryptoHelpers.keyFromSeedBase64Url(String(seed).trim());
+  try {
+    cryptoHelpers.publicKeyFromBase64Url(value);
+  } catch (_) {
+    throw new HttpError(status, code);
+  }
+  return value;
 }
 
 function participantsHash(participants) {
   const normalized = participants
-    .map((p) => `${p.memberId}|${p.memberDeviceId}|${p.memberPublicKey}|${p.credentialId}|${p.status}`)
+    .map((participant) => PARTICIPANT_HASH_KEYS.map((key) => {
+      const value = String(participant?.[key] ?? "");
+      return `${Buffer.byteLength(value, "utf8")}:${value}`;
+    }).join("|"))
     .sort()
     .join("\n");
   return cryptoHelpers.hashSha256Hex(normalized);
@@ -470,16 +515,12 @@ async function handleEnrollMemberDevice(req, res) {
     }
 
     const deviceId = String(req.body?.deviceId || "").trim();
-    const publicKey = String(req.body?.publicKey || "").trim();
+    const publicKey = req.body?.publicKey;
     const platform = String(req.body?.platform || "unknown").trim();
     if (!deviceId || deviceId.length > 128) {
       throw new HttpError(400, "invalid-deviceId");
     }
-    if (!publicKey || publicKey.length < 40) {
-      throw new HttpError(400, "invalid-publicKey");
-    }
-    // Validate public key parses
-    cryptoHelpers.publicKeyFromBase64Url(publicKey);
+    assertCanonicalPublicKey(publicKey, 400, "invalid-publicKey");
 
     const ref = db.collection(MEMBER_DEVICES).doc(deviceId);
     await ref.set({
@@ -529,6 +570,11 @@ async function handlePrepareOfflineCredential(req, res) {
       throw new HttpError(403, "member-inactive");
     }
 
+    const memberPublicKey = assertCanonicalPublicKey(
+      device.publicKey,
+      409,
+      "device-key-invalid",
+    );
     const serverKey = resolveServerKeyPair();
     const nowMs = Date.now();
     const credentialId = cryptoHelpers.secureNonce(16);
@@ -540,7 +586,7 @@ async function handlePrepareOfflineCredential(req, res) {
       uid,
       memberId,
       memberDeviceId: deviceId,
-      memberPublicKey: String(device.publicKey),
+      memberPublicKey,
       issuedAtServer: String(nowMs),
       expiresAt: String(expiresAt),
       keyVersion: KEY_VERSION,
@@ -639,11 +685,24 @@ async function handlePrepareOfflineEvent(req, res) {
       throw new HttpError(403, "scanner-not-assigned");
     }
 
+    const scannerPublicKey = assertCanonicalPublicKey(
+      scanner.publicKey,
+      409,
+      "scanner-key-invalid",
+    );
+
     const eventSnap = await db.collection("attendance_events").doc(eventId).get();
     if (!eventSnap.exists) throw new HttpError(404, "event-missing");
     const event = eventSnap.data() || {};
 
     const participants = await collectOfflinePackageParticipants(event, db);
+    for (const participant of participants) {
+      assertCanonicalPublicKey(
+        participant.memberPublicKey,
+        409,
+        "participant-key-invalid",
+      );
+    }
 
     const serverKey = resolveServerKeyPair();
     const nowMs = Date.now();
@@ -658,18 +717,19 @@ async function handlePrepareOfflineEvent(req, res) {
       type: "SATT2PKG",
       packageId,
       eventId,
-      eventName: String(event.nombre || ""),
+      eventName: String(event.nombre || "").trim(),
       startAt: String(startAt),
       endAt: String(endAt),
       issuedAtServer: String(nowMs),
       expiresAt: String(expiresAt),
       serverTimeAtPreparation: String(nowMs),
       scannerId,
-      scannerPublicKey: String(scanner.publicKey || ""),
+      scannerPublicKey,
       geofenceEnabled: event.geofenceEnabled === true ? "1" : "0",
       latitude: event.latitude != null ? String(event.latitude) : "",
       longitude: event.longitude != null ? String(event.longitude) : "",
       geofenceRadiusMeters: String(event.geofenceRadiusMeters || 150),
+      requireScannerLocation: event.requireScannerLocation === true ? "1" : "0",
       participantsHash: pHash,
       keyVersion: KEY_VERSION,
     };
@@ -678,6 +738,8 @@ async function handlePrepareOfflineEvent(req, res) {
 
     jsonOk(res, {
       package: {
+        v: fields.v,
+        type: fields.type,
         packageId,
         eventId,
         eventName: fields.eventName,
@@ -722,9 +784,11 @@ async function handleRegisterScannerDevice(req, res) {
     if (!isOperatorRole(user.role)) throw new HttpError(403, "forbidden");
 
     const scannerId = String(req.body?.scannerId || "").trim();
-    const publicKey = String(req.body?.publicKey || "").trim();
-    if (!scannerId || !publicKey) throw new HttpError(400, "missing-fields");
-    cryptoHelpers.publicKeyFromBase64Url(publicKey);
+    const publicKey = req.body?.publicKey;
+    if (!scannerId || publicKey == null || publicKey === "") {
+      throw new HttpError(400, "missing-fields");
+    }
+    assertCanonicalPublicKey(publicKey, 400, "invalid-publicKey");
 
     const wantApprove = req.body?.approve === true;
     if (wantApprove && !isAdminRole(user.role)) {
@@ -1088,6 +1152,10 @@ module.exports = {
     loadMembersByIds,
     buildOfflineParticipants,
     collectOfflinePackageParticipants,
+    serverKeyPairFromSecretValue,
+    emulatorTestSigningSeed,
+    resolveServerKeyPair,
+    assertCanonicalPublicKey,
     assertOfflinePackageSize,
     DEVICE_PAGE_SIZE,
     MEMBER_GETALL_CHUNK,

@@ -16,6 +16,55 @@
 | Criptografía | Ed25519 |
 | Serialización | Canonical UTF-8 `key=value` orden fijo |
 
+## Confianza de firmas del servidor
+
+Las credenciales `SATT2CRED` y los paquetes `SATT2PKG` se verifican antes de
+guardarse y cada vez que se recuperan del almacenamiento offline. La fuente de
+confianza es un keyring de claves públicas fijado durante el build:
+
+```text
+--dart-define=ATTENDANCE_QR_TRUSTED_SERVER_KEYS=v1:<public-key>,v2:<public-key>
+```
+
+Cada clave pública es Ed25519 raw de 32 bytes, codificada como base64url
+canónico sin padding (43 caracteres). Una configuración vacía o inválida
+bloquea solamente Secure Attendance con
+`attendance-server-trust-not-configured`. Una versión no incluida en el
+keyring se rechaza con `unknown-server-key-version`.
+
+`serverPublicKey` puede viajar en una respuesta únicamente como metadata de
+diagnóstico. Nunca establece confianza ni reemplaza una clave fijada; si está
+presente debe coincidir con el pin correspondiente a `keyVersion`.
+
+La credencial también se vincula al UID autenticado, socio enrolado, ID de
+dispositivo y clave pública local. El paquete se vincula al evento, ID del
+escáner y clave pública local del escáner. Las ventanas firmadas se validan
+contra los máximos emitidos por el backend y se rechazan timestamps futuros o
+fuera de rango. Los IDs de dispositivo duplicados en participantes invalidan el
+paquete.
+
+El backend acepta la semilla privada solo como 32 bytes codificados en
+base64url canónico sin padding. Una clave ausente produce
+`signing-key-missing`; una representación ambigua o inválida produce
+`signing-key-invalid`. Ambos casos responden 503 sin exponer el secret.
+
+### Rotación de clave
+
+1. Generar el keypair v2 fuera del repositorio.
+2. Distribuir clientes con el keyring público v1+v2.
+3. Esperar la adopción mínima definida para esos clientes.
+4. Cambiar la versión activa del servidor a v2 junto con su secret.
+5. Emitir todas las credenciales y paquetes nuevos con `keyVersion = v2`.
+6. Mantener la clave pública v1 mientras puedan existir artefactos v1 válidos.
+7. Esperar la validez máxima de credenciales más la ventana máxima de paquetes.
+8. Retirar v1 del keyring solo en una versión posterior del cliente.
+9. Deshabilitar la versión anterior del secret después de la ventana acordada.
+10. Destruirla únicamente después de la ventana de recuperación definida.
+
+La clave privada y las semillas TEST-ONLY nunca se incluyen en builds de
+producción. Cambiar el secret sin actualizar de forma coherente la versión
+activa está prohibido porque produciría artefactos mal etiquetados.
+
 ## Modelo de amenazas
 
 | ID | Amenaza | Vector | Impacto | Control | Riesgo residual |
@@ -27,7 +76,7 @@
 | ATT-05 | QR de otro scanner | Challenge SCANNER_A en B | Confusión de estación | Binding `scannerId` firmado | — |
 | ATT-06 | QR expirado | Response fuera de ventana | Aceptación tardía | `expiresAtTrusted` del challenge | Reloj offline del scanner |
 | ATT-07 | Reloj del socio manipulado | Cambiar hora del teléfono | Bypass TTL | Scanner es autoridad de ventana; timestamp socio solo evidencia | — |
-| ATT-08 | Reloj del scanner manipulado | Cambiar hora del dispositivo operador | Ventana incorrecta | Offset vs `serverTimeAtPreparation`; estados `clock_*` | Offline prolongado sin re-preparación |
+| ATT-08 | Reloj del scanner manipulado | Cambiar hora del dispositivo operador | Ventana incorrecta | Ancla verificada + progresión monotónica `Stopwatch`; estados `clock_*` | Reinicio y rollback manual antes de recargar siguen limitados por validación de timestamps firmados |
 | ATT-09 | Member inactive | Socio dado de baja | Voto/asistencia indebida | Emisión y sync validan status | Snapshot offline desactualizado → review |
 | ATT-10 | Usuario sin memberId | Cuenta no vinculada | Emisión de credencial | Enrollment exige memberId | — |
 | ATT-11 | Member inexistente | memberId huérfano | Identidad inválida | Exists + active | — |
@@ -65,8 +114,8 @@ Un deploy prematuro de Rules puede romper clientes antiguos.
 | Plataforma | Offline HIGH_ASSURANCE | Notas |
 |------------|------------------------|-------|
 | Android/iOS | Sí (secure storage) | Preferido |
-| Windows | Sí si secure storage disponible | Verificar runtime |
-| Web | LIMITED_ASSURANCE / ONLINE_ONLY | No afirmar hardware-backed keys |
+| Windows nativo | No | Secure Attendance online no está soportado en este release |
+| Web/PWA | LIMITED_ASSURANCE | No afirmar hardware-backed keys |
 
 ## Registro manual excepcional
 
