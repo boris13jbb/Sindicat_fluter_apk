@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -12,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/attendance_service.dart';
 import '../../core/utils/date_time_ms.dart';
 import '../elections/widgets/voto_premium_chrome.dart';
+import 'attendance_event_actions.dart';
 import 'route_args.dart';
 import 'scanner_approval_dialog.dart';
 
@@ -142,9 +142,13 @@ class _AttendanceEventDetailScreenState
           final ahora = DateTime.now().millisecondsSinceEpoch;
           final finMs = fechaFin ?? endOfLocalDayMs(fecha);
           final bool operativo =
-              activo && estado != 'finalizado' && finMs >= ahora;
+              !ev.archivado &&
+              activo &&
+              estado != 'finalizado' &&
+              finMs >= ahora;
           final bool badgeActivo = operativo;
-          final bool qrHabilitado = activo && estado != 'finalizado';
+          final bool qrHabilitado =
+              !ev.archivado && activo && estado != 'finalizado';
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -172,67 +176,14 @@ class _AttendanceEventDetailScreenState
                       },
                     ),
                     const SizedBox(width: 6),
-                    VotoCircleIconButton(
-                      icon: Icons.more_horiz_rounded,
-                      onTap: () {
-                        showModalBottomSheet<void>(
-                          context: context,
-                          showDragHandle: true,
-                          backgroundColor: AppDesignTokens.background,
-                          builder: (ctx) => SafeArea(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ListTile(
-                                  leading: const Icon(Icons.home_work_outlined),
-                                  title: const Text(
-                                    'Ir al inicio de asistencia',
-                                  ),
-                                  onTap: () {
-                                    Navigator.pop(ctx);
-                                    Navigator.of(
-                                      context,
-                                    ).pushNamedAndRemoveUntil(
-                                      '/asistencia',
-                                      (route) => route.isFirst,
-                                    );
-                                  },
-                                ),
-                                ListTile(
-                                  leading: const Icon(Icons.copy_outlined),
-                                  title: const Text('Copiar ID del evento'),
-                                  onTap: () {
-                                    Navigator.pop(ctx);
-                                    Clipboard.setData(
-                                      ClipboardData(text: eventId),
-                                    );
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'ID copiado al portapapeles',
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                if (desc != null && desc.isNotEmpty)
-                                  ListTile(
-                                    leading: const Icon(Icons.notes_outlined),
-                                    title: Text(
-                                      desc,
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                if (fechaFin != null)
-                                  ListTile(
-                                    leading: const Icon(Icons.event_outlined),
-                                    title: Text('Fin: ${_detailFmt(fechaFin)}'),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
+                    AttendanceEventOverflowButton(
+                      event: ev,
+                      role: role,
+                      onDone: (result) {
+                        if (result == AttendanceEventActionResult.deleted &&
+                            context.mounted) {
+                          Navigator.of(context).pop();
+                        }
                       },
                     ),
                   ],

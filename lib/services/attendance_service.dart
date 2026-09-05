@@ -2,17 +2,59 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import '../core/models/asistencia/asistencia.dart';
 import '../core/models/asistencia/attendance_report_models.dart';
 import '../core/models/member.dart';
 import '../core/models/audit_log.dart';
 import 'audit_service.dart';
+import 'secure_attendance_qr_service.dart';
 
 export '../core/models/asistencia/attendance_event.dart';
 export '../core/models/asistencia/attendance_report_models.dart';
 export '../core/models/asistencia/member_attendance_summary.dart';
+
+/// Hard-delete blocked because the event still has attendance subdocs.
+class AttendanceEventHasRecordsException implements Exception {
+  AttendanceEventHasRecordsException([
+    this.message =
+        'No se puede eliminar este evento porque ya contiene registros '
+        'de asistencia. Archívalo para conservar el historial.',
+  ]);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// Backend refused hard-delete (role, App Check, or concurrent records).
+class AttendanceEventDeleteException implements Exception {
+  AttendanceEventDeleteException(this.code, {this.statusCode});
+
+  final String code;
+  final int? statusCode;
+
+  @override
+  String toString() => 'AttendanceEventDeleteException($code)';
+}
+
+/// Legacy event without confirmed `asistenciaCount` — fail-closed for writes.
+class AttendanceLegacyCountException implements Exception {
+  AttendanceLegacyCountException([
+    this.message =
+        'Este evento legacy no tiene asistenciaCount confirmado. '
+        'No se puede registrar asistencia hasta un backfill controlado.',
+  ]);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 class _AttendanceReportEvent {
   const _AttendanceReportEvent({required this.event, required this.isLegacy});
@@ -27,13 +69,31 @@ class AttendanceService {
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
     AuditService? audit,
+    http.Client? httpClient,
+    String? deleteApiBaseUrl,
+    Future<String?> Function()? appCheckTokenProvider,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _auth = auth ?? FirebaseAuth.instance,
-       _audit = audit ?? AuditService();
+       _audit = audit ?? AuditService(),
+       _http = httpClient ?? http.Client(),
+       _deleteApiBase =
+           deleteApiBaseUrl ?? SecureAttendanceQrService.resolveApiBaseUrl(),
+       _appCheckTokenProvider =
+           appCheckTokenProvider ??
+           (() async {
+             try {
+               return await FirebaseAppCheck.instance.getToken();
+             } catch (_) {
+               return null;
+             }
+           });
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
   final AuditService _audit;
+  final http.Client _http;
+  final String _deleteApiBase;
+  final Future<String?> Function() _appCheckTokenProvider;
 
   // ==================== EVENTOS ====================
 
@@ -128,7 +188,8 @@ class AttendanceService {
         createdAt: DateTime.now().millisecondsSinceEpoch,
       );
 
-      await eventRef.set(newEvent.toMap());
+      final payload = {...newEvent.toMap(), 'asistenciaCount': 0};
+      await eventRef.set(payload);
 
       // Registrar en auditoría
       await _audit.logAction(
@@ -167,23 +228,144 @@ class AttendanceService {
     }
   }
 
-  /// Eliminar evento
-  Future<void> deleteEvent(String eventId) async {
+  /// True if `attendance_events/{id}/asistencias` has at least one document.
+  Future<bool> hasAttendanceRecords(String eventId) async {
+    if (eventId.isEmpty) return false;
     try {
-      final event = await getEventById(eventId);
-      await _firestore.collection('attendance_events').doc(eventId).delete();
+      final snap = await _firestore
+          .collection('attendance_events')
+          .doc(eventId)
+          .collection('asistencias')
+          .limit(1)
+          .get();
+      return snap.docs.isNotEmpty;
+    } catch (e) {
+      debugPrint('Error comprobando registros de asistencia: $e');
+      // Fail closed: treat as having records so destructive ops stay blocked.
+      return true;
+    }
+  }
 
+  /// Soft-archive; preserves attendance subcollection and operational fields.
+  Future<void> archiveEvent(String eventId) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('Usuario no autenticado');
+    }
+    final event = await getEventById(eventId);
+    if (event == null) {
+      throw Exception('Evento no encontrado');
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // Soft-keys only — never rewrite historical / identity fields.
+    await _firestore.collection('attendance_events').doc(eventId).update({
+      'archivado': true,
+      'archivadoAt': now,
+      'archivadoPor': userId,
+    });
+    await _audit.logAction(
+      action: AuditAction.update,
+      entityType: AuditEntityType.attendanceEvent,
+      entityId: eventId,
+      description: 'Evento archivado: ${event.nombre}',
+      platform: 'flutter',
+    );
+  }
+
+  /// Restore soft-archived event without recreating the document.
+  Future<void> unarchiveEvent(String eventId) async {
+    final event = await getEventById(eventId);
+    if (event == null) {
+      throw Exception('Evento no encontrado');
+    }
+    await _firestore.collection('attendance_events').doc(eventId).update({
+      'archivado': false,
+      'archivadoAt': FieldValue.delete(),
+      'archivadoPor': FieldValue.delete(),
+    });
+    await _audit.logAction(
+      action: AuditAction.update,
+      entityType: AuditEntityType.attendanceEvent,
+      entityId: eventId,
+      description: 'Evento desarchivado: ${event.nombre}',
+      platform: 'flutter',
+    );
+  }
+
+  /// Hard-delete via Cloud Function (Auth + App Check + SUPERADMIN).
+  ///
+  /// Client pre-check reduces UX friction; backend re-validates emptiness
+  /// to close TOCTOU. Does not delete subcollections recursively.
+  Future<void> deleteEventSafely(String eventId) async {
+    if (await hasAttendanceRecords(eventId)) {
+      throw AttendanceEventHasRecordsException();
+    }
+    await _deleteEventViaFunction(eventId);
+  }
+
+  /// Legacy entry point — redirects to [deleteEventSafely].
+  Future<void> deleteEvent(String eventId) => deleteEventSafely(eventId);
+
+  Future<void> _deleteEventViaFunction(String eventId) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw AttendanceEventDeleteException('unauthenticated');
+    }
+    final idToken = await user.getIdToken();
+    if (idToken == null || idToken.isEmpty) {
+      throw AttendanceEventDeleteException('unauthenticated');
+    }
+
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $idToken',
+      'Accept': 'application/json',
+    };
+    try {
+      final appCheck = (await _appCheckTokenProvider())?.trim() ?? '';
+      if (appCheck.isNotEmpty) {
+        headers['X-Firebase-AppCheck'] = appCheck;
+      }
+    } catch (_) {
+      // Backend decides if missing token is fatal.
+    }
+
+    final endpoint = '$_deleteApiBase/api/attendance-delete-event';
+    late final http.Response response;
+    try {
+      response = await _http.post(
+        Uri.parse(endpoint),
+        headers: headers,
+        body: jsonEncode({'eventId': eventId}),
+      );
+    } catch (e) {
+      debugPrint('Error llamando attendance-delete-event: $e');
+      throw AttendanceEventDeleteException('network-error');
+    }
+
+    Map<String, dynamic>? body;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) body = decoded;
+    } catch (_) {
+      body = null;
+    }
+    final code = body?['code']?.toString() ?? 'delete-failed';
+
+    if (response.statusCode == 200 && body?['ok'] == true) {
       await _audit.logAction(
         action: AuditAction.delete,
         entityType: AuditEntityType.attendanceEvent,
         entityId: eventId,
-        description: 'Evento eliminado: ${event?.nombre}',
+        description: 'Evento eliminado (seguro): $eventId',
         platform: 'flutter',
       );
-    } catch (e) {
-      debugPrint('Error eliminando evento: $e');
-      rethrow;
+      return;
     }
+    if (code == 'event-has-attendance' || response.statusCode == 409) {
+      throw AttendanceEventHasRecordsException();
+    }
+    throw AttendanceEventDeleteException(code, statusCode: response.statusCode);
   }
 
   // ==================== ASISTENCIAS ====================
@@ -278,7 +460,22 @@ class AttendanceService {
             'Ya existe un registro para este socio en este evento',
           );
         }
+        final eventRef = _firestore
+            .collection('attendance_events')
+            .doc(eventId);
+        final eventSnap = await transaction.get(eventRef);
+        if (!eventSnap.exists) {
+          throw Exception('Evento no encontrado');
+        }
+        final rawCount = eventSnap.data()?['asistenciaCount'];
+        // Fail-closed: never invent 0 for legacy missing count (may have orphans).
+        if (rawCount is! num || rawCount.toInt() < 0) {
+          throw AttendanceLegacyCountException();
+        }
         transaction.set(attendanceRef, data);
+        transaction.update(eventRef, {
+          'asistenciaCount': FieldValue.increment(1),
+        });
       });
 
       await _audit.logAction(
@@ -666,7 +863,7 @@ class AttendanceService {
 
     for (final doc in attendanceEventDocs) {
       final event = AttendanceEvent.fromMap(doc.data(), doc.id);
-      if (!event.activo) continue;
+      if (!event.activo || event.archivado) continue;
 
       final specificList = event.miembrosConvocados.isNotEmpty;
       final explicitlyConvoked =
@@ -857,7 +1054,7 @@ class AttendanceService {
   static String? pickHighlightedOperationalEventId(
     List<AttendanceEvent> events,
   ) {
-    final active = events.where((e) => e.activo).toList();
+    final active = events.where((e) => e.activo && !e.archivado).toList();
     if (active.isEmpty) return null;
     final now = DateTime.now().millisecondsSinceEpoch;
     final enCurso = active

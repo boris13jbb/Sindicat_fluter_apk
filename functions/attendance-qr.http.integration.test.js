@@ -259,6 +259,7 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
       fecha: Date.now(),
       activo: true,
       creadoPor: operatorUid,
+      asistenciaCount: 0,
     });
 
     // Smoke: Functions emulator must be reachable.
@@ -332,6 +333,7 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
       nombre: "HTTP E2E Dual Scanner",
       fecha: Date.now(),
       activo: true,
+      asistenciaCount: 0,
     });
 
     const receiptA = buildSignedReceipt({
@@ -462,6 +464,7 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
       nombre: "revoked test",
       fecha: Date.now(),
       activo: true,
+      asistenciaCount: 0,
     });
     const scannerR = "http-scanner-revoked";
     const scannerRKp = cryptoHelpers.generateEd25519KeyPair();
@@ -525,6 +528,7 @@ describe("HTTP E2E attendanceSyncOfflineBatch (Auth+Firestore+Functions Emulator
       nombre: "inactive sync",
       fecha: Date.now(),
       activo: true,
+      asistenciaCount: 0,
     });
 
     const receipt = buildSignedReceipt({
@@ -676,6 +680,7 @@ describe("HTTP E2E attendancePrepareOfflineEvent scale (>500 devices)", () => {
       fecha: Date.now(),
       fechaFin: Date.now() + 3_600_000,
       activo: true,
+      asistenciaCount: 0,
     });
   }
 

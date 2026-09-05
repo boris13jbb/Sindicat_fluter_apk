@@ -130,6 +130,29 @@ const baseEvent = {
 };
 
 describe("attendanceListMemberQrEvents endpoint", () => {
+  it("archived event EXCLUDED from member QR list", async () => {
+    const res = await callEndpoint({
+      events: [{
+        id: "event-archived",
+        data: {
+          ...baseEvent,
+          archivado: true,
+          miembrosConvocados: [],
+        },
+      }, {
+        id: "event-open",
+        data: {
+          ...baseEvent,
+          fecha: baseEvent.fecha + 1000,
+          miembrosConvocados: [],
+        },
+      }],
+    });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.events.length, 1);
+    assert.equal(res.body.events[0].id, "event-open");
+  });
   it("active user + active member PASS with sanitized response", async () => {
     const res = await callEndpoint({
       events: [{
