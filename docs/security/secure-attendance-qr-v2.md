@@ -141,6 +141,54 @@ Si al sincronizar el `member` está inactive/revocado:
 - Registro por operador → `pending`
 - Aprobación solo ADMIN/SUPERADMIN → `active`
 - `pending`/`revoked` no pueden preparar paquete ni sincronizar
+- El registro es transaccional e idempotente: repetir la misma identidad conserva
+  `pending` o `active`, y nunca elimina `approvedAt`, `approvedBy` ni la asignación.
+- Una clave pública distinta para un `scannerId` existente se rechaza; la rotación
+  o revocación de esa identidad requiere un flujo administrativo separado.
+- El cliente obtiene el keypair Ed25519 del almacenamiento seguro local y envía
+  únicamente la clave pública. Auth y App Check viajan en el mismo `_post()` que
+  protege el resto de endpoints Secure Attendance.
+- Un operador comparte el `scannerId` pendiente con un administrador. El admin
+  puede aprobarlo por ese ID o autoactivar su propio dispositivo al registrarlo.
+- Un paquete firmado y vigente, verificado contra el scanner local, continúa
+  habilitando operación offline sin exigir un nuevo registro en cada arranque.
+
+### Scanner provisioning: revision adversarial
+
+La revision local corrigio cuatro hallazgos P2:
+
+- Registro sin limites de consumo: body JSON hasta 4096 bytes, scannerId ASCII
+  alfanumerico/guion/underscore de 1 a 128 caracteres, UID exacto de hasta 128,
+  deviceLabel hasta 128 y platform hasta 32 caracteres, sin controles ni coercion
+  de objetos. La clave publica conserva su validacion Ed25519 canonical.
+  Cuotas transaccionales por UID: 30 registros/hora y 60 aprobaciones/hora;
+  los reintentos tambien cuentan. Roles y App Check siguen siendo obligatorios.
+- Asignacion permisiva: prepare y sync ahora exigen igualdad exacta entre el
+  operador autenticado y assignedUserId, incluso si la asignacion falta.
+  ADMIN/SUPERADMIN conservan la excepcion administrativa existente en prepare.
+  Sync conserva la verificacion de firma del scanner almacenado.
+- Creacion local concurrente: una sola operacion por scannerId dentro del isolate
+  evita que dos instancias de SecureKeyStore generen y sobrescriban claves entre
+  si. Una clave persistida corrupta (incluida vacia) falla sin regenerarse.
+- Arranque offline bloqueado por metadata de red: primero se carga y verifica el
+  paquete local. La consulta opcional del modo del evento tiene timeout; si no
+  responde, sigue disponible SATT2M, el modo predeterminado existente.
+
+P3 residual: la exclusion de creacion local no coordina distintos isolates,
+procesos ni pestanas Web. El aprovisionamiento inicial debe realizarse en una
+sola instancia; otra identidad concurrente sera rechazada por el backend o por
+el binding firmado del paquete, nunca autorizada sustituyendo la clave remota.
+Web mantiene LIMITED_ASSURANCE, sin garantia de almacenamiento hardware-backed.
+
+No existe endpoint de revocacion en este release. Las pruebas de carrera con
+revocacion simulan un cambio administrativo exclusivamente en el emulador.
+Una revocacion no llega inmediatamente a un scanner desconectado: el paquete
+queda limitado por su vigencia y el sync revalida el estado active del servidor.
+No se modifican keyVersion v1, formato firmado, keyring ni firmas de receipts.
+
+Los scripts de escala ejecutan tambien attendance-scanner-provisioning.emulator.test.js:
+concurrencia con claves iguales/distintas, register/approve, approve/revoke,
+asignacion, rol obsoleto, campos falsificados, Auth y cuotas persistentes.
 
 ## App Check (código listo — configuración externa pendiente)
 

@@ -7,11 +7,13 @@ import '../../core/design/app_design_tokens.dart';
 import '../../core/design/widgets/premium_card.dart';
 import '../../core/models/asistencia/evento.dart';
 import '../../core/models/user_role.dart';
+import '../../core/security/route_access.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/attendance_service.dart';
 import '../../core/utils/date_time_ms.dart';
 import '../elections/widgets/voto_premium_chrome.dart';
 import 'route_args.dart';
+import 'scanner_approval_dialog.dart';
 
 String _detailFmt(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms);
@@ -396,6 +398,13 @@ class _AttendanceEventDetailScreenState
                         ),
                       ),
                     ),
+                    if (adminRouteRoles.contains(role))
+                      _EventOptionTile(
+                        title: 'Aprobar escáner',
+                        subtitle: 'Activar dispositivo por Scanner ID',
+                        icon: Icons.verified_user_outlined,
+                        onTap: () => showScannerApprovalDialog(context),
+                      ),
                     _EventOptionTile(
                       title: 'Registro manual',
                       subtitle: 'Buscar y marcar persona',

@@ -19,6 +19,10 @@ class SecureKeyStore {
   static const _memberPrefix = 'satt2_member_seed_';
   static const _scannerPrefix = 'satt2_scanner_seed_';
 
+  // Multiple service instances share one creation per scanner in this isolate.
+  // Completed operations are removed; private keys are not retained in a cache.
+  static final _scannerCreations = <String, Future<SimpleKeyPair>>{};
+
   SecureAttendanceAssurance detectAssurance() {
     if (kIsWeb) {
       // Web lacks reliable hardware-backed private key storage in this stack.
@@ -39,10 +43,20 @@ class SecureKeyStore {
     return pair;
   }
 
-  Future<SimpleKeyPair> getOrCreateScannerKeyPair(String scannerId) async {
+  Future<SimpleKeyPair> getOrCreateScannerKeyPair(String scannerId) {
     final key = '$_scannerPrefix$scannerId';
+    return _scannerCreations.putIfAbsent(key, () async {
+      try {
+        return await _loadOrCreateScannerKey(key);
+      } finally {
+        _scannerCreations.remove(key);
+      }
+    });
+  }
+
+  Future<SimpleKeyPair> _loadOrCreateScannerKey(String key) async {
     final existing = await _storage.read(key: key);
-    if (existing != null && existing.isNotEmpty) {
+    if (existing != null) {
       return _crypto.keyPairFromSeedBase64Url(existing);
     }
     final pair = await _crypto.generateKeyPair();

@@ -23,4 +23,4 @@ printf '%s\n' "ATTENDANCE_QR_SIGNING_PRIVATE_KEY=${TEST_SEED}" > functions/.secr
 firebase emulators:exec \
   --project demo-sindicat-attendance-qr-v2 \
   --only auth,firestore,functions \
-  "cd functions && node --test --test-concurrency=1 attendance-qr-package-scale.test.js attendance-qr.http.integration.test.js"
+  "cd functions && node --test --test-concurrency=1 attendance-qr-package-scale.test.js attendance-qr.http.integration.test.js attendance-scanner-provisioning.emulator.test.js"

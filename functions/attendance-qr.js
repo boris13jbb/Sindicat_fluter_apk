@@ -68,6 +68,8 @@ const MAX_PARTICIPANTS_JSON_BYTES = 3 * 1024 * 1024;
 const ENROLL_LIMIT = {maximum: 10, windowMs: 60 * 60 * 1000};
 const PREP_LIMIT = {maximum: 30, windowMs: 60 * 60 * 1000};
 const SYNC_LIMIT = {maximum: 60, windowMs: 60 * 60 * 1000};
+const SCANNER_REGISTER_LIMIT = {maximum: 30, windowMs: 60 * 60 * 1000};
+const SCANNER_APPROVE_LIMIT = {maximum: 60, windowMs: 60 * 60 * 1000};
 
 class HttpError extends Error {
   constructor(status, code, message) {
@@ -189,6 +191,68 @@ function isOperatorRole(role) {
 
 function isAdminRole(role) {
   return ["SUPERADMIN", "ADMIN"].includes(role);
+}
+
+function assertScannerAssignment(scanner, uid, role) {
+  if (!isAdminRole(role) && scanner.assignedUserId !== uid) {
+    throw new HttpError(403, "scanner-not-assigned");
+  }
+}
+
+function scannerIdFromInput(value) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 128 ||
+      /[^A-Za-z0-9_-]/.test(value)) {
+    throw new HttpError(400, "invalid-scannerId");
+  }
+  return value;
+}
+
+function assertScannerRequestBody(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new HttpError(400, "invalid-scanner-request");
+  }
+  if (Buffer.byteLength(JSON.stringify(body), "utf8") > 4096) {
+    throw new HttpError(413, "scanner-request-too-large");
+  }
+}
+
+function scannerMetadataString(value, maximum, fallback, code) {
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || value.length > maximum ||
+      /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new HttpError(400, code);
+  }
+  return value.trim();
+}
+
+function parseScannerRegistration(body, uid) {
+  assertScannerRequestBody(body);
+  const scannerId = scannerIdFromInput(body.scannerId);
+  const publicKey = assertCanonicalPublicKey(body.publicKey, 400, "invalid-publicKey");
+  if (body.approve !== undefined && typeof body.approve !== "boolean") {
+    throw new HttpError(400, "invalid-approve");
+  }
+  const assignmentExplicit = Object.prototype.hasOwnProperty.call(body, "assignedUserId");
+  const assignedUserId = assignmentExplicit ? body.assignedUserId : uid;
+  if (typeof assignedUserId !== "string" || assignedUserId.length === 0 ||
+      assignedUserId.length > 128 || assignedUserId !== assignedUserId.trim() ||
+      /[\/\u0000-\u001f\u007f]/.test(assignedUserId)) {
+    throw new HttpError(400, "invalid-assignedUserId");
+  }
+  return {
+    scannerId,
+    publicKey,
+    platform: scannerMetadataString(body.platform, 32, "unknown", "invalid-platform"),
+    deviceLabel: scannerMetadataString(body.deviceLabel, 128, "", "invalid-deviceLabel"),
+    assignedUserId,
+    assignmentExplicit,
+    approve: body.approve === true,
+  };
+}
+
+function parseScannerApproval(body) {
+  assertScannerRequestBody(body);
+  return {scannerId: scannerIdFromInput(body.scannerId)};
 }
 
 function activeMemberIdForUser(user) {
@@ -681,9 +745,7 @@ async function handlePrepareOfflineEvent(req, res) {
     if (!scannerSnap.exists) throw new HttpError(404, "scanner-missing");
     const scanner = scannerSnap.data() || {};
     if (scanner.status !== "active") throw new HttpError(403, "scanner-revoked");
-    if (scanner.assignedUserId && scanner.assignedUserId !== uid && !isAdminRole(user.role)) {
-      throw new HttpError(403, "scanner-not-assigned");
-    }
+    assertScannerAssignment(scanner, uid, user.role);
 
     const scannerPublicKey = assertCanonicalPublicKey(
       scanner.publicKey,
@@ -776,47 +838,94 @@ async function handlePrepareOfflineEvent(req, res) {
  * OPERADOR puede registrar como `pending`.
  * Solo ADMIN/SUPERADMIN puede activar con approve=true (o vía approve endpoint).
  */
-async function handleRegisterScannerDevice(req, res) {
-  try {
-    if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
-    const uid = await assertAuthenticatedRequest(req);
-    const user = await loadActiveUser(uid);
-    if (!isOperatorRole(user.role)) throw new HttpError(403, "forbidden");
+async function registerScannerDeviceRecord({
+  firestore,
+  actorUid,
+  actorRole,
+  scannerId,
+  publicKey,
+  platform,
+  deviceLabel,
+  assignedUserId,
+  assignmentExplicit,
+  approve,
+  timestampFactory = () => FieldValue.serverTimestamp(),
+}) {
+  if (!isOperatorRole(actorRole)) throw new HttpError(403, "forbidden");
+  if (approve && !isAdminRole(actorRole)) {
+    throw new HttpError(403, "only-admin-can-approve-scanner");
+  }
 
-    const scannerId = String(req.body?.scannerId || "").trim();
-    const publicKey = req.body?.publicKey;
-    if (!scannerId || publicKey == null || publicKey === "") {
-      throw new HttpError(400, "missing-fields");
+  const targetUserId = String(assignedUserId || actorUid).trim();
+  if (!targetUserId) throw new HttpError(400, "invalid-assignedUserId");
+  if (!isAdminRole(actorRole) && targetUserId !== actorUid) {
+    throw new HttpError(403, "scanner-assignment-forbidden");
+  }
+
+  const ref = firestore.collection(SCANNER_DEVICES).doc(scannerId);
+  return firestore.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists) {
+      const existing = snap.data() || {};
+      if (existing.status === "revoked") {
+        throw new HttpError(403, "scanner-revoked");
+      }
+      if (existing.publicKey !== publicKey) {
+        throw new HttpError(409, "scanner-key-mismatch");
+      }
+
+      const existingAssignment = String(existing.assignedUserId || "").trim();
+      if (!isAdminRole(actorRole) && existingAssignment !== actorUid) {
+        throw new HttpError(403, "scanner-assignment-forbidden");
+      }
+      if (assignmentExplicit && existingAssignment !== targetUserId) {
+        throw new HttpError(403, "scanner-assignment-forbidden");
+      }
+      if (!["pending", "active"].includes(existing.status)) {
+        throw new HttpError(409, "scanner-status-invalid");
+      }
+
+      // Identity, assignment, approval and status are immutable on repeat
+      // registration. Approval/revocation use their dedicated flows.
+      return {scannerId, status: existing.status};
     }
-    assertCanonicalPublicKey(publicKey, 400, "invalid-publicKey");
 
-    const wantApprove = req.body?.approve === true;
-    if (wantApprove && !isAdminRole(user.role)) {
-      throw new HttpError(403, "only-admin-can-approve-scanner");
-    }
-
-    const status = wantApprove && isAdminRole(user.role) ? "active" : "pending";
+    const status = approve && isAdminRole(actorRole) ? "active" : "pending";
+    const now = timestampFactory();
     const payload = {
       scannerId,
       publicKey,
       algorithm: "Ed25519",
       status,
-      assignedUserId: req.body?.assignedUserId || uid,
-      deviceLabel: req.body?.deviceLabel || "",
-      platform: req.body?.platform || "unknown",
-      createdAt: FieldValue.serverTimestamp(),
+      assignedUserId: targetUserId,
+      deviceLabel,
+      platform,
+      createdAt: now,
       revokedAt: null,
+      approvedAt: status === "active" ? now : null,
+      approvedBy: status === "active" ? actorUid : null,
     };
-    if (status === "active") {
-      payload.approvedAt = FieldValue.serverTimestamp();
-      payload.approvedBy = uid;
-    } else {
-      payload.approvedAt = null;
-      payload.approvedBy = null;
-    }
+    tx.set(ref, payload);
+    return {scannerId, status};
+  });
+}
 
-    await db.collection(SCANNER_DEVICES).doc(scannerId).set(payload, {merge: true});
-    jsonOk(res, {scannerId, status});
+async function handleRegisterScannerDevice(req, res) {
+  try {
+    if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
+    const uid = await assertAuthenticatedRequest(req);
+    const user = await loadActiveUser(uid);
+
+    if (!isOperatorRole(user.role)) throw new HttpError(403, "forbidden");
+    const fields = parseScannerRegistration(req.body, uid);
+    await enforceNamedRateLimit("att-scanner-register", uid, SCANNER_REGISTER_LIMIT);
+    const result = await registerScannerDeviceRecord({
+      firestore: db,
+      actorUid: uid,
+      actorRole: user.role,
+      ...fields,
+    });
+    jsonOk(res, result);
   } catch (error) {
     jsonErr(res, error);
   }
@@ -827,30 +936,59 @@ async function handleRegisterScannerDevice(req, res) {
  * Body: { scannerId }
  * Solo ADMIN/SUPERADMIN.
  */
+async function approveScannerDeviceRecord({
+  firestore,
+  actorUid,
+  actorRole,
+  scannerId,
+  timestampFactory = () => FieldValue.serverTimestamp(),
+}) {
+  if (!isAdminRole(actorRole)) {
+    throw new HttpError(403, "only-admin-can-approve-scanner");
+  }
+
+  const ref = firestore.collection(SCANNER_DEVICES).doc(scannerId);
+  return firestore.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpError(404, "scanner-missing");
+    const existing = snap.data() || {};
+    if (existing.status === "revoked") {
+      throw new HttpError(403, "scanner-revoked");
+    }
+    if (existing.status === "active") {
+      return {scannerId, status: "active"};
+    }
+    if (existing.status !== "pending") {
+      throw new HttpError(409, "scanner-status-invalid");
+    }
+
+    tx.update(ref, {
+      status: "active",
+      approvedAt: timestampFactory(),
+      approvedBy: actorUid,
+    });
+    return {scannerId, status: "active"};
+  });
+}
+
 async function handleApproveScannerDevice(req, res) {
   try {
     if (req.method !== "POST") throw new HttpError(405, "method-not-allowed");
     const uid = await assertAuthenticatedRequest(req);
     const user = await loadActiveUser(uid);
-    if (!isAdminRole(user.role)) throw new HttpError(403, "forbidden");
 
-    const scannerId = String(req.body?.scannerId || "").trim();
-    if (!scannerId) throw new HttpError(400, "missing-scannerId");
-
-    const ref = db.collection(SCANNER_DEVICES).doc(scannerId);
-    const snap = await ref.get();
-    if (!snap.exists) throw new HttpError(404, "scanner-missing");
-    if (snap.data()?.status === "revoked") {
-      throw new HttpError(403, "scanner-revoked");
+    if (!isAdminRole(user.role)) {
+      throw new HttpError(403, "only-admin-can-approve-scanner");
     }
-
-    await ref.set({
-      status: "active",
-      approvedAt: FieldValue.serverTimestamp(),
-      approvedBy: uid,
-    }, {merge: true});
-
-    jsonOk(res, {scannerId, status: "active"});
+    const {scannerId} = parseScannerApproval(req.body);
+    await enforceNamedRateLimit("att-scanner-approve", uid, SCANNER_APPROVE_LIMIT);
+    const result = await approveScannerDeviceRecord({
+      firestore: db,
+      actorUid: uid,
+      actorRole: user.role,
+      scannerId,
+    });
+    jsonOk(res, result);
   } catch (error) {
     jsonErr(res, error);
   }
@@ -882,6 +1020,7 @@ async function handleSyncOfflineBatch(req, res) {
     if (!scannerSnap.exists || scannerSnap.data()?.status !== "active") {
       throw new HttpError(403, "scanner-revoked");
     }
+    assertScannerAssignment(scannerSnap.data(), uid, user.role);
     const scannerPub = String(scannerSnap.data().publicKey || "");
 
     const results = [];
@@ -1157,6 +1296,11 @@ module.exports = {
     resolveServerKeyPair,
     assertCanonicalPublicKey,
     assertOfflinePackageSize,
+    registerScannerDeviceRecord,
+    approveScannerDeviceRecord,
+    parseScannerRegistration,
+    parseScannerApproval,
+    assertScannerAssignment,
     DEVICE_PAGE_SIZE,
     MEMBER_GETALL_CHUNK,
     MAX_OFFLINE_PACKAGE_DEVICES,

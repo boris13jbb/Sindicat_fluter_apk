@@ -1,16 +1,21 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/design/app_design_tokens.dart';
 import '../../core/design/widgets/premium_card.dart';
 import '../../core/design/widgets/primary_button.dart';
+import '../../core/models/user_role.dart';
+import '../../core/security/route_access.dart';
 import '../../core/security/attendance_qr/secure_qr_models.dart';
 import '../../core/security/attendance_qr/secure_qr_protocol.dart';
 import '../../core/security/attendance_qr/secure_qr_validator.dart';
 import '../../core/security/attendance_qr/trusted_offline_clock.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/attendance_service.dart';
 import '../../services/secure_attendance_qr_service.dart';
 
@@ -46,6 +51,8 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
   bool _challengeMode = false;
   OfflineParticipantSnapshot? _lastParticipant;
   OfflineAttendanceReceipt? _lastReceipt;
+  String? _scannerId;
+  ScannerProvisioningStatus? _provisioningStatus;
 
   @override
   void initState() {
@@ -62,18 +69,23 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
   }
 
   Future<void> _bootstrap() async {
-    setState(() => _busy = true);
+    await _loadPackage();
+    if (!mounted) return;
+    // Event metadata is optional; a network request cannot block signed storage.
     try {
-      final event = await _attendance.getEventById(widget.eventId);
+      final event = await _attendance
+          .getEventById(widget.eventId)
+          .timeout(const Duration(seconds: 5));
+      if (!mounted) return;
       final challengeMode =
           event?.secureQrMode == kSecureQrModeChallengeResponse;
-      setState(() => _challengeMode = challengeMode);
-      await _loadPackage();
-    } catch (e) {
       setState(() {
-        _busy = false;
-        _message = 'Error iniciando escáner: $e';
+        _challengeMode = challengeMode;
+        if (_package != null) _scanMode = !challengeMode;
       });
+      if (_package != null && challengeMode) await _startChallengeRotation();
+    } catch (_) {
+      // The default SATT2M flow remains available with the verified package.
     }
   }
 
@@ -86,8 +98,10 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
         expectedEventId: widget.eventId,
         expectedScannerId: scannerId,
       );
+      if (!mounted) return;
       if (package == null) {
         setState(() {
+          _scannerId = scannerId;
           _message =
               'Sin paquete offline. Prepáralo con Internet antes del evento.';
           _busy = false;
@@ -96,6 +110,8 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
       }
       final clock = _service.clockForPackage(package);
       setState(() {
+        _scannerId = scannerId;
+        _provisioningStatus = ScannerProvisioningStatus.active;
         _package = package;
         _clock = clock;
         _busy = false;
@@ -106,6 +122,7 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
         await _startChallengeRotation();
       }
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _package = null;
         _clock = null;
@@ -123,14 +140,35 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
       _message = null;
     });
     try {
+      final role = context.read<AuthProvider>().user?.role ?? UserRole.user;
       final scannerId =
           widget.scannerId ?? await _service.ensureLocalDeviceId();
+      final provisioning = await _service.registerScannerDevice(
+        scannerId: scannerId,
+        approve: adminRouteRoles.contains(role),
+      );
+      if (!mounted) return;
+      if (!provisioning.isActive) {
+        setState(() {
+          _scannerId = provisioning.scannerId;
+          _provisioningStatus = provisioning.status;
+          _busy = false;
+          _message = null;
+        });
+        return;
+      }
+      setState(() {
+        _scannerId = provisioning.scannerId;
+        _provisioningStatus = provisioning.status;
+      });
       await _service.prepareOfflineEvent(
         eventId: widget.eventId,
         scannerId: scannerId,
       );
+      if (!mounted) return;
       await _loadPackage();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _busy = false;
         _message = SecureAttendanceQrService.userFacingActivationError(e);
@@ -305,13 +343,74 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
                     style: AppDesignTokens.bodyMuted(context),
                   ),
                   const SizedBox(height: 12),
-                  if (_package == null)
+                  if (_package == null) ...[
+                    if (_provisioningStatus ==
+                            ScannerProvisioningStatus.pending &&
+                        _scannerId != null) ...[
+                      const Divider(),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Pendiente de aprobación',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: AppDesignTokens.primaryDark,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Este dispositivo está registrado como escáner y '
+                        'espera aprobación de un administrador.',
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Scanner ID',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SelectableText(
+                              _scannerId!,
+                              key: const Key('scanner_provisioning_id'),
+                            ),
+                          ),
+                          IconButton(
+                            key: const Key('copy_scanner_id'),
+                            tooltip: 'Copiar Scanner ID',
+                            onPressed: () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: _scannerId!),
+                              );
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Scanner ID copiado'),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.copy_outlined),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Comparte este identificador con un administrador para '
+                        'aprobar este dispositivo.',
+                        style: AppDesignTokens.bodyMuted(context),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     PrimaryButton(
+                      key: const Key('prepare_secure_offline_package'),
                       onPressed: _busy ? null : _prepareOnline,
-                      label: 'Preparar paquete offline',
+                      label:
+                          _provisioningStatus ==
+                              ScannerProvisioningStatus.pending
+                          ? 'Comprobar aprobación'
+                          : 'Preparar paquete offline',
                       icon: Icons.cloud_download_outlined,
-                    )
-                  else ...[
+                    ),
+                  ] else ...[
                     if (_challengeMode &&
                         challengeQr != null &&
                         !_scanMode) ...[

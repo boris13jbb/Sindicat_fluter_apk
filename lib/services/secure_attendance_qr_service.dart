@@ -35,6 +35,37 @@ class SecureAttendanceApiException implements Exception {
   String toString() => 'SecureAttendanceApiException($code)';
 }
 
+enum ScannerProvisioningStatus { pending, active }
+
+class ScannerProvisioningResult {
+  const ScannerProvisioningResult({
+    required this.scannerId,
+    required this.status,
+  });
+
+  final String scannerId;
+  final ScannerProvisioningStatus status;
+
+  bool get isActive => status == ScannerProvisioningStatus.active;
+
+  static ScannerProvisioningResult fromApi(
+    Map<String, dynamic> response, {
+    required String expectedScannerId,
+  }) {
+    final scannerId = response['scannerId'];
+    final rawStatus = response['status'];
+    if (scannerId is! String || scannerId != expectedScannerId) {
+      throw SecureAttendanceApiException('invalid-response');
+    }
+    final status = switch (rawStatus) {
+      'pending' => ScannerProvisioningStatus.pending,
+      'active' => ScannerProvisioningStatus.active,
+      _ => throw SecureAttendanceApiException('invalid-response'),
+    };
+    return ScannerProvisioningResult(scannerId: scannerId, status: status);
+  }
+}
+
 /// Client façade for Secure Attendance QR V2 (enrollment, credential, package,
 /// SATT2M / SATT2C-R, offline validate, sync).
 class SecureAttendanceQrService {
@@ -311,6 +342,19 @@ class SecureAttendanceQrService {
         case 'invalid-server-package-signature':
           return 'El paquete seguro de asistencia no es válido. '
               'Conéctate para descargarlo nuevamente.';
+        case 'scanner-missing':
+          return 'Este escáner todavía no está registrado.';
+        case 'scanner-revoked':
+          return 'Este dispositivo ya no está autorizado como escáner.';
+        case 'scanner-key-mismatch':
+        case 'scanner-key-invalid':
+          return 'La identidad segura de este escáner no coincide con la '
+              'registrada.';
+        case 'scanner-assignment-forbidden':
+        case 'scanner-not-assigned':
+          return 'Este escáner está asignado a otro usuario.';
+        case 'only-admin-can-approve-scanner':
+          return 'Solo un administrador puede aprobar este escáner.';
         case 'offline-not-activated':
           return 'Este dispositivo todavía no ha sido activado para asistencia. '
               'Conéctate a Internet una vez para activar tu QR seguro.';
@@ -540,6 +584,55 @@ class SecureAttendanceQrService {
         .whereType<Map>()
         .map((event) => Map<String, dynamic>.from(event))
         .toList(growable: false);
+  }
+
+  /// Registers this device's scanner identity without exposing its private key.
+  Future<ScannerProvisioningResult> registerScannerDevice({
+    required String scannerId,
+    bool approve = false,
+    String? deviceLabel,
+  }) async {
+    final normalizedScannerId = scannerId.trim();
+    if (normalizedScannerId.isEmpty) {
+      throw SecureAttendanceApiException('missing-scannerId');
+    }
+    final scannerKeys = await _keyStore.getOrCreateScannerKeyPair(
+      normalizedScannerId,
+    );
+    final publicKey = await _crypto.publicKeyBase64Url(scannerKeys);
+    final normalizedLabel = deviceLabel?.trim() ?? '';
+    final result = await _post('/attendance-register-scanner-device', {
+      'scannerId': normalizedScannerId,
+      'publicKey': publicKey,
+      'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+      if (normalizedLabel.isNotEmpty) 'deviceLabel': normalizedLabel,
+      'approve': approve,
+    });
+    return ScannerProvisioningResult.fromApi(
+      result,
+      expectedScannerId: normalizedScannerId,
+    );
+  }
+
+  /// Requests approval through the authenticated, App Check-protected backend.
+  Future<ScannerProvisioningResult> approveScannerDevice({
+    required String scannerId,
+  }) async {
+    final normalizedScannerId = scannerId.trim();
+    if (normalizedScannerId.isEmpty) {
+      throw SecureAttendanceApiException('missing-scannerId');
+    }
+    final result = await _post('/attendance-approve-scanner-device', {
+      'scannerId': normalizedScannerId,
+    });
+    final parsed = ScannerProvisioningResult.fromApi(
+      result,
+      expectedScannerId: normalizedScannerId,
+    );
+    if (!parsed.isActive) {
+      throw SecureAttendanceApiException('invalid-response');
+    }
+    return parsed;
   }
 
   /// Operator: download signed offline package for an event + scanner.
