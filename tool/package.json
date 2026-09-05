@@ -1,0 +1,11 @@
+{
+  "name": "sindicat-admin-tools",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test:backfill-asistencia-count": "node --test backfill_legacy_asistencia_count.test.js"
+  }
+}
