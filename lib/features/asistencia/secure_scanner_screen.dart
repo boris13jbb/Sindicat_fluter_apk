@@ -102,8 +102,7 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
       if (package == null) {
         setState(() {
           _scannerId = scannerId;
-          _message =
-              'Sin paquete offline. Prepáralo con Internet antes del evento.';
+          _message = null;
           _busy = false;
         });
         return;
@@ -134,7 +133,46 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
     }
   }
 
-  Future<void> _prepareOnline() async {
+  /// Shows an explicit confirmation before any scanner registration API call.
+  Future<void> _promptScannerProvisioning() async {
+    if (_busy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          key: const Key('scanner_provisioning_confirmation_dialog'),
+          title: const Text('Configurar dispositivo como escáner'),
+          content: const Text(
+            'Esta acción registrará este dispositivo como un escáner '
+            'de asistencia.\n\n'
+            'Los administradores pueden activar el dispositivo '
+            'inmediatamente.\n\n'
+            'Continúa únicamente si este equipo será utilizado '
+            'para escanear códigos QR de socios.',
+          ),
+          actions: [
+            TextButton(
+              key: const Key('cancel_scanner_provisioning'),
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              key: const Key('confirm_scanner_provisioning'),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Registrar dispositivo'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed == true && mounted) {
+      await _registerOrCheckScanner();
+    }
+  }
+
+  /// Registers or re-checks scanner status. Never prepares the offline package.
+  Future<void> _registerOrCheckScanner() async {
+    if (_busy) return;
     setState(() {
       _busy = true;
       _message = null;
@@ -148,19 +186,36 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
         approve: adminRouteRoles.contains(role),
       );
       if (!mounted) return;
-      if (!provisioning.isActive) {
-        setState(() {
-          _scannerId = provisioning.scannerId;
-          _provisioningStatus = provisioning.status;
-          _busy = false;
-          _message = null;
-        });
-        return;
-      }
       setState(() {
         _scannerId = provisioning.scannerId;
         _provisioningStatus = provisioning.status;
+        _busy = false;
+        _message = null;
       });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _message = SecureAttendanceQrService.userFacingActivationError(e);
+      });
+    }
+  }
+
+  /// Downloads the offline package. Requires an already-active scanner.
+  Future<void> _prepareOfflinePackage() async {
+    if (_busy) return;
+    if (_provisioningStatus != ScannerProvisioningStatus.active) return;
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      final scannerId =
+          _scannerId ??
+          widget.scannerId ??
+          await _service.ensureLocalDeviceId();
+      if (!mounted) return;
+      setState(() => _scannerId = scannerId);
       await _service.prepareOfflineEvent(
         eventId: widget.eventId,
         scannerId: scannerId,
@@ -304,6 +359,114 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
     }
   }
 
+  List<Widget> _buildProvisioningPanel(BuildContext context) {
+    final status = _provisioningStatus;
+    if (status == ScannerProvisioningStatus.pending) {
+      return [
+        Text(
+          'Pendiente de aprobación',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: AppDesignTokens.primaryDark,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Este dispositivo está registrado como escáner y '
+          'espera aprobación de un administrador.',
+        ),
+        if (_scannerId != null) ...[
+          const SizedBox(height: 10),
+          Text('Scanner ID', style: Theme.of(context).textTheme.labelLarge),
+          Row(
+            children: [
+              Expanded(
+                child: SelectableText(
+                  _scannerId!,
+                  key: const Key('scanner_provisioning_id'),
+                ),
+              ),
+              IconButton(
+                key: const Key('copy_scanner_id'),
+                tooltip: 'Copiar Scanner ID',
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: _scannerId!));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Scanner ID copiado')),
+                  );
+                },
+                icon: const Icon(Icons.copy_outlined),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Comparte este identificador con un administrador para '
+            'aprobar este dispositivo.',
+            style: AppDesignTokens.bodyMuted(context),
+          ),
+        ],
+        const SizedBox(height: 12),
+        PrimaryButton(
+          key: const Key('check_secure_scanner_status'),
+          onPressed: _busy ? null : _registerOrCheckScanner,
+          label: 'Comprobar estado del escáner',
+          icon: Icons.refresh_outlined,
+        ),
+      ];
+    }
+
+    if (status == ScannerProvisioningStatus.active) {
+      return [
+        Text(
+          'Escáner autorizado',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: AppDesignTokens.primaryDark,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text('Dispositivo autorizado como escáner'),
+        const SizedBox(height: 8),
+        Text(
+          'Descarga el paquete offline del evento en un paso separado.',
+          style: AppDesignTokens.bodyMuted(context),
+        ),
+        const SizedBox(height: 12),
+        PrimaryButton(
+          key: const Key('prepare_secure_offline_package'),
+          onPressed: _busy ? null : _prepareOfflinePackage,
+          label: 'Preparar paquete offline',
+          icon: Icons.cloud_download_outlined,
+        ),
+      ];
+    }
+
+    return [
+      Text(
+        'Modo escáner operativo',
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          color: AppDesignTokens.primaryDark,
+        ),
+      ),
+      const SizedBox(height: 6),
+      const Text(
+        'Este módulo convierte este dispositivo en un escáner '
+        'para registrar códigos de asistencia de socios.\n'
+        'No es tu código QR personal.',
+      ),
+      const SizedBox(height: 12),
+      PrimaryButton(
+        key: const Key('configure_secure_scanner_device'),
+        onPressed: _busy ? null : _promptScannerProvisioning,
+        label: 'Configurar este dispositivo como escáner',
+        icon: Icons.phonelink_setup_outlined,
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final challengeQr = _challenge?.toQrString();
@@ -315,7 +478,9 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          _challengeMode ? 'Asistencia (alta seguridad)' : 'Asistencia segura',
+          _challengeMode
+              ? 'Escáner de alta seguridad'
+              : 'Escáner de asistencia segura',
         ),
         backgroundColor: AppDesignTokens.primary,
         foregroundColor: Colors.white,
@@ -344,72 +509,7 @@ class _SecureScannerScreenState extends State<SecureScannerScreen> {
                   ),
                   const SizedBox(height: 12),
                   if (_package == null) ...[
-                    if (_provisioningStatus ==
-                            ScannerProvisioningStatus.pending &&
-                        _scannerId != null) ...[
-                      const Divider(),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Pendiente de aprobación',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: AppDesignTokens.primaryDark,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Este dispositivo está registrado como escáner y '
-                        'espera aprobación de un administrador.',
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Scanner ID',
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: SelectableText(
-                              _scannerId!,
-                              key: const Key('scanner_provisioning_id'),
-                            ),
-                          ),
-                          IconButton(
-                            key: const Key('copy_scanner_id'),
-                            tooltip: 'Copiar Scanner ID',
-                            onPressed: () async {
-                              await Clipboard.setData(
-                                ClipboardData(text: _scannerId!),
-                              );
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Scanner ID copiado'),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.copy_outlined),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Comparte este identificador con un administrador para '
-                        'aprobar este dispositivo.',
-                        style: AppDesignTokens.bodyMuted(context),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    PrimaryButton(
-                      key: const Key('prepare_secure_offline_package'),
-                      onPressed: _busy ? null : _prepareOnline,
-                      label:
-                          _provisioningStatus ==
-                              ScannerProvisioningStatus.pending
-                          ? 'Comprobar aprobación'
-                          : 'Preparar paquete offline',
-                      icon: Icons.cloud_download_outlined,
-                    ),
+                    ..._buildProvisioningPanel(context),
                   ] else ...[
                     if (_challengeMode &&
                         challengeQr != null &&
