@@ -388,7 +388,12 @@ class _ScannerAsistenciaScreenState extends State<ScannerAsistenciaScreen> {
                                   );
                                 },
                           icon: const Icon(Icons.shield_outlined),
-                          label: const Text('Secure QR V2 (offline)'),
+                          label: const Text('Abrir escáner seguro (QR V2)'),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Uso operativo: este equipo escanea códigos de socios.',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                         if (!_puedeRegistrar) ...[
                           const SizedBox(height: 8),

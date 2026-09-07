@@ -70,13 +70,19 @@ class _FakeSecureAttendanceService extends Fake
     implements SecureAttendanceQrService {
   _FakeSecureAttendanceService({
     this.registrationStatus = ScannerProvisioningStatus.pending,
+    List<ScannerProvisioningStatus>? registrationStatusSequence,
     this.storedPackage,
     this.registrationError,
-  });
+    this.registerDelay,
+  }) : registrationStatusSequence = registrationStatusSequence == null
+           ? null
+           : List<ScannerProvisioningStatus>.from(registrationStatusSequence);
 
   final ScannerProvisioningStatus registrationStatus;
+  final List<ScannerProvisioningStatus>? registrationStatusSequence;
   final AttendanceOfflinePackage? storedPackage;
   final Object? registrationError;
+  final Duration? registerDelay;
   int registerCalls = 0;
   int prepareCalls = 0;
   int approveCalls = 0;
@@ -105,11 +111,16 @@ class _FakeSecureAttendanceService extends Fake
   }) async {
     registerCalls += 1;
     approveArguments.add(approve);
+    if (registerDelay != null) {
+      await Future<void>.delayed(registerDelay!);
+    }
     if (registrationError != null) throw registrationError!;
-    return ScannerProvisioningResult(
-      scannerId: scannerId,
-      status: registrationStatus,
-    );
+    final status =
+        (registrationStatusSequence != null &&
+            registrationStatusSequence!.isNotEmpty)
+        ? registrationStatusSequence!.removeAt(0)
+        : registrationStatus;
+    return ScannerProvisioningResult(scannerId: scannerId, status: status);
   }
 
   @override
@@ -195,6 +206,17 @@ Widget _scannerApp({
   );
 }
 
+Future<void> _confirmProvisioning(WidgetTester tester) async {
+  await tester.tap(find.byKey(const Key('configure_secure_scanner_device')));
+  await tester.pumpAndSettle();
+  expect(
+    find.byKey(const Key('scanner_provisioning_confirmation_dialog')),
+    findsOneWidget,
+  );
+  await tester.tap(find.byKey(const Key('confirm_scanner_provisioning')));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets(
     'offline package loads while event network request never completes',
@@ -221,7 +243,8 @@ void main() {
       await tester.pump(const Duration(seconds: 6));
     },
   );
-  testWidgets('new operator scanner stays pending and package is blocked', (
+
+  testWidgets('opening secure scanner does not provision device', (
     tester,
   ) async {
     final service = _FakeSecureAttendanceService();
@@ -230,8 +253,68 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('prepare_secure_offline_package')));
+    expect(service.registerCalls, 0);
+    expect(service.prepareCalls, 0);
+    expect(find.text('Escáner de asistencia segura'), findsOneWidget);
+    expect(find.text('Modo escáner operativo'), findsOneWidget);
+    expect(
+      find.byKey(const Key('configure_secure_scanner_device')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('opening provisioning confirmation performs zero API calls', (
+    tester,
+  ) async {
+    final service = _FakeSecureAttendanceService();
+    await tester.pumpWidget(
+      _scannerApp(service: service, role: UserRole.operadorAsistencia),
+    );
     await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('configure_secure_scanner_device')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const Key('scanner_provisioning_confirmation_dialog')),
+      findsOneWidget,
+    );
+    expect(service.registerCalls, 0);
+    expect(service.prepareCalls, 0);
+  });
+
+  testWidgets('cancel scanner provisioning performs zero API calls', (
+    tester,
+  ) async {
+    final service = _FakeSecureAttendanceService();
+    await tester.pumpWidget(
+      _scannerApp(service: service, role: UserRole.operadorAsistencia),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('configure_secure_scanner_device')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('cancel_scanner_provisioning')));
+    await tester.pumpAndSettle();
+
+    expect(service.registerCalls, 0);
+    expect(service.prepareCalls, 0);
+    expect(
+      find.byKey(const Key('scanner_provisioning_confirmation_dialog')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('operator confirmation registers pending scanner only', (
+    tester,
+  ) async {
+    final service = _FakeSecureAttendanceService();
+    await tester.pumpWidget(
+      _scannerApp(service: service, role: UserRole.operadorAsistencia),
+    );
+    await tester.pumpAndSettle();
+
+    await _confirmProvisioning(tester);
 
     expect(service.registerCalls, 1);
     expect(service.approveArguments, [false]);
@@ -239,27 +322,14 @@ void main() {
     expect(find.text('Pendiente de aprobación'), findsOneWidget);
     expect(find.byKey(const Key('scanner_provisioning_id')), findsOneWidget);
     expect(find.text('scanner-local-1'), findsOneWidget);
-  });
-
-  testWidgets('active scanner prepares the offline package', (tester) async {
-    final service = _FakeSecureAttendanceService(
-      registrationStatus: ScannerProvisioningStatus.active,
+    expect(
+      find.byKey(const Key('prepare_secure_offline_package')),
+      findsNothing,
     );
-    await tester.pumpWidget(
-      _scannerApp(service: service, role: UserRole.operadorAsistencia),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const Key('prepare_secure_offline_package')));
-    await tester.pumpAndSettle();
-
-    expect(service.registerCalls, 1);
-    expect(service.approveArguments, [false]);
-    expect(service.prepareCalls, 1);
   });
 
   testWidgets(
-    'admin self-registration requests approval and prepares package',
+    'admin confirmation activates scanner but does not prepare package',
     (tester) async {
       final service = _FakeSecureAttendanceService(
         registrationStatus: ScannerProvisioningStatus.active,
@@ -269,17 +339,77 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      await _confirmProvisioning(tester);
+
+      expect(service.registerCalls, 1);
+      expect(service.approveArguments, [true]);
+      expect(service.prepareCalls, 0);
+      expect(find.text('Escáner autorizado'), findsOneWidget);
+      expect(find.text('Dispositivo autorizado como escáner'), findsOneWidget);
+      expect(
+        find.byKey(const Key('prepare_secure_offline_package')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('active scanner package preparation is a separate action', (
+    tester,
+  ) async {
+    final service = _FakeSecureAttendanceService(
+      registrationStatus: ScannerProvisioningStatus.active,
+    );
+    await tester.pumpWidget(
+      _scannerApp(service: service, role: UserRole.admin),
+    );
+    await tester.pumpAndSettle();
+
+    await _confirmProvisioning(tester);
+    expect(service.registerCalls, 1);
+    expect(service.prepareCalls, 0);
+
+    await tester.tap(find.byKey(const Key('prepare_secure_offline_package')));
+    await tester.pumpAndSettle();
+
+    expect(service.registerCalls, 1);
+    expect(service.prepareCalls, 1);
+  });
+
+  testWidgets(
+    'pending scanner becoming active still requires separate prepare action',
+    (tester) async {
+      final service = _FakeSecureAttendanceService(
+        registrationStatusSequence: [
+          ScannerProvisioningStatus.pending,
+          ScannerProvisioningStatus.active,
+        ],
+      );
+      await tester.pumpWidget(
+        _scannerApp(service: service, role: UserRole.operadorAsistencia),
+      );
+      await tester.pumpAndSettle();
+
+      await _confirmProvisioning(tester);
+      expect(service.registerCalls, 1);
+      expect(service.prepareCalls, 0);
+      expect(find.text('Pendiente de aprobación'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('check_secure_scanner_status')));
+      await tester.pumpAndSettle();
+
+      expect(service.registerCalls, 2);
+      expect(service.prepareCalls, 0);
+      expect(find.text('Escáner autorizado'), findsOneWidget);
+
       await tester.tap(find.byKey(const Key('prepare_secure_offline_package')));
       await tester.pumpAndSettle();
 
-      expect(service.approveArguments, [true]);
+      expect(service.registerCalls, 2);
       expect(service.prepareCalls, 1);
     },
   );
 
-  testWidgets('revoked scanner shows safe error and never prepares package', (
-    tester,
-  ) async {
+  testWidgets('revoked scanner never prepares package', (tester) async {
     final service = _FakeSecureAttendanceService(
       registrationError: SecureAttendanceApiException('scanner-revoked'),
     );
@@ -288,9 +418,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('prepare_secure_offline_package')));
-    await tester.pumpAndSettle();
+    await _confirmProvisioning(tester);
 
+    expect(service.registerCalls, 1);
     expect(service.prepareCalls, 0);
     expect(
       find.text('Este dispositivo ya no está autorizado como escáner.'),
@@ -317,6 +447,34 @@ void main() {
     expect(service.registerCalls, 0);
     expect(service.prepareCalls, 0);
     expect(find.text('Modo challenge / respuesta'), findsOneWidget);
+    expect(find.text('Escáner de alta seguridad'), findsOneWidget);
+  });
+
+  testWidgets('rapid confirmation cannot duplicate scanner registration', (
+    tester,
+  ) async {
+    final service = _FakeSecureAttendanceService(
+      registerDelay: const Duration(milliseconds: 400),
+    );
+    await tester.pumpWidget(
+      _scannerApp(service: service, role: UserRole.operadorAsistencia),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('configure_secure_scanner_device')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm_scanner_provisioning')));
+    await tester.pump();
+    // While registration is in-flight, configure is disabled / guarded.
+    final configure = find.byKey(const Key('configure_secure_scanner_device'));
+    if (configure.evaluate().isNotEmpty) {
+      await tester.tap(configure);
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    expect(service.registerCalls, 1);
+    expect(service.prepareCalls, 0);
   });
 
   testWidgets('admin approval dialog calls backend and shows success', (
